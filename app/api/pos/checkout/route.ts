@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase/admin';
+import { checkSubscriptionAllows } from '@/lib/api/subscription-guard';
 import { FieldValue } from 'firebase-admin/firestore';
 import { cookies } from 'next/headers';
 
@@ -39,6 +40,19 @@ export async function POST(request: NextRequest) {
     }
     if (tenantId !== callerTenantId) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
+    }
+
+    // Abonnement : l'encaissement reste possible pendant la période de
+    // tolérance (le commerce ne doit pas s'arrêter du jour au lendemain),
+    // mais plus au-delà. Vérifié avant toute écriture, et avant le rejeu
+    // idempotent — une vente hors-ligne synchronisée tardivement ne doit pas
+    // contourner le blocage.
+    const subscriptionBlock = await checkSubscriptionAllows(tenantId, 'pos');
+    if (subscriptionBlock) {
+      return NextResponse.json(
+        { error: subscriptionBlock.error, subscriptionState: subscriptionBlock.state },
+        { status: subscriptionBlock.status }
+      );
     }
 
     // Rejeu idempotent : si cette synchronisation offline a déjà abouti

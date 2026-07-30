@@ -29,13 +29,24 @@ export function useCheckout({ tenantId, storeId, refreshQueue, setIsOnline }: Us
   const [lastReceiptData, setLastReceiptData] = useState<InvoiceData | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [wasOfflineSale, setWasOfflineSale] = useState(false);
+  // Généré une seule fois à l'ouverture du paiement (voir openPayment), pas à
+  // chaque appel de handleCheckout : si la transaction serveur réussit mais
+  // qu'une écriture secondaire échoue ensuite (voir commentaire plus bas) et
+  // que l'utilisateur reclique sur "Confirmer" pour la même vente, il faut
+  // que ce soit reconnu comme un rejeu — pas comme une vente distincte.
+  const [attemptId, setAttemptId] = useState(generateLocalSaleId());
 
   const total = getTotal();
   const change = amountReceived ? Math.max(0, Number(amountReceived) - total) : 0;
   const acompte = paymentMethod === 'CREDIT' ? (Number(amountReceived) || 0) : total;
   const soldeCredit = paymentMethod === 'CREDIT' ? Math.max(0, total - acompte) : 0;
 
-  const openPayment = () => { setCheckoutError(null); setAmountReceived(''); setShowPayment(true); };
+  const openPayment = () => {
+    setCheckoutError(null);
+    setAmountReceived('');
+    setAttemptId(generateLocalSaleId());
+    setShowPayment(true);
+  };
 
   // ─── Checkout via l'API serveur (prix/coût recalculés côté serveur) ───────
   const handleCheckout = async () => {
@@ -62,11 +73,10 @@ export function useCheckout({ tenantId, storeId, refreshQueue, setIsOnline }: Us
       userName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
     };
 
-    // Généré AVANT la tentative réseau : si la requête réussit côté serveur
-    // mais que la réponse se perd (coupure au mauvais moment), on saura que
-    // c'est un rejeu de la même vente réelle plutôt que d'en créer une 2e —
-    // que ce soit en retentant tout de suite ou en tombant dans la file.
-    const attemptId = generateLocalSaleId();
+    // Réutilisé tel quel entre les tentatives (voir sa génération dans
+    // openPayment) : c'est ce qui permet au serveur de reconnaître un rejeu
+    // de la même vente plutôt que d'en créer une seconde en cas de nouvelle
+    // tentative après un échec survenu après la transaction (voir plus haut).
 
     try {
       const res = await fetch('/api/pos/checkout', {
