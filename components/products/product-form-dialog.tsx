@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,16 +15,16 @@ import { checkPlanLimitClient } from '@/lib/firebase/plan-limits-client';
 import type { Product, Category } from '@/lib/types';
 
 const UNITS = [
-  { value: 'piece', label: 'Pièce' },
+  { value: 'piece', label: 'Pi├¿ce' },
   { value: 'sac', label: 'Sac' },
   { value: 'kg', label: 'Kilogramme' },
-  { value: 'm', label: 'Mètre' },
-  { value: 'm2', label: 'Mètre carré' },
-  { value: 'm3', label: 'Mètre cube' },
+  { value: 'm', label: 'M├¿tre' },
+  { value: 'm2', label: 'M├¿tre carr├®' },
+  { value: 'm3', label: 'M├¿tre cube' },
   { value: 'litre', label: 'Litre' },
   { value: 'barre', label: 'Barre' },
   { value: 'carton', label: 'Carton' },
-  { value: 'boite', label: 'Boîte' },
+  { value: 'boite', label: 'Bo├«te' },
   { value: 'rouleau', label: 'Rouleau' },
 ];
 
@@ -55,7 +55,7 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Recharge le formulaire à chaque ouverture (création ou édition)
+  // Recharge le formulaire ├á chaque ouverture (cr├®ation ou ├®dition)
   useEffect(() => {
     if (!open) return;
     if (editingProduct) {
@@ -89,11 +89,11 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
       return;
     }
     if (!form.purchasePrice || Number(form.purchasePrice) <= 0) {
-      setFormError('Le prix d\'achat doit être supérieur à 0');
+      setFormError('Le prix d\'achat doit ├¬tre sup├®rieur ├á 0');
       return;
     }
     if (!form.sellingPrice || Number(form.sellingPrice) <= 0) {
-      setFormError('Le prix de vente doit être supérieur à 0');
+      setFormError('Le prix de vente doit ├¬tre sup├®rieur ├á 0');
       return;
     }
 
@@ -114,6 +114,10 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
       sku: form.sku.trim().toUpperCase(),
       barcode: form.barcode.trim() || null,
       name: form.name.trim(),
+      // Champ d├®normalis├® en minuscules : Firestore est sensible ├á la casse
+      // et ne sait pas faire de recherche insensible. C'est ce champ que le
+      // POS interroge en pr├®fixe pour que ┬½ sucre ┬╗ trouve ┬½ Sucre ┬╗.
+      nameLower: form.name.trim().toLowerCase(),
       description: form.description.trim() || null,
       categoryId: form.categoryId || null,
       unit: form.unit,
@@ -138,7 +142,7 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
       }
       onOpenChange(false);
     } catch (err) {
-      setFormError('Erreur lors de la sauvegarde. Réessayez.');
+      setFormError('Erreur lors de la sauvegarde. R├®essayez.');
       console.error(err);
     } finally {
       setIsSaving(false);
@@ -160,7 +164,7 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
 
         <div className="grid grid-cols-2 gap-4 py-2">
           <div className="space-y-2">
-            <Label>SKU / Référence *</Label>
+            <Label>SKU / R├®f├®rence *</Label>
             <Input placeholder="ex: CM-PT-50" autoFocus value={form.sku} onChange={(e) => f('sku', e.target.value)} />
           </div>
           <div className="space-y-2">
@@ -176,17 +180,17 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
             <Textarea placeholder="Description du produit..." value={form.description} onChange={(e) => f('description', e.target.value)} rows={2} />
           </div>
           <div className="space-y-2">
-            <Label>Catégorie</Label>
+            <Label>Cat├®gorie</Label>
             <Select value={form.categoryId} onValueChange={(v) => f('categoryId', v)}>
-              <SelectTrigger><SelectValue placeholder="Sélectionner..." /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="S├®lectionner..." /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Sans catégorie</SelectItem>
+                <SelectItem value="">Sans cat├®gorie</SelectItem>
                 {categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Unité</Label>
+            <Label>Unit├®</Label>
             <Select value={form.unit} onValueChange={(v) => f('unit', v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -205,7 +209,7 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
           {form.purchasePrice && form.sellingPrice && Number(form.purchasePrice) > 0 && (
             <div className="col-span-2 bg-green-50 rounded-lg px-4 py-2 text-sm text-green-700">
               Marge : {Math.round(((Number(form.sellingPrice) - Number(form.purchasePrice)) / Number(form.purchasePrice)) * 100)}%
-              · Bénéfice : {formatCurrency(Number(form.sellingPrice) - Number(form.purchasePrice))} / unité
+              ┬À B├®n├®fice : {formatCurrency(Number(form.sellingPrice) - Number(form.purchasePrice))} / unit├®
             </div>
           )}
           <div className="space-y-2">
@@ -226,7 +230,7 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
           <div className="col-span-2 flex items-center justify-between p-3 bg-gray-50 rounded-lg">
             <div>
               <p className="text-sm font-medium">Suivi de stock</p>
-              <p className="text-xs text-gray-500">Décrémenter le stock lors des ventes</p>
+              <p className="text-xs text-gray-500">D├®cr├®menter le stock lors des ventes</p>
             </div>
             <Switch checked={form.trackInventory} onCheckedChange={(v) => f('trackInventory', v)} />
           </div>
@@ -235,7 +239,7 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>Annuler</Button>
           <Button onClick={handleSave} disabled={isSaving} className="bg-primary-600 hover:bg-primary-700">
-            {isSaving ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Enregistrement...</> : editingProduct ? 'Enregistrer' : 'Créer le produit'}
+            {isSaving ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Enregistrement...</> : editingProduct ? 'Enregistrer' : 'Cr├®er le produit'}
           </Button>
         </DialogFooter>
       </DialogContent>

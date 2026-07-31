@@ -21,7 +21,10 @@
  * ne modifie jamais de donnée existante. Il peut être relancé sans dommage.
  */
 
-const admin = require('firebase-admin');
+// firebase-admin v13+ n'expose plus `admin.credential` en CommonJS :
+// il faut passer par les sous-modules.
+const { initializeApp, cert } = require('firebase-admin/app');
+const { getFirestore } = require('firebase-admin/firestore');
 const fs = require('fs');
 const path = require('path');
 
@@ -36,15 +39,24 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-admin.initializeApp({
-  credential: admin.credential.cert({
+if (!process.env.FIREBASE_ADMIN_PROJECT_ID || !process.env.FIREBASE_ADMIN_PRIVATE_KEY) {
+  console.error(
+    'Variables Firebase Admin manquantes.\n' +
+    'Vérifiez que .env.local existe à la racine et contient ' +
+    'FIREBASE_ADMIN_PROJECT_ID, FIREBASE_ADMIN_CLIENT_EMAIL et FIREBASE_ADMIN_PRIVATE_KEY.'
+  );
+  process.exit(1);
+}
+
+initializeApp({
+  credential: cert({
     projectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
     clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
     privateKey: (process.env.FIREBASE_ADMIN_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
   }),
 });
 
-const db = admin.firestore();
+const db = getFirestore();
 const BATCH_SIZE = 400; // marge sous la limite Firestore de 500 écritures
 
 async function backfillCollection(tenantId, name, buildField) {
