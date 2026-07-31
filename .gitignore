@@ -10,3 +10,6 @@ node_modules/
 # firebase-debug.log
 
 *.tsbuildinfo
+
+# Local Netlify folder
+.netlify

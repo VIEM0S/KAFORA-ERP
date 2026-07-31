@@ -20,12 +20,14 @@ export default function POSPage() {
   const storeId = currentStore?.id;
 
   const { items, addItem, clearCart } = useCartStore();
-  const { products, customers, inventory, isLoading } = usePosData(tenantId, storeId);
+  const {
+    products, customers, inventory, isLoading,
+    isSearching, hasMore, search, setSearch, loadMore, searchCustomers,
+  } = usePosData(tenantId, storeId);
   const { isOnline, setIsOnline, pendingQueue, refreshQueue, isSyncing, runSync } = useOfflineSync();
   const outsideHours = useWorkingHoursWarning(user?.workingHours);
   const checkout = useCheckout({ tenantId, storeId, refreshQueue, setIsOnline });
 
-  const [search, setSearch] = useState('');
   const [showCustomerPicker, setShowCustomerPicker] = useState(false);
 
   // ─── Ajout au panier avec vérification stock ─────────────────────────────
@@ -79,6 +81,9 @@ export default function POSPage() {
           isLoading={isLoading}
           search={search}
           setSearch={setSearch}
+          isSearching={isSearching}
+          hasMore={hasMore}
+          onLoadMore={loadMore}
           checkoutError={checkout.checkoutError}
           showPayment={checkout.showPayment}
           onAddItem={handleAddItem}
@@ -116,6 +121,7 @@ export default function POSPage() {
         customers={customers}
         open={showCustomerPicker}
         onOpenChange={setShowCustomerPicker}
+        onSearch={searchCustomers}
       />
 
       <SuccessDialog

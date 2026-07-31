@@ -137,6 +137,14 @@ export default function CustomersPage() {
       customerType: form.customerType, creditLimit: Number(form.creditLimit) || 0,
       creditUsed: editing?.creditUsed || 0,
       notes: form.notes.trim() || null, isActive: form.isActive,
+      // Champ dénormalisé : un client se cherche par prénom, nom OU raison
+      // sociale, et Firestore ne sait pas interroger trois champs à la fois.
+      // On concatène le tout en minuscules pour une recherche par préfixe.
+      searchName: [
+        form.customerType === 'INDIVIDUAL' ? form.firstName.trim() : '',
+        form.customerType === 'INDIVIDUAL' ? form.lastName.trim() : '',
+        form.customerType === 'BUSINESS' ? form.companyName.trim() : '',
+      ].filter(Boolean).join(' ').toLowerCase(),
       updatedAt: serverTimestamp(),
     };
     try {

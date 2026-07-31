@@ -12,6 +12,9 @@ interface ProductCatalogProps {
   isLoading: boolean;
   search: string;
   setSearch: (v: string) => void;
+  isSearching: boolean;
+  hasMore: boolean;
+  onLoadMore: () => void;
   checkoutError: string | null;
   showPayment: boolean;
   onAddItem: (p: Product) => void;
@@ -24,17 +27,16 @@ interface ProductCatalogProps {
 }
 
 export function ProductCatalog({
-  products, inventory, isLoading, search, setSearch, checkoutError, showPayment, onAddItem,
+  products, inventory, isLoading, search, setSearch, isSearching, hasMore, onLoadMore,
+  checkoutError, showPayment, onAddItem,
   outsideHours, workingHours, isOnline, pendingQueue, isSyncing, onSync,
 }: ProductCatalogProps) {
   const { items } = useCartStore();
 
-  const filteredProducts = products.filter(p =>
-    !search ||
-    p.name.toLowerCase().includes(search.toLowerCase()) ||
-    p.sku.toLowerCase().includes(search.toLowerCase()) ||
-    (p.barcode || '').includes(search)
-  );
+  // Plus de filtrage en mémoire : la recherche est faite côté serveur par
+  // usePosData. Filtrer ici reviendrait à ne chercher que dans la page
+  // courante — donc à ne pas trouver un produit pourtant existant.
+  const filteredProducts = products;
 
   return (
     <div className="flex-1 flex flex-col gap-3 min-w-0">
@@ -151,9 +153,26 @@ export function ProductCatalog({
             {filteredProducts.length === 0 && (
               <div className="col-span-4 flex flex-col items-center justify-center py-16 text-gray-400">
                 <Package className="h-12 w-12 mb-4 opacity-30" />
-                <p>Aucun produit trouvé</p>
+                <p>{isSearching ? 'Recherche en cours…' : 'Aucun produit trouvé'}</p>
+                {!isSearching && search && !isOnline && (
+                  <p className="text-xs mt-2 text-center max-w-xs">
+                    Vous êtes hors ligne : seuls les produits déjà consultés
+                    sont disponibles à la recherche.
+                  </p>
+                )}
               </div>
             )}
+          </div>
+        )}
+
+        {hasMore && !search && (
+          <div className="flex justify-center py-4">
+            <button
+              onClick={onLoadMore}
+              className="px-4 py-2 text-sm font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100"
+            >
+              Afficher plus de produits
+            </button>
           </div>
         )}
       </div>

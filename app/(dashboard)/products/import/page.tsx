@@ -172,7 +172,9 @@ export default function ProductImportPage() {
         const productRef = doc(collection(db, tenantCol(tenantId, 'products')));
         const categoryId = r.categoryName ? (existingCatByName.get(r.categoryName.toLowerCase().trim()) || null) : null;
         batch.set(productRef, {
-          tenantId, sku: r.sku, barcode: r.barcode, name: r.name, description: null,
+          tenantId, sku: r.sku, barcode: r.barcode, name: r.name,
+          // Indispensable pour la recherche POS (voir product-form-dialog)
+          nameLower: (r.name || '').toLowerCase(), description: null,
           categoryId, unit: r.unit,
           purchasePrice: r.purchasePrice, sellingPrice: r.sellingPrice, taxRate: r.taxRate,
           trackInventory: true, alertThreshold: r.alertThreshold, isActive: true,

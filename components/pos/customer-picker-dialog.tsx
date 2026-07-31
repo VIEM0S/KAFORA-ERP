@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useCartStore } from '@/hooks/store';
@@ -9,12 +9,24 @@ interface CustomerPickerDialogProps {
   customers: Customer[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onSearch: (term: string) => void;
 }
 
-export function CustomerPickerDialog({ customers, open, onOpenChange }: CustomerPickerDialogProps) {
+export function CustomerPickerDialog({ customers, open, onOpenChange, onSearch }: CustomerPickerDialogProps) {
   const { customer, setCustomer } = useCartStore();
   const [customerSearch, setCustomerSearch] = useState('');
 
+  // La recherche part côté serveur : les clients ne sont plus tous chargés
+  // d'avance. Débounce pour ne pas requêter à chaque frappe.
+  useEffect(() => {
+    if (!open) return;
+    const timer = setTimeout(() => onSearch(customerSearch), 250);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerSearch, open]);
+
+  // Filtrage local en plus : il affine instantanément le lot déjà reçu
+  // pendant que la requête serveur est en vol (confort de frappe).
   const filteredCustomers = customers.filter(c => {
     const name = `${c.firstName || ''} ${c.lastName || ''} ${c.companyName || ''}`.toLowerCase();
     return !customerSearch || name.includes(customerSearch.toLowerCase()) || (c.phone || '').includes(customerSearch);
