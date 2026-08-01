@@ -189,8 +189,16 @@ export function Sidebar() {
   };
 
   const userRole = user?.role || 'CASHIER';
-  const filteredNav = NAV_ITEMS.filter(item => !item.roles || item.roles.includes(userRole));
-  const filteredAdmin = ADMIN_ITEMS.filter(item => !item.roles || item.roles.includes(userRole));
+  // SUPER_ADMIN (rôle éditeur) voit tout : sans cette exception, se promouvoir
+  // ferait DISPARAÎTRE le tableau de bord, le POS et le reste, puisqu'aucune
+  // entrée ne mentionne ce rôle dans sa liste. C'est cohérent avec
+  // ROLE_PERMISSIONS, où SUPER_ADMIN a toutes les permissions.
+  const seesEverything = userRole === 'SUPER_ADMIN';
+  const allowed = (item: { roles?: string[] }) =>
+    seesEverything || !item.roles || item.roles.includes(userRole);
+
+  const filteredNav = NAV_ITEMS.filter(allowed);
+  const filteredAdmin = ADMIN_ITEMS.filter(allowed);
 
   const collapsed = sidebarCollapsed;
 

@@ -19,6 +19,7 @@
 
 const { initializeApp, cert } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
+const { getFirestore } = require('firebase-admin/firestore');
 const fs = require('fs');
 
 const [email, saPath, flag] = process.argv.slice(2);
@@ -46,19 +47,43 @@ initializeApp({
 
 async function main() {
   const auth = getAuth();
+  const db = getFirestore();
   const user = await auth.getUserByEmail(email);
   const existing = user.customClaims || {};
+  const newRole = revoke ? 'OWNER' : 'SUPER_ADMIN';
 
-  if (revoke) {
-    // On retire SUPER_ADMIN sans toucher au reste : le compte garde son
-    // tenant et ses magasins, il redevient un utilisateur normal.
-    const { role, ...rest } = existing;
-    await auth.setCustomUserClaims(user.uid, { ...rest, role: 'OWNER' });
-    console.log(`Rôle SUPER_ADMIN retiré à ${email} (repassé en OWNER).`);
+  await auth.setCustomUserClaims(user.uid, { ...existing, role: newRole });
+
+  // INDISPENSABLE : la route de connexion resynchronise les claims depuis le
+  // profil Firestore à chaque login. Si on ne modifiait que le jeton, le
+  // rôle serait écrasé dès la reconnexion suivante — c'est-à-dire
+  // immédiatement, puisqu'une reconnexion est justement nécessaire pour
+  // qu'un changement de rôle prenne effet.
+  const tenantId = existing.tenantId;
+  if (tenantId) {
+    const ref = db.doc(`tenants/${tenantId}/users/${user.uid}`);
+    const snap = await ref.get();
+    if (snap.exists) {
+      await ref.update({ role: newRole, updatedAt: new Date().toISOString() });
+      console.log(`Profil Firestore mis à jour (tenants/${tenantId}/users/${user.uid}).`);
+    } else {
+      console.warn(
+        `ATTENTION : profil Firestore introuvable pour ce compte.\n` +
+        `Le rôle risque d'être écrasé à la prochaine connexion.`
+      );
+    }
   } else {
-    await auth.setCustomUserClaims(user.uid, { ...existing, role: 'SUPER_ADMIN' });
-    console.log(`${email} est maintenant SUPER_ADMIN.`);
+    console.warn(
+      `ATTENTION : aucun tenantId dans les claims de ce compte.\n` +
+      `Connectez-vous une fois à l'application avant de lancer ce script.`
+    );
   }
+
+  console.log(
+    revoke
+      ? `Rôle SUPER_ADMIN retiré à ${email} (repassé en OWNER).`
+      : `${email} est maintenant SUPER_ADMIN.`
+  );
 
   console.log(
     "\nIMPORTANT : le rôle est porté par le jeton d'authentification.\n" +
