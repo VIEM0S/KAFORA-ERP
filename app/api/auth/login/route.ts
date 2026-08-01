@@ -92,12 +92,22 @@ export async function POST(request: NextRequest) {
 
     // Injecter les custom claims Firebase
     const existingClaims = decoded;
-    if (existingClaims.tenantId !== tenantId || existingClaims.role !== userData.role) {
+    // Les claims viennent d'être resynchronisés ? Le jeton présenté porte
+    // encore les ANCIENNES valeurs, et le cookie de session est fabriqué à
+    // partir de ce jeton — il hériterait donc du rôle périmé. On le signale
+    // au client pour qu'il rafraîchisse son jeton et rejoue la connexion,
+    // sinon un changement de rôle ne prendrait effet qu'à la connexion
+    // SUIVANTE (comportement déroutant : « je me suis reconnecté et rien
+    // n'a changé »).
+    const claimsUpdated =
+      existingClaims.tenantId !== tenantId ||
+      existingClaims.role !== userData.role ||
+      JSON.stringify(existingClaims.storeIds ?? null) !== JSON.stringify(userData.storeIds ?? null);
+
+    if (claimsUpdated) {
       await adminAuth.setCustomUserClaims(uid, {
         tenantId,
         role: userData.role,
-        // Resynchronisé à chaque connexion : une réaffectation de magasin
-        // prend ainsi effet dès que l'utilisateur se reconnecte.
         storeIds: userData.storeIds ?? null,
       });
     }
@@ -130,6 +140,10 @@ export async function POST(request: NextRequest) {
       user: { id: userDoc.id, ...userData },
       tenant: { ...tenantData, subscription },
       stores,
+      // Le client doit rafraîchir son jeton et rejouer cette requête une
+      // fois : le cookie qu'il vient de recevoir porte encore les anciens
+      // droits (voir le commentaire sur claimsUpdated plus haut).
+      claimsUpdated,
     });
 
     response.cookies.set('__session', sessionCookie, {

@@ -63,7 +63,21 @@ export default function LoginPage() {
         body: JSON.stringify({ idToken }),
       });
 
-      const data = await response.json().catch(() => null);
+      let data = await response.json().catch(() => null);
+
+      // Droits modifiés depuis la dernière connexion (changement de rôle ou
+      // d'affectation magasin) : le cookie reçu a été fabriqué à partir d'un
+      // jeton périmé. On rafraîchit le jeton et on rejoue UNE fois, sinon
+      // l'utilisateur se connecte avec ses anciens droits sans le savoir.
+      if (response.ok && data?.claimsUpdated) {
+        const freshToken = await credential.user.getIdToken(true);
+        const retry = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken: freshToken }),
+        });
+        if (retry.ok) data = await retry.json();
+      }
 
       if (!response.ok) {
         throw new Error(

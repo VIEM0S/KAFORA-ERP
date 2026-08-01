@@ -56,7 +56,23 @@ export function useAuth() {
           return;
         }
 
-        const data = await res.json();
+        let data = await res.json();
+
+        // Les droits ont changé côté serveur : le cookie tout juste reçu a
+        // été fabriqué à partir d'un jeton périmé. On force le rafraîchissement
+        // du jeton et on rejoue UNE fois, pour que la session porte enfin les
+        // bons droits — sans cela, l'utilisateur verrait le bon menu mais se
+        // ferait refuser par les routes API.
+        if (data?.claimsUpdated) {
+          const freshToken = await firebaseUser.getIdToken(true);
+          const retry = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idToken: freshToken }),
+          });
+          if (retry.ok) data = await retry.json();
+        }
+
         setUser(data.user);
         setTenant(data.tenant);
         setStores(data.stores);
