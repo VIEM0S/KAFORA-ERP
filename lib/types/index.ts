@@ -49,6 +49,67 @@ export interface Tenant {
   createdAt: Date;
   updatedAt: Date;
   subscription?: Subscription;
+  transferSettings?: TransferSettings;
+}
+
+/**
+ * Réglages des transferts entre magasins, propres à chaque client.
+ *
+ * Une boutique de quartier où le patron gère tout n'a pas besoin d'un circuit
+ * de validation pour déplacer trois cartons ; une structure avec siège et
+ * direction, si. D'où le choix laissé au client plutôt qu'un processus imposé.
+ */
+export interface TransferSettings {
+  /** true = une demande doit être approuvée avant l'expédition. */
+  requireApproval: boolean;
+  /** Rôles autorisés à approuver une demande (si requireApproval). */
+  approveRoles: UserRole[];
+  /** Rôles autorisés à expédier et à confirmer une réception. */
+  shipRoles: UserRole[];
+}
+
+export type TransferStatus =
+  | 'PENDING'    // demande créée, en attente d'approbation
+  | 'APPROVED'   // validée (ou créée directement ainsi si pas d'approbation)
+  | 'SHIPPED'    // expédiée : stock SORTI de la source, pas encore entré
+  | 'RECEIVED'   // reçue : stock entré à destination — état final
+  | 'REJECTED'   // demande refusée — état final
+  | 'CANCELLED'; // annulée — état final
+
+export interface TransferLine {
+  productId: string;
+  productName: string;
+  productSku: string;
+  quantity: number;
+}
+
+/**
+ * Transfert de stock d'un magasin vers un autre.
+ *
+ * Le stock est déplacé en DEUX temps, jamais en un seul : il sort à
+ * l'expédition, il entre à la réception. Entre les deux il est « en transit »
+ * — invisible dans les deux magasins, mais traçable. C'est ce qui évite qu'un
+ * carton parti mais pas encore arrivé soit vendu deux fois, ou disparaisse
+ * des comptes.
+ */
+export interface Transfer {
+  id: string;
+  tenantId: string;
+  reference: string;
+  fromStoreId: string;
+  toStoreId: string;
+  status: TransferStatus;
+  lines: TransferLine[];
+  note: string | null;
+  requestedBy: string;
+  approvedBy: string | null;
+  shippedBy: string | null;
+  receivedBy: string | null;
+  createdAt: Date;
+  approvedAt: Date | null;
+  shippedAt: Date | null;
+  receivedAt: Date | null;
+  rejectionReason: string | null;
 }
 
 export interface Subscription {

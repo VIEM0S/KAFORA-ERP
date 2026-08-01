@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
+  ArrowRightLeft,
   LayoutDashboard, Package, Warehouse, ShoppingCart,
   Receipt, FileText, Users, CreditCard, Truck,
   DollarSign, BarChart3, Store, Bell, Settings,
@@ -52,6 +53,7 @@ const NAV_ITEMS: NavItem[] = [
       { title: 'Mouvements', href: '/inventory/movements', icon: History },
       { title: 'Alertes', href: '/inventory/alerts', icon: AlertTriangle, badgeKey: 'lowStock' },
       { title: 'Bons de commande', href: '/purchase-orders', icon: PackagePlus, roles: ['OWNER', 'ADMIN', 'MANAGER'] },
+      { title: 'Transferts', href: '/transfers', icon: ArrowRightLeft, roles: ['OWNER', 'ADMIN', 'MANAGER'] },
     ],
   },
   { title: 'Clients', href: '/customers', icon: Users },

@@ -182,6 +182,19 @@ service cloud.firestore {
       }
 
       // ─── Inventory ─────────────────────────────────────────────────────────
+      // Transferts entre magasins : lisibles par les deux magasins concernés,
+      // écrits uniquement par les routes /api/transfers/* (Admin SDK). Le
+      // serveur seul déplace le stock, en transaction — jamais le client,
+      // sinon un transfert pourrait être « reçu » deux fois et créditer le
+      // stock en double.
+      match /transfers/{transferId} {
+        allow read: if belongsToTenant(tenantId)
+                    && (allStores()
+                        || canAccessStore(resource.data.fromStoreId)
+                        || canAccessStore(resource.data.toStoreId));
+        allow write: if false;
+      }
+
       match /inventory/{invId} {
         allow read: if belongsToTenant(tenantId) && docInMyStore();
         allow write: if canWrite(tenantId) && isManager() && docInMyStore();
