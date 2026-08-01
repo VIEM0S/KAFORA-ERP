@@ -25,14 +25,23 @@ export function useAuth() {
         return;
       }
 
-      // Si le store a déjà les données (depuis localStorage Zustand), pas besoin de re-fetch
+      // Le profil persisté (localStorage Zustand) sert uniquement à afficher
+      // quelque chose immédiatement, sans écran de chargement. On le
+      // considère comme un CACHE D'AFFICHAGE, jamais comme la vérité.
+      //
+      // Il est systématiquement rafraîchi derrière : sans ça, un changement
+      // de rôle ou d'affectation magasin décidé par un administrateur ne
+      // prendrait jamais effet pour un utilisateur qui garde son navigateur
+      // ouvert — il continuerait de voir son ancien menu, alors que le
+      // serveur, lui, applique déjà les nouveaux droits. Deux vérités
+      // divergentes, et un utilisateur qui ne comprend pas pourquoi ses
+      // actions sont refusées.
       const storeUser = useAuthStore.getState().user;
       if (storeUser?.id === firebaseUser.uid) {
-        setLoading(false);
-        return;
+        setLoading(false); // on affiche le cache, et on continue pour le rafraîchir
       }
 
-      // Sinon, re-fetch le profil depuis l'API (après refresh de page par ex.)
+      // Re-fetch systématique du profil depuis l'API.
       try {
         const idToken = await firebaseUser.getIdToken();
         const res = await fetch('/api/auth/login', {
