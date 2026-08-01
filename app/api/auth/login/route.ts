@@ -119,6 +119,18 @@ export async function POST(request: NextRequest) {
     if (!tenantSnap.exists) {
       return NextResponse.json({ error: 'Tenant introuvable' }, { status: 404 });
     }
+    // Entreprise suspendue par l'éditeur : aucun de ses utilisateurs ne peut
+    // se connecter. Sans ce contrôle, `isActive` sur le tenant ne serait
+    // qu'un champ décoratif — désactiver un compte ne changerait rien.
+    // Le message reste factuel et sans reproche : c'est souvent le
+    // commerçant qui appellera pour comprendre, pas un fraudeur.
+    if (tenantSnap.data()?.isActive === false) {
+      return NextResponse.json(
+        { error: "L'accès à votre espace Kafora est suspendu. Contactez votre fournisseur." },
+        { status: 403 }
+      );
+    }
+
     const tenantData = { id: tenantSnap.id, ...tenantSnap.data() };
 
     // Récupérer les magasins du tenant

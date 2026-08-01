@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase/admin';
 import { cookies } from 'next/headers';
 import { getSubscriptionState, daysUntilFullBlock } from '@/lib/subscription/status';
+import { SUBSCRIPTION_PLANS } from '@/lib/constants';
+
+/** Tarifs mensuels affichés, pour la projection de revenu. */
+const PLAN_PRICES: Record<string, number> = Object.fromEntries(
+  Object.entries(SUBSCRIPTION_PLANS).map(([id, p]) => [id, (p as { price: number }).price])
+);
 
 /**
  * Console éditeur : liste de TOUS les clients (tenants).
@@ -61,6 +67,8 @@ export async function GET(_request: NextRequest) {
         return {
           id: doc.id,
           name: t.name || '(sans nom)',
+          isActive: t.isActive !== false,
+          suspensionReason: t.suspensionReason || null,
           email: t.email || null,
           phone: t.phone || null,
           city: t.city || null,
@@ -82,7 +90,26 @@ export async function GET(_request: NextRequest) {
     // dans lequel on veut agir, pas l'ordre alphabétique.
     rows.sort((a, b) => (a.daysLeft ?? 9999) - (b.daysLeft ?? 9999));
 
-    return NextResponse.json({ tenants: rows });
+    // ─── Agrégats plateforme ─────────────────────────────────────────────────
+    // Calculés à partir des lignes déjà chargées : aucune lecture
+    // supplémentaire, donc aucun coût Firestore ajouté.
+    const paidStates = rows.filter(r => r.status === 'ACTIVE');
+    const stats = {
+      tenantCount: rows.length,
+      activeCount: rows.filter(r => r.isActive).length,
+      suspendedCount: rows.filter(r => !r.isActive).length,
+      userCount: rows.reduce((a, r) => a + (r.userCount || 0), 0),
+      activeSubscriptions: paidStates.length,
+      trialCount: rows.filter(r => r.status === 'TRIAL').length,
+      expiringSoon: rows.filter(r => r.daysLeft !== null && r.daysLeft <= 7).length,
+      // Revenu mensuel récurrent : somme des tarifs affichés des forfaits des
+      // clients dont l'abonnement est ACTIF. C'est une PROJECTION, pas de
+      // l'encaissé — un client peut être actif sans avoir encore payé le mois
+      // en cours. Le réel se lit dans subscription_payments.
+      mrrProjected: paidStates.reduce((a, r) => a + (PLAN_PRICES[r.plan || ''] || 0), 0),
+    };
+
+    return NextResponse.json({ tenants: rows, stats });
   } catch (error) {
     console.error('Admin tenants error:', error);
     return NextResponse.json({ error: 'Erreur interne' }, { status: 500 });

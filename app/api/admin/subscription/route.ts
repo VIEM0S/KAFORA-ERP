@@ -42,6 +42,16 @@ export async function POST(request: NextRequest) {
     if (plan && !SUBSCRIPTION_PLANS[plan]) {
       return NextResponse.json({ error: 'Forfait inconnu' }, { status: 400 });
     }
+    // Montant OBLIGATOIRE : le tableau de bord affiche des revenus, et un
+    // paiement sans montant les fausserait silencieusement. Un règlement
+    // gracieux se saisit avec un montant de 0 et un motif en note — c'est
+    // explicite, et ça reste comptabilisable.
+    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0) {
+      return NextResponse.json(
+        { error: 'Indiquez le montant reçu (0 pour une prolongation gracieuse)' },
+        { status: 400 }
+      );
+    }
 
     const subRef = adminDb.doc(`tenants/${tenantId}/subscriptions/${tenantId}`);
     const subSnap = await subRef.get();
@@ -85,7 +95,7 @@ export async function POST(request: NextRequest) {
       tenantId,
       months,
       plan: finalPlan,
-      amount: typeof amount === 'number' ? amount : null,
+      amount,
       method: method?.trim() || null,
       note: note?.trim() || null,
       periodStart: base.toISOString(),
