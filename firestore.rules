@@ -32,6 +32,38 @@ service cloud.firestore {
       return isAuth() && tenantId() == tid;
     }
 
+    // ─── Abonnement ──────────────────────────────────────────────────────────
+    //
+    // Un compte dont l'abonnement a expiré passe en LECTURE SEULE : il consulte
+    // toujours son stock, ses ventes et ses créances, mais ne peut plus créer
+    // ni modifier de données depuis le navigateur. (L'encaissement au POS reste
+    // toléré 7 jours de plus — il passe par l'API, contrôlé côté serveur dans
+    // lib/api/subscription-guard.ts, pas ici.)
+    //
+    // On compare request.time à `writeBlockedAt`, un vrai Timestamp : les
+    // règles Firestore ne savent pas interpréter les dates stockées en chaîne
+    // ISO ailleurs dans le document.
+    //
+    // PERMISSIF PAR DÉFAUT, volontairement : abonnement introuvable ou champ
+    // absent ⇒ écriture autorisée. Verrouiller la caisse d'un commerce à cause
+    // d'une donnée manquante coûterait bien plus cher qu'accorder quelques
+    // jours gratuits de trop.
+    function subDocAllows(sub) {
+      return sub.status != 'CANCELLED'
+          && sub.status != 'EXPIRED'
+          && (!('writeBlockedAt' in sub) || request.time < sub.writeBlockedAt);
+    }
+
+    function subActive(tid) {
+      let path = /databases/$(database)/documents/tenants/$(tid)/subscriptions/$(tid);
+      return !exists(path) || subDocAllows(get(path).data);
+    }
+
+    // Raccourci : appartenance au tenant ET abonnement en cours de validité.
+    function canWrite(tid) {
+      return belongsToTenant(tid) && subActive(tid);
+    }
+
     // ─── Tenants ─────────────────────────────────────────────────────────────
 
     match /tenants/{tenantId} {
@@ -109,19 +141,19 @@ service cloud.firestore {
       // ─── Categories ────────────────────────────────────────────────────────
       match /categories/{catId} {
         allow read: if belongsToTenant(tenantId);
-        allow write: if belongsToTenant(tenantId) && isManager();
+        allow write: if canWrite(tenantId) && isManager();
       }
 
       // ─── Products ──────────────────────────────────────────────────────────
       match /products/{productId} {
         allow read: if belongsToTenant(tenantId);
-        allow write: if belongsToTenant(tenantId) && isManager();
+        allow write: if canWrite(tenantId) && isManager();
       }
 
       // ─── Inventory ─────────────────────────────────────────────────────────
       match /inventory/{invId} {
         allow read: if belongsToTenant(tenantId);
-        allow write: if belongsToTenant(tenantId) && isManager();
+        allow write: if canWrite(tenantId) && isManager();
       }
 
       match /inventory_movements/{movId} {
@@ -133,13 +165,13 @@ service cloud.firestore {
       // ─── Customers ─────────────────────────────────────────────────────────
       match /customers/{customerId} {
         allow read: if belongsToTenant(tenantId);
-        allow write: if belongsToTenant(tenantId) && isManager();
+        allow write: if canWrite(tenantId) && isManager();
       }
 
       // ─── Suppliers ─────────────────────────────────────────────────────────
       match /suppliers/{supplierId} {
         allow read: if belongsToTenant(tenantId);
-        allow write: if belongsToTenant(tenantId) && isManager();
+        allow write: if canWrite(tenantId) && isManager();
       }
 
       // ─── Purchase orders (bons de commande fournisseurs) ────────────────────

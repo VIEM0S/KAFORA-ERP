@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase/admin';
+import { Timestamp } from 'firebase-admin/firestore';
 import { SUBSCRIPTION_PLANS, PlanId } from '@/lib/constants';
 
 function slugify(str: string): string {
@@ -81,6 +82,13 @@ export async function POST(request: NextRequest) {
       trialEndsAt: trialEnd,
       currentPeriodStart: now,
       currentPeriodEnd: trialEnd,
+      // Horodatage lisible par firestore.rules : les règles ne savent pas
+      // comparer une chaîne ISO à l'heure courante, il leur faut un vrai
+      // Timestamp. Passé cette date, les écritures directes depuis le
+      // navigateur (produits, clients, stock…) sont refusées et le compte
+      // bascule en lecture seule. Le POS, lui, reste toléré 7 jours de plus
+      // via checkSubscriptionAllows() côté API (voir lib/subscription/status).
+      writeBlockedAt: Timestamp.fromDate(new Date(trialEnd)),
       limits,
       createdAt: now,
       updatedAt: now,
