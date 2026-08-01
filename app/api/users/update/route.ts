@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
     }
 
-    const { tenantId, uid, email, firstName, lastName, phone, role, newPassword, workingHours } = await request.json();
+    const { tenantId, uid, email, firstName, lastName, phone, role, newPassword, workingHours, storeIds } = await request.json();
     if (!tenantId || !uid) {
       return NextResponse.json({ error: 'Champs manquants' }, { status: 400 });
     }
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     if (!userSnap.exists) {
       return NextResponse.json({ error: 'Utilisateur introuvable' }, { status: 404 });
     }
-    const existing = userSnap.data() as { role?: string };
+    const existing = userSnap.data() as { role?: string; storeIds?: string[] | null };
 
     // On ne modifie jamais le compte OWNER via cette route
     if (existing?.role === 'OWNER') {
@@ -57,6 +57,35 @@ export async function POST(request: NextRequest) {
     }
 
     // 1. Mettre à jour Firebase Auth (email, mot de passe, nom affiché)
+    // ─── Affectation aux magasins ────────────────────────────────────────────
+    // Rôle final après cette mise à jour (le rôle peut changer ici même).
+    const finalRole = role || existing?.role;
+    let claimStoreIds: string[] | null = existing?.storeIds ?? null;
+
+    if (storeIds !== undefined) {
+      if (finalRole === 'ADMIN') {
+        claimStoreIds = null; // direction : tous les magasins
+      } else {
+        if (!Array.isArray(storeIds) || storeIds.length === 0) {
+          return NextResponse.json(
+            { error: 'Sélectionnez au moins un magasin pour cet utilisateur.' },
+            { status: 400 }
+          );
+        }
+        const unique = [...new Set(storeIds.filter((v: unknown) => typeof v === 'string' && v))];
+        const checks = await Promise.all(
+          unique.map(id => adminDb.doc(`tenants/${tenantId}/stores/${id}`).get())
+        );
+        if (checks.some(snap => !snap.exists)) {
+          return NextResponse.json({ error: 'Magasin inconnu' }, { status: 400 });
+        }
+        claimStoreIds = unique as string[];
+      }
+    } else if (finalRole === 'ADMIN') {
+      // Promotion vers ADMIN sans préciser les magasins : accès global.
+      claimStoreIds = null;
+    }
+
     const authUpdate: { email?: string; password?: string; displayName?: string } = {};
     if (email) authUpdate.email = email;
     if (newPassword) authUpdate.password = newPassword;
@@ -75,9 +104,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 2. Mettre à jour les custom claims si le rôle change
-    if (role && role !== existing?.role) {
-      await adminAuth.setCustomUserClaims(uid, { tenantId, role });
+    // 2. Reposer les custom claims si le rôle OU l'affectation magasin change.
+    //    Sans le second cas, retirer un magasin à un caissier resterait sans
+    //    effet sur son token — donc sans effet réel sur ses accès.
+    const roleChanged = Boolean(role && role !== existing?.role);
+    const storesChanged =
+      JSON.stringify(claimStoreIds) !== JSON.stringify(existing?.storeIds ?? null);
+    if (roleChanged || storesChanged) {
+      await adminAuth.setCustomUserClaims(uid, {
+        tenantId, role: finalRole, storeIds: claimStoreIds,
+      });
+    }
+    if (roleChanged) {
       await writeAuditLog({
         tenantId, userId: decoded.uid, action: 'ROLE_CHANGED',
         entity: 'users', entityId: uid,
@@ -93,6 +131,9 @@ export async function POST(request: NextRequest) {
     if (phone !== undefined) firestoreUpdate.phone = phone || null;
     if (role) firestoreUpdate.role = role;
     if (workingHours !== undefined) firestoreUpdate.workingHours = workingHours;
+    // Le profil doit refléter les claims : c'est lui que relit la route de
+    // connexion pour resynchroniser le token à chaque session.
+    if (storesChanged) firestoreUpdate.storeIds = claimStoreIds;
 
     await userRef.update(firestoreUpdate);
 

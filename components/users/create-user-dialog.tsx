@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useAuthStore } from '@/hooks/store';
 import { Eye, EyeOff, RefreshCw, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,10 +11,11 @@ interface UserForm {
   email: string; password: string; confirmPassword: string;
   firstName: string; lastName: string; phone: string;
   role: 'ADMIN' | 'MANAGER' | 'CASHIER';
+  storeIds: string[];
 }
 const EMPTY_FORM: UserForm = {
   email: '', password: '', confirmPassword: '',
-  firstName: '', lastName: '', phone: '', role: 'MANAGER',
+  firstName: '', lastName: '', phone: '', role: 'MANAGER', storeIds: [],
 };
 
 interface CreateUserDialogProps {
@@ -24,6 +26,7 @@ interface CreateUserDialogProps {
 }
 
 export function CreateUserDialog({ tenantId, open, onOpenChange, onCreated }: CreateUserDialogProps) {
+  const { stores } = useAuthStore();
   const [form, setForm] = useState<UserForm>(EMPTY_FORM);
   const [showPassword, setShowPassword] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -42,6 +45,9 @@ export function CreateUserDialog({ tenantId, open, onOpenChange, onCreated }: Cr
     if (!form.email.trim()) { setFormError('Email obligatoire'); return; }
     if (form.password.length < 6) { setFormError('Mot de passe : 6 caractères minimum'); return; }
     if (form.password !== form.confirmPassword) { setFormError('Les mots de passe ne correspondent pas'); return; }
+    if (form.role !== 'ADMIN' && form.storeIds.length === 0) {
+      setFormError('Sélectionnez au moins un magasin pour cet utilisateur'); return;
+    }
 
     setIsSaving(true); setFormError(null);
     try {
@@ -97,6 +103,46 @@ export function CreateUserDialog({ tenantId, open, onOpenChange, onCreated }: Cr
               </SelectContent>
             </Select>
           </div>
+
+          {/* Un Administrateur relève de la direction : accès à tous les
+              magasins. Pour les autres rôles, l'affectation est obligatoire —
+              sans elle, l'utilisateur verrait le stock, les ventes et la
+              caisse de toutes les boutiques. */}
+          {form.role === 'ADMIN' ? (
+            <p className="text-xs text-gray-500">
+              Un Administrateur a accès à tous les magasins.
+            </p>
+          ) : (
+            <div>
+              <Label>Magasins autorisés *</Label>
+              <div className="mt-2 space-y-2 max-h-40 overflow-y-auto rounded-lg border border-gray-200 p-3">
+                {stores.length === 0 && (
+                  <p className="text-xs text-gray-500">Aucun magasin disponible.</p>
+                )}
+                {stores.map(store => (
+                  <label key={store.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-gray-300"
+                      checked={form.storeIds.includes(store.id)}
+                      onChange={e =>
+                        setForm(f => ({
+                          ...f,
+                          storeIds: e.target.checked
+                            ? [...f.storeIds, store.id]
+                            : f.storeIds.filter(id => id !== store.id),
+                        }))
+                      }
+                    />
+                    {store.name}
+                  </label>
+                ))}
+              </div>
+              <p className="mt-1 text-xs text-gray-500">
+                Cet utilisateur ne verra que les données des magasins cochés.
+              </p>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="cu-password">Mot de passe *</Label>
             <div className="relative">

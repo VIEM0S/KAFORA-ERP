@@ -7,6 +7,19 @@ export interface User {
   phone: string | null;
   avatar: string | null;
   role: UserRole;
+  /**
+   * Magasins auxquels cet utilisateur a accès.
+   *
+   * `null` = accès à TOUS les magasins du tenant (propriétaire, direction,
+   * siège). Un tableau = accès limité à ces magasins uniquement.
+   *
+   * Avant l'introduction de ce champ, tout utilisateur voyait tous les
+   * magasins : un caissier de la boutique A pouvait consulter le stock, les
+   * ventes et la caisse de la boutique B. Les comptes existants n'ont pas ce
+   * champ et restent donc en accès global — c'est volontaire pour ne rien
+   * casser, mais chaque compte doit être revu et restreint.
+   */
+  storeIds?: string[] | null;
   isActive: boolean;
   emailVerified: boolean;
   mfaEnabled: boolean;

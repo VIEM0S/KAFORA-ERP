@@ -133,7 +133,8 @@ export async function POST(request: NextRequest) {
     await batch.commit();
 
     // 4. Injecter les custom claims Firebase Auth
-    await adminAuth.setCustomUserClaims(uid, { tenantId, role: 'OWNER' });
+    // Le créateur du compte est propriétaire : accès à tous les magasins.
+    await adminAuth.setCustomUserClaims(uid, { tenantId, role: 'OWNER', storeIds: null });
 
     return NextResponse.json({
       success: true,

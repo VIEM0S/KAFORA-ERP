@@ -64,6 +64,33 @@ service cloud.firestore {
       return belongsToTenant(tid) && subActive(tid);
     }
 
+    // ─── Cloisonnement par magasin ───────────────────────────────────────────
+    //
+    // `storeIds` est porté par le token (custom claim), donc non falsifiable
+    // côté client — comme tenantId. Deux cas :
+    //   absent ou null → accès à TOUS les magasins (propriétaire, direction)
+    //   tableau        → accès limité aux magasins listés
+    //
+    // Avant ce contrôle, un caissier de la boutique A pouvait consulter le
+    // stock, les ventes et la caisse de la boutique B. Les comptes créés
+    // avant n'ont pas le claim et gardent l'accès global : c'est délibéré
+    // pour ne rien casser, mais chaque compte existant doit être réaffecté.
+    function allStores() {
+      return !('storeIds' in request.auth.token) || request.auth.token.storeIds == null;
+    }
+
+    function canAccessStore(sid) {
+      return allStores() || (sid in request.auth.token.storeIds);
+    }
+
+    // Document rattaché à un magasin : on contrôle le storeId du document
+    // existant (lecture/suppression) ou celui envoyé (création/écriture).
+    function docInMyStore() {
+      return resource == null
+        ? canAccessStore(request.resource.data.storeId)
+        : canAccessStore(resource.data.storeId);
+    }
+
     // ─── Tenants ─────────────────────────────────────────────────────────────
 
     match /tenants/{tenantId} {
@@ -124,6 +151,10 @@ service cloud.firestore {
 
       // ─── Stores ────────────────────────────────────────────────────────────
       match /stores/{storeId} {
+        // La liste des magasins reste lisible pour tous : le sélecteur de
+        // magasin en a besoin, et il la filtre ensuite sur les affectations.
+        // Ce sont les DONNÉES du magasin (stock, ventes, caisse) qui sont
+        // cloisonnées, pas son existence.
         allow read: if belongsToTenant(tenantId);
         allow create, update: if belongsToTenant(tenantId) && isOwnerOrAdmin();
         // Fix (demande explicite) : supprimer un magasin peut couper l'accès à
@@ -152,8 +183,8 @@ service cloud.firestore {
 
       // ─── Inventory ─────────────────────────────────────────────────────────
       match /inventory/{invId} {
-        allow read: if belongsToTenant(tenantId);
-        allow write: if canWrite(tenantId) && isManager();
+        allow read: if belongsToTenant(tenantId) && docInMyStore();
+        allow write: if canWrite(tenantId) && isManager() && docInMyStore();
       }
 
       match /inventory_movements/{movId} {
@@ -193,7 +224,7 @@ service cloud.firestore {
 
       // ─── Sales ─────────────────────────────────────────────────────────────
       match /sales/{saleId} {
-        allow read: if belongsToTenant(tenantId);
+        allow read: if belongsToTenant(tenantId) && docInMyStore();
         // Créées uniquement par /api/pos/checkout (Admin SDK) — le serveur
         // recalcule les prix et le coût réel, jamais depuis le client.
         allow create: if false;
@@ -253,8 +284,8 @@ service cloud.firestore {
 
       // ─── Cash registers ────────────────────────────────────────────────────
       match /cash_registers/{regId} {
-        allow read: if belongsToTenant(tenantId);
-        allow write: if belongsToTenant(tenantId) && isManager();
+        allow read: if belongsToTenant(tenantId) && docInMyStore();
+        allow write: if canWrite(tenantId) && isManager() && docInMyStore();
       }
 
       match /cash_sessions/{sessionId} {

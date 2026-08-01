@@ -70,7 +70,16 @@ export async function POST(request: NextRequest) {
       .collection(`tenants/${tenantId}/stores`)
       .where('isActive', '==', true)
       .get();
-    const stores = storesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const allStores = storesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    // Cloisonnement : on ne renvoie que les magasins auxquels cet utilisateur
+    // a accès. Filtré ICI, côté serveur — l'interface ne doit jamais proposer
+    // un magasin dont les données lui seront de toute façon refusées par les
+    // règles Firestore. `storeIds` absent ou null = accès à tous (direction).
+    const allowed = userData.storeIds as string[] | null | undefined;
+    const stores = Array.isArray(allowed)
+      ? allStores.filter((st) => allowed.includes(st.id))
+      : allStores;
 
     // Récupérer l'abonnement
     const subSnap = await adminDb
@@ -84,7 +93,13 @@ export async function POST(request: NextRequest) {
     // Injecter les custom claims Firebase
     const existingClaims = decoded;
     if (existingClaims.tenantId !== tenantId || existingClaims.role !== userData.role) {
-      await adminAuth.setCustomUserClaims(uid, { tenantId, role: userData.role });
+      await adminAuth.setCustomUserClaims(uid, {
+        tenantId,
+        role: userData.role,
+        // Resynchronisé à chaque connexion : une réaffectation de magasin
+        // prend ainsi effet dès que l'utilisateur se reconnecte.
+        storeIds: userData.storeIds ?? null,
+      });
     }
 
     // Créer session cookie (7 jours)

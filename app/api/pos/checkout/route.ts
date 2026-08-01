@@ -42,6 +42,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
     }
 
+    // Cloisonnement magasin : le storeId vient du client, il faut donc le
+    // recouper avec l'affectation portée par le token. Sans ce contrôle, un
+    // caissier pourrait forger une requête et encaisser — donc décrémenter le
+    // stock et encaisser de l'argent — dans une boutique qui n'est pas la
+    // sienne. `storeIds` absent ou null = accès à tous (direction).
+    const callerStoreIds = decoded.storeIds as string[] | null | undefined;
+    if (Array.isArray(callerStoreIds) && !callerStoreIds.includes(storeId)) {
+      return NextResponse.json(
+        { error: "Vous n'avez pas accès à ce magasin" },
+        { status: 403 }
+      );
+    }
+
     // Abonnement : l'encaissement reste possible pendant la période de
     // tolérance (le commerce ne doit pas s'arrêter du jour au lendemain),
     // mais plus au-delà. Vérifié avant toute écriture, et avant le rejeu

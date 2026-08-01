@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
     }
 
-    const { tenantId, email, password, firstName, lastName, phone, role } = await request.json();
+    const { tenantId, email, password, firstName, lastName, phone, role, storeIds } = await request.json();
     if (!email || !password || !firstName || !lastName || !role || !tenantId) {
       return NextResponse.json({ error: 'Champs manquants' }, { status: 400 });
     }
@@ -28,6 +28,35 @@ export async function POST(request: NextRequest) {
     }
     if (!['ADMIN', 'MANAGER', 'CASHIER'].includes(role)) {
       return NextResponse.json({ error: 'Rôle invalide' }, { status: 400 });
+    }
+
+    // ─── Affectation aux magasins ────────────────────────────────────────────
+    // ADMIN = fonction de direction : accès à tous les magasins (null).
+    // MANAGER / CASHIER = personnel de terrain : affectation explicite exigée.
+    //
+    // On refuse le défaut permissif pour ces deux rôles. Créer un caissier
+    // sans préciser son magasin lui donnerait accès au stock, aux ventes et à
+    // la caisse de TOUTES les boutiques — c'est précisément le trou que cette
+    // affectation vient combler, il ne faut pas pouvoir le rouvrir par oubli.
+    let normalizedStoreIds: string[] | null = null;
+    if (role !== 'ADMIN') {
+      if (!Array.isArray(storeIds) || storeIds.length === 0) {
+        return NextResponse.json(
+          { error: 'Sélectionnez au moins un magasin pour cet utilisateur.' },
+          { status: 400 }
+        );
+      }
+      const unique = [...new Set(storeIds.filter((s: unknown) => typeof s === 'string' && s))];
+      // Les magasins doivent exister ET appartenir au tenant de l'appelant :
+      // sans cette vérification, un identifiant forgé donnerait un accès
+      // à un magasin d'un autre client.
+      const checks = await Promise.all(
+        unique.map(id => adminDb.doc(`tenants/${tenantId}/stores/${id}`).get())
+      );
+      if (checks.some(snap => !snap.exists)) {
+        return NextResponse.json({ error: 'Magasin inconnu' }, { status: 400 });
+      }
+      normalizedStoreIds = unique as string[];
     }
     // Fix (demande explicite) : un Admin ne doit pas pouvoir créer un autre
     // Admin sans contrôle — ça lui permettrait de se fabriquer un compte
@@ -68,6 +97,10 @@ export async function POST(request: NextRequest) {
       firstName, lastName,
       phone: phone || null,
       avatar: null, role,
+      // null = accès à tous les magasins (direction) ; tableau = accès limité.
+      // Un CASHIER sans magasin explicite verrait tout : on refuse ce défaut
+      // permissif pour les rôles opérationnels (voir plus bas la validation).
+      storeIds: normalizedStoreIds,
       isActive: true,
       emailVerified: false,
       mfaEnabled: false,
@@ -76,7 +109,9 @@ export async function POST(request: NextRequest) {
     });
 
     // Injecter les custom claims
-    await adminAuth.setCustomUserClaims(uid, { tenantId, role });
+    // storeIds va dans le token : c'est ainsi que firestore.rules peut
+    // vérifier l'accès magasin sans lire le profil à chaque requête.
+    await adminAuth.setCustomUserClaims(uid, { tenantId, role, storeIds: normalizedStoreIds });
 
     return NextResponse.json({ success: true, uid });
   } catch (error) {
