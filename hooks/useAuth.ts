@@ -37,11 +37,28 @@ export function useAuth() {
       // divergentes, et un utilisateur qui ne comprend pas pourquoi ses
       // actions sont refusées.
       const storeUser = useAuthStore.getState().user;
-      if (storeUser?.id === firebaseUser.uid) {
-        setLoading(false); // on affiche le cache, et on continue pour le rafraîchir
+      const hasCache = storeUser?.id === firebaseUser.uid;
+      if (hasCache) {
+        setLoading(false); // on affiche le cache immédiatement
       }
 
-      // Re-fetch systématique du profil depuis l'API.
+      // RAFRAÎCHISSEMENT LIMITÉ DANS LE TEMPS.
+      //
+      // /api/auth/login est protégée par un rate-limit (15 appels / 5 min).
+      // Rafraîchir à CHAQUE navigation épuisait ce quota en une quinzaine de
+      // pages, et le refus qui suivait était pris pour une session expirée :
+      // l'utilisateur se retrouvait déconnecté en pleine utilisation.
+      //
+      // On rafraîchit donc au plus une fois toutes les 5 minutes, ce qui
+      // suffit largement pour qu'un changement de rôle ou d'affectation
+      // magasin soit pris en compte rapidement, sans matraquer l'API.
+      const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+      const lastRefresh = Number(sessionStorage.getItem('auth-refreshed-at') || 0);
+      if (hasCache && Date.now() - lastRefresh < REFRESH_INTERVAL_MS) {
+        return;
+      }
+
+      // Re-fetch du profil depuis l'API.
       try {
         const idToken = await firebaseUser.getIdToken();
         const res = await fetch('/api/auth/login', {
@@ -51,11 +68,24 @@ export function useAuth() {
         });
 
         if (!res.ok) {
-          logout();
-          router.push('/login');
+          // On ne déconnecte QUE si le serveur rejette l'identité (401/403).
+          // Une erreur réseau, un rate-limit (429) ou une panne serveur (5xx)
+          // ne signifient pas que la session est invalide — déconnecter dans
+          // ces cas-là revient à éjecter un utilisateur légitime, parfois en
+          // pleine vente.
+          if (res.status === 401 || res.status === 403) {
+            logout();
+            router.push('/login');
+          } else if (!hasCache) {
+            // Pas de cache à afficher et le serveur ne répond pas : on ne
+            // peut rien montrer d'utile, on renvoie vers la connexion.
+            router.push('/login');
+          }
+          setLoading(false);
           return;
         }
 
+        sessionStorage.setItem('auth-refreshed-at', String(Date.now()));
         let data = await res.json();
 
         // Les droits ont changé côté serveur : le cookie tout juste reçu a
@@ -80,9 +110,17 @@ export function useAuth() {
           setCurrentStore(data.stores[0]);
         }
       } catch (err) {
+        // Coupure réseau, requête interrompue par une navigation, serveur
+        // injoignable… Rien de tout cela n'invalide la session. Si on a
+        // déjà un profil affiché, on le garde : déconnecter quelqu'un
+        // parce que sa connexion a hoqueté serait bien pire que de le
+        // laisser continuer avec des données d'il y a quelques minutes —
+        // a fortiori sur une caisse, en clientèle, avec un réseau instable.
         console.error('Auth init error:', err);
-        logout();
-        router.push('/login');
+        if (!hasCache) {
+          logout();
+          router.push('/login');
+        }
       } finally {
         setLoading(false);
       }
