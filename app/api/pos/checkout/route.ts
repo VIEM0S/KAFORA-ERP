@@ -276,6 +276,11 @@ export async function POST(request: NextRequest) {
       saleCostTotal += lineCostTotal;
       batchWrites.push(
         adminDb.collection(`tenants/${tenantId}/sales/${saleRef.id}/sale_items`).add({
+          // tenantId + createdAt sont nécessaires à l'agrégation quotidienne :
+          // ils permettent une requête collectionGroup unique sur la journée
+          // au lieu de relire chaque vente une par une (N+1).
+          tenantId,
+          createdAt: FieldValue.serverTimestamp(),
           productId: l.product.id,
           productName: l.product.name,
           productSku: l.product.sku,

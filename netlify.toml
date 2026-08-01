@@ -5,5 +5,9 @@ publish = ".next"
 [build.environment]
 NODE_VERSION = "20"
 
+[functions]
+directory = "netlify/functions"
+node_bundler = "esbuild"
+
 [[plugins]]
 package = "@netlify/plugin-nextjs"

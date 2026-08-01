@@ -13,21 +13,26 @@ import {
 import { DashboardLayout } from '@/components/layout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { formatCurrency, toFirestoreDate } from '@/lib/utils/helpers';
+import { formatCurrency } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
 import {
-  collection, query, orderBy, onSnapshot,
-  limit, where, getDocs
+  collection, query, orderBy, onSnapshot, where
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 
-interface Sale {
-  id: string; total: number; subtotal: number; status: string;
-  paymentMethod?: string; customerId?: string; createdAt: unknown;
+/** Agrégat quotidien pré-calculé (voir netlify/functions/aggregate-daily-stats). */
+interface DailyStat {
+  date: string;                 // AAAA-MM-JJ
+  revenue: number;
+  cost: number;                 // coût d'achat RÉEL, relevé à la vente
+  margin: number;
+  saleCount: number;
+  uniqueCustomers: number;
+  byPayment: Record<string, number>;
+  topProducts: { productId: string; name: string; revenue: number; quantity: number }[];
+  costIncomplete?: boolean;
 }
-interface Product { id: string; name: string; sku: string; categoryId?: string; purchasePrice: number; }
-interface Category { id: string; name: string; }
 
 
 const MONTHS_FR = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
@@ -56,115 +61,120 @@ export default function AnalyticsPage() {
   const tenantId = tenant?.id;
 
   const [period, setPeriod] = useState<'3m' | '6m' | '12m'>('6m');
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [topProducts, setTopProducts] = useState<{ name: string; revenue: number; qty: number }[]>([]);
+  const monthsCount = period === '3m' ? 3 : period === '6m' ? 6 : 12;
+  const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [loadingTop, setLoadingTop] = useState(true);
 
+  // Lecture des agrégats pré-calculés (un document par journée), produits par
+  // la fonction planifiée netlify/functions/aggregate-daily-stats.
+  //
+  // Avant : on lisait les 500 dernières ventes et on recalculait tout ici.
+  // Au-delà de 500 ventes les chiffres devenaient faux SANS AVERTIR, et
+  // chaque ouverture coûtait des centaines de lectures Firestore.
   useEffect(() => {
     if (!tenantId) return;
-    let done = 0;
-    const check = () => { done++; if (done >= 3) setIsLoading(false); };
+    setIsLoading(true);
 
-    const unsubS = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'sales')), orderBy('createdAt', 'desc'), limit(500)),
-      snap => { setSales(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Sale[]); check(); }
+    const from = new Date();
+    from.setUTCDate(from.getUTCDate() - monthsCount * 31);
+    const fromKey = from.toISOString().slice(0, 10);
+
+    const unsub = onSnapshot(
+      query(
+        collection(db, tenantCol(tenantId, 'daily_stats')),
+        where('date', '>=', fromKey),
+        orderBy('date', 'asc')
+      ),
+      snap => {
+        setDailyStats(snap.docs.map(d => d.data() as DailyStat));
+        setIsLoading(false);
+      },
+      () => setIsLoading(false)
     );
-    const unsubP = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'products')), where('isActive', '==', true)),
-      snap => { setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Product[]); check(); }
-    );
-    const unsubC = onSnapshot(
-      collection(db, tenantCol(tenantId, 'categories')),
-      snap => { setCategories(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Category[]); check(); }
-    );
-    return () => { unsubS(); unsubP(); unsubC(); };
-  }, [tenantId]);
+    return () => unsub();
+  }, [tenantId, monthsCount]);
 
-  // ─── Top produits réels depuis les sous-collections ──────────────────────
-  useEffect(() => {
-    if (!tenantId || sales.length === 0) return;
-    setLoadingTop(true);
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const monthSales = sales.filter(s => s.status === 'COMPLETED' && toFirestoreDate(s.createdAt) >= startOfMonth);
+  // Top produits : agrégés côté serveur sur TOUTES les lignes de vente.
+  // L'ancienne version échantillonnait 20 ventes maximum — un « top » qui
+  // ne reflétait donc pas la réalité dès qu'il y avait un peu de volume.
+  const topProducts = useMemo(() => {
+    const acc: Record<string, { name: string; revenue: number; qty: number }> = {};
+    for (const d of dailyStats) {
+      for (const p of d.topProducts || []) {
+        if (!acc[p.productId]) acc[p.productId] = { name: p.name, revenue: 0, qty: 0 };
+        acc[p.productId].revenue += p.revenue || 0;
+        acc[p.productId].qty += p.quantity || 0;
+      }
+    }
+    return Object.values(acc).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+  }, [dailyStats]);
 
-    if (monthSales.length === 0) { setTopProducts([]); setLoadingTop(false); return; }
-
-    // Charger les sale_items des ventes du mois (max 20 ventes pour performance)
-    const sampleSales = monthSales.slice(0, 20);
-    Promise.all(
-      sampleSales.map(s =>
-        getDocs(collection(db, `tenants/${tenantId}/sales/${s.id}/sale_items`))
-          .then(snap => snap.docs.map(d => d.data()))
-      )
-    ).then(allItems => {
-      const stats: Record<string, { name: string; revenue: number; qty: number }> = {};
-      allItems.flat().forEach((item: Record<string, unknown>) => {
-        const pid = item.productId as string;
-        const name = item.productName as string;
-        if (!pid || !name) return;
-        if (!stats[pid]) stats[pid] = { name, revenue: 0, qty: 0 };
-        stats[pid].revenue += (item.total as number) || 0;
-        stats[pid].qty += (item.quantity as number) || 0;
-      });
-      const sorted = Object.values(stats).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
-      setTopProducts(sorted);
-    }).finally(() => setLoadingTop(false));
-  }, [tenantId, sales.length]);
-
-  const completedSales = useMemo(() => sales.filter(s => s.status === 'COMPLETED'), [sales]);
   const now = new Date();
-  const monthsCount = period === '3m' ? 3 : period === '6m' ? 6 : 12;
 
   const monthlyData = useMemo(() => {
     const data = [];
     for (let i = monthsCount - 1; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthSales = completedSales.filter(s => {
-        const sd = toFirestoreDate(s.createdAt);
-        return sd.getFullYear() === d.getFullYear() && sd.getMonth() === d.getMonth();
+      const prefix = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const monthDays = dailyStats.filter(s => s.date.startsWith(prefix));
+      data.push({
+        month: MONTHS_FR[d.getMonth()],
+        ca: monthDays.reduce((a, s) => a + (s.revenue || 0), 0),
+        // Marge RÉELLE (chiffre d'affaires − coût d'achat relevé à la vente).
+        // L'ancienne version appliquait un coût forfaitaire de 70 % du
+        // sous-total : un chiffre inventé, sans rapport avec les achats.
+        marge: Math.round(monthDays.reduce((a, s) => a + (s.margin || 0), 0)),
+        ventes: monthDays.reduce((a, s) => a + (s.saleCount || 0), 0),
       });
-      const ca = monthSales.reduce((s, v) => s + (v.total || 0), 0);
-      const cout = monthSales.reduce((s, v) => s + (v.subtotal || v.total || 0) * 0.7, 0);
-      data.push({ month: MONTHS_FR[d.getMonth()], ca, marge: Math.round(ca - cout), ventes: monthSales.length });
     }
     return data;
-  }, [completedSales, period]);
+  }, [dailyStats, monthsCount]);
 
   const weeklyData = useMemo(() => {
     const days = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
     const today = new Date();
     const dow = today.getDay() === 0 ? 6 : today.getDay() - 1;
-    const startOfWeek = new Date(today); startOfWeek.setDate(today.getDate() - dow); startOfWeek.setHours(0,0,0,0);
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() - dow);
     return days.map((day, i) => {
-      const dayStart = new Date(startOfWeek); dayStart.setDate(startOfWeek.getDate() + i);
-      const dayEnd = new Date(dayStart); dayEnd.setDate(dayEnd.getDate() + 1);
-      const daySales = completedSales.filter(s => { const d = toFirestoreDate(s.createdAt); return d >= dayStart && d < dayEnd; });
-      return { day, ca: daySales.reduce((s, v) => s + (v.total || 0), 0), ventes: daySales.length };
+      const d = new Date(startOfWeek);
+      d.setDate(startOfWeek.getDate() + i);
+      const key = d.toISOString().slice(0, 10);
+      const stat = dailyStats.find(s => s.date === key);
+      return { day, ca: stat?.revenue || 0, ventes: stat?.saleCount || 0 };
     });
-  }, [completedSales]);
+  }, [dailyStats]);
 
   const paymentData = useMemo(() => {
     const counts: Record<string, number> = {};
-    completedSales.forEach(s => {
-      const pm = s.paymentMethod || 'CASH';
-      counts[pm] = (counts[pm] || 0) + (s.total || 0);
-    });
+    for (const d of dailyStats) {
+      for (const [k, v] of Object.entries(d.byPayment || {})) {
+        counts[k] = (counts[k] || 0) + v;
+      }
+    }
     const labels: Record<string, string> = { CASH:'Espèces', MOBILE_MONEY:'Mobile Money', CARD:'Carte', CREDIT:'Crédit' };
     return Object.entries(counts).map(([k, v]) => ({ name: labels[k] || k, value: Math.round(v) }));
-  }, [completedSales]);
+  }, [dailyStats]);
 
-  const thisMonthSales = completedSales.filter(s => { const d = toFirestoreDate(s.createdAt); return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); });
-  const lastMonthSales = completedSales.filter(s => { const d = toFirestoreDate(s.createdAt); const lm = new Date(now.getFullYear(), now.getMonth()-1,1); return d.getFullYear() === lm.getFullYear() && d.getMonth() === lm.getMonth(); });
-  const thisMonthCA = thisMonthSales.reduce((s, v) => s + (v.total || 0), 0);
-  const lastMonthCA = lastMonthSales.reduce((s, v) => s + (v.total || 0), 0);
+  const monthPrefix = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const thisMonth = dailyStats.filter(s => s.date.startsWith(monthPrefix(now)));
+  const lastMonth = dailyStats.filter(s => s.date.startsWith(monthPrefix(new Date(now.getFullYear(), now.getMonth() - 1, 1))));
+
+  const sum = (arr: DailyStat[], f: (s: DailyStat) => number) => arr.reduce((a, s) => a + (f(s) || 0), 0);
+
+  const thisMonthCA = sum(thisMonth, s => s.revenue);
+  const lastMonthCA = sum(lastMonth, s => s.revenue);
   const caEvolution = lastMonthCA > 0 ? ((thisMonthCA - lastMonthCA) / lastMonthCA) * 100 : 0;
-  const totalCA = completedSales.reduce((s, v) => s + (v.total || 0), 0);
-  const avgTicket = completedSales.length > 0 ? totalCA / completedSales.length : 0;
-  const uniqueCustomers = new Set(completedSales.map(s => s.customerId || 'comptoir')).size;
+  const totalCA = sum(dailyStats, s => s.revenue);
+  const totalMargin = sum(dailyStats, s => s.margin);
+  const totalSales = sum(dailyStats, s => s.saleCount);
+  const avgTicket = totalSales > 0 ? totalCA / totalSales : 0;
+  // Somme des clients uniques par jour : un client venu deux jours compte
+  // deux fois. C'est une approximation assumée — dédupliquer sur la période
+  // demanderait de relire les ventes, ce qu'on cherche précisément à éviter.
+  const uniqueCustomers = sum(dailyStats, s => s.uniqueCustomers);
+  const hasIncompleteCost = dailyStats.some(s => s.costIncomplete);
+  const noData = !isLoading && dailyStats.length === 0;
 
   if (isLoading) return (
     <DashboardLayout>
@@ -195,10 +205,27 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
+        {noData && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            <p className="font-semibold">Aucune statistique disponible pour cette période.</p>
+            <p className="mt-1">
+              Les chiffres sont calculés chaque nuit à partir des ventes de la veille.
+              Les ventes du jour n&apos;apparaîtront donc qu&apos;à partir de demain.
+            </p>
+          </div>
+        )}
+
+        {hasIncompleteCost && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            La marge affichée est partielle : le coût d&apos;achat n&apos;a pas pu être
+            retrouvé pour certaines ventes de la période.
+          </div>
+        )}
+
         {/* KPIs */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label:'CA total', value: formatCurrency(totalCA), sub:`${completedSales.length} ventes`, icon:DollarSign, color:'text-primary-600', bg:'bg-primary-100' },
+            { label:'CA total', value: formatCurrency(totalCA), sub:`${totalSales} ventes`, icon:DollarSign, color:'text-primary-600', bg:'bg-primary-100' },
             { label:'CA ce mois', value: formatCurrency(thisMonthCA), sub:`${caEvolution >= 0 ? '+' : ''}${caEvolution.toFixed(1)}% vs mois dernier`, icon: caEvolution >= 0 ? TrendingUp : TrendingDown, color: caEvolution >= 0 ? 'text-green-600' : 'text-red-600', bg: caEvolution >= 0 ? 'bg-green-100' : 'bg-red-100' },
             { label:'Ticket moyen', value: formatCurrency(avgTicket), sub:'par transaction', icon:ShoppingCart, color:'text-blue-600', bg:'bg-blue-100' },
             { label:'Clients actifs', value: uniqueCustomers, sub:'depuis le début', icon:Users, color:'text-purple-600', bg:'bg-purple-100' },
@@ -302,7 +329,7 @@ export default function AnalyticsPage() {
               <CardDescription>Basé sur les ventes du mois en cours</CardDescription>
             </CardHeader>
             <CardContent>
-              {loadingTop ? (
+              {isLoading ? (
                 <div className="flex items-center justify-center py-10 text-gray-400">
                   <RefreshCw className="h-4 w-4 animate-spin mr-2" />Calcul...
                 </div>
@@ -365,20 +392,19 @@ export default function AnalyticsPage() {
           {[
             { title:'Ce mois', items:[
               { label:'CA', value: formatCurrency(thisMonthCA), color:'text-primary-600' },
-              { label:'Transactions', value: thisMonthSales.length, color:'text-gray-900' },
-              { label:'Ticket moyen', value: thisMonthSales.length > 0 ? formatCurrency(thisMonthCA/thisMonthSales.length) : '—', color:'text-gray-900' },
+              { label:'Transactions', value: sum(thisMonth, s => s.saleCount), color:'text-gray-900' },
+              { label:'Ticket moyen', value: sum(thisMonth, s => s.saleCount) > 0 ? formatCurrency(thisMonthCA / sum(thisMonth, s => s.saleCount)) : '—', color:'text-gray-900' },
               { label:'vs mois dernier', value: `${caEvolution >= 0 ? '+' : ''}${caEvolution.toFixed(1)}%`, color: caEvolution >= 0 ? 'text-green-600' : 'text-red-600' },
             ]},
-            { title:'Catalogue', items:[
-              { label:'Produits actifs', value: products.length, color:'text-gray-900' },
-              { label:'Catégories', value: categories.length, color:'text-gray-900' },
-              { label:'Sans catégorie', value: products.filter(p => !p.categoryId).length, color:'text-amber-600' },
+            { title:'Rentabilité', items:[
+              { label:'Marge brute', value: formatCurrency(totalMargin), color: totalMargin >= 0 ? 'text-green-600' : 'text-red-600' },
+              { label:'Taux de marge', value: totalCA > 0 ? `${((totalMargin / totalCA) * 100).toFixed(1)}%` : '—', color:'text-gray-900' },
+              { label:'Coût des ventes', value: formatCurrency(totalCA - totalMargin), color:'text-gray-900' },
             ]},
             { title:'All-time', items:[
               { label:'CA total', value: formatCurrency(totalCA), color:'text-green-600' },
-              { label:'Total ventes', value: completedSales.length, color:'text-gray-900' },
-              { label:'Annulées', value: sales.filter(s => s.status === 'CANCELLED').length, color:'text-red-500' },
-              { label:'Clients différents', value: uniqueCustomers, color:'text-gray-900' },
+              { label:'Total ventes', value: totalSales, color:'text-gray-900' },
+              { label:'Clients servis', value: uniqueCustomers, color:'text-gray-900' },
             ]},
           ].map((block, i) => (
             <Card key={i}><CardContent className="p-5">
