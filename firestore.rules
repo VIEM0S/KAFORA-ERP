@@ -93,6 +93,15 @@ service cloud.firestore {
 
     // ─── Tenants ─────────────────────────────────────────────────────────────
 
+    // ─── Comptes éditeur ─────────────────────────────────────────────────────
+    // C'est cette collection qui détermine QUI administre Kafora. Y écrire
+    // reviendrait à s'auto-promouvoir éditeur et à voir tous les clients :
+    // elle est donc totalement fermée au client. Seul le SDK Admin y accède
+    // (route de connexion, script de création de compte éditeur).
+    match /_super_admin/{docId} {
+      allow read, write: if false;
+    }
+
     match /tenants/{tenantId} {
       allow read: if belongsToTenant(tenantId);
       allow update: if belongsToTenant(tenantId) && isOwnerOrAdmin();

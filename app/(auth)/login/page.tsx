@@ -99,7 +99,12 @@ export default function LoginPage() {
 
       // Le Caissier n'a pas accès au tableau de bord (CA jour/mois) — il va
       // directement à son outil de travail quotidien.
-      router.push(data.user?.role === 'CASHIER' ? '/pos' : '/dashboard');
+      // Un compte éditeur n'a pas de tenant : le tableau de bord n'aurait
+      // aucune donnée à afficher. Sa page d'accueil est la console clients.
+      const role = data.user?.role;
+      router.push(
+        role === 'SUPER_ADMIN' ? '/admin' : role === 'CASHIER' ? '/pos' : '/dashboard'
+      );
     } catch (err) {
       if ((err as AuthError).code) {
         setError(getFirebaseErrorMessage(err as AuthError));

@@ -45,7 +45,63 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Erreur Firestore: ' + (e instanceof Error ? e.message : String(e)) }, { status: 500 });
     }
 
+    // ─── Compte éditeur (SUPER_ADMIN) ────────────────────────────────────────
+    //
+    // Un super-admin n'appartient à AUCUN tenant : il administre Kafora, il
+    // n'en est pas client. Son profil vit donc dans `_super_admin/{uid}`, en
+    // dehors de l'arborescence des clients.
+    //
+    // Cette séparation n'est pas cosmétique : tant que le compte éditeur était
+    // aussi un tenant, il apparaissait dans sa propre liste de clients — avec
+    // le risque, une fois la liste longue, d'enregistrer un paiement ou de
+    // modifier un abonnement sur un vrai client en croyant être chez soi.
     if (userSnap.empty) {
+      const saSnap = await adminDb.doc(`_super_admin/${uid}`).get();
+      if (saSnap.exists && saSnap.data()?.isActive !== false) {
+        const sa = saSnap.data() || {};
+
+        // tenantId explicitement null : aucune donnée client ne lui est
+        // rattachée, et les règles Firestore ne lui ouvrent aucun tenant.
+        // Sa seule porte d'entrée est /api/admin/*, qui vérifie le rôle.
+        const claimsChanged = decoded.role !== 'SUPER_ADMIN' || decoded.tenantId != null;
+        if (claimsChanged) {
+          await adminAuth.setCustomUserClaims(uid, {
+            tenantId: null,
+            role: 'SUPER_ADMIN',
+            storeIds: null,
+          });
+        }
+
+        const saCookie = await adminAuth.createSessionCookie(idToken, {
+          expiresIn: 7 * 24 * 60 * 60 * 1000,
+        });
+
+        const saResponse = NextResponse.json({
+          user: {
+            id: uid,
+            uid,
+            email: sa.email || decoded.email || '',
+            firstName: sa.firstName || 'Administration',
+            lastName: sa.lastName || 'Kafora',
+            role: 'SUPER_ADMIN',
+            tenantId: null,
+            isActive: true,
+          },
+          tenant: null,
+          stores: [],
+          claimsUpdated: claimsChanged,
+        });
+
+        saResponse.cookies.set('__session', saCookie, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: 7 * 24 * 60 * 60,
+          path: '/',
+        });
+        return saResponse;
+      }
+
       return NextResponse.json({ error: 'Profil utilisateur introuvable' }, { status: 404 });
     }
 

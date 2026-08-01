@@ -193,9 +193,15 @@ export function Sidebar() {
   // ferait DISPARAÎTRE le tableau de bord, le POS et le reste, puisqu'aucune
   // entrée ne mentionne ce rôle dans sa liste. C'est cohérent avec
   // ROLE_PERMISSIONS, où SUPER_ADMIN a toutes les permissions.
-  const seesEverything = userRole === 'SUPER_ADMIN';
+  // Un compte éditeur n'appartient à aucun tenant : les pages métier
+  // (POS, stock, ventes…) n'auraient aucune donnée à afficher et
+  // planteraient sur un tenantId absent. On ne lui montre donc que ce qui
+  // le concerne : la console clients.
+  const isPublisher = userRole === 'SUPER_ADMIN';
   const allowed = (item: { roles?: string[] }) =>
-    seesEverything || !item.roles || item.roles.includes(userRole);
+    isPublisher
+      ? item.roles?.includes('SUPER_ADMIN') ?? false
+      : !item.roles || item.roles.includes(userRole);
 
   const filteredNav = NAV_ITEMS.filter(allowed);
   const filteredAdmin = ADMIN_ITEMS.filter(allowed);
