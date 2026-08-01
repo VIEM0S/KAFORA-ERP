@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  ArrowRightLeft,
+  ArrowRightLeft, Building2,
   LayoutDashboard, Package, Warehouse, ShoppingCart,
   Receipt, FileText, Users, CreditCard, Truck,
   DollarSign, BarChart3, Store, Bell, Settings,
@@ -30,6 +30,9 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  // Console éditeur : visible uniquement pour le rôle SUPER_ADMIN, qui ne
+  // peut pas être attribué depuis l'application (voir scripts/promote-super-admin).
+  { title: 'Clients Kafora', href: '/admin', icon: Building2, roles: ['SUPER_ADMIN'] },
   { title: 'Tableau de bord', href: '/dashboard', icon: LayoutDashboard, roles: ['OWNER', 'ADMIN', 'MANAGER'] },
   {
     title: 'Ventes', href: '/sales', icon: ShoppingCart,
