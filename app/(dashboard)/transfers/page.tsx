@@ -14,6 +14,7 @@ import { useAuthStore } from '@/hooks/store';
 import { collection, query, orderBy, onSnapshot, limit } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
+import { ProductPicker } from '@/components/transfers/product-picker';
 import { TRANSFER_STATUS_LABELS } from '@/lib/transfers/rules';
 import type { TransferStatus } from '@/lib/types';
 
@@ -209,15 +210,13 @@ function CreateTransferDialog({
   const [fromStoreId, setFromStoreId] = useState('');
   const [toStoreId, setToStoreId] = useState('');
   const [note, setNote] = useState('');
-  const [rows, setRows] = useState<{ productId: string; productName: string; quantity: string }[]>([
-    { productId: '', productName: '', quantity: '' },
-  ]);
+  const [rows, setRows] = useState<{ productId: string; productName: string; quantity: string }[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
   const reset = () => {
     setFromStoreId(''); setToStoreId(''); setNote('');
-    setRows([{ productId: '', productName: '', quantity: '' }]);
+    setRows([]);
     setLocalError(null);
   };
 
@@ -283,31 +282,49 @@ function CreateTransferDialog({
 
           <div>
             <Label>Produits *</Label>
-            <div className="space-y-2 mt-2">
-              {rows.map((r, i) => (
-                <div key={i} className="grid grid-cols-[1fr_1fr_80px] gap-2">
-                  <Input
-                    placeholder="Identifiant produit"
-                    value={r.productId}
-                    onChange={e => setRows(rs => rs.map((x, j) => j === i ? { ...x, productId: e.target.value } : x))}
-                  />
-                  <Input
-                    placeholder="Nom (indicatif)"
-                    value={r.productName}
-                    onChange={e => setRows(rs => rs.map((x, j) => j === i ? { ...x, productName: e.target.value } : x))}
-                  />
-                  <Input
-                    type="number" min="1" placeholder="Qté"
-                    value={r.quantity}
-                    onChange={e => setRows(rs => rs.map((x, j) => j === i ? { ...x, quantity: e.target.value } : x))}
-                  />
-                </div>
-              ))}
-            </div>
-            <Button variant="outline" size="sm" className="mt-2"
-              onClick={() => setRows(rs => [...rs, { productId: '', productName: '', quantity: '' }])}>
-              <Plus className="h-4 w-4 mr-1" /> Ajouter une ligne
-            </Button>
+            {!fromStoreId ? (
+              <p className="mt-2 text-sm text-gray-500">
+                Choisissez d&apos;abord le magasin source : le stock disponible
+                dépend de lui.
+              </p>
+            ) : (
+              <div className="mt-2">
+                <ProductPicker
+                  tenantId={tenant?.id}
+                  storeId={fromStoreId}
+                  alreadyPicked={rows.map(r => r.productId)}
+                  onPick={p =>
+                    setRows(rs => [
+                      ...rs,
+                      { productId: p.productId, productName: p.productName, quantity: '1' },
+                    ])
+                  }
+                />
+              </div>
+            )}
+
+            {rows.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {rows.map((r, i) => (
+                  <div key={r.productId} className="flex items-center gap-2">
+                    <span className="flex-1 text-sm text-gray-800 truncate">{r.productName}</span>
+                    <Input
+                      type="number" min="1" className="w-20"
+                      value={r.quantity}
+                      onChange={e =>
+                        setRows(rs => rs.map((x, j) => (j === i ? { ...x, quantity: e.target.value } : x)))
+                      }
+                    />
+                    <Button
+                      variant="outline" size="sm"
+                      onClick={() => setRows(rs => rs.filter((_, j) => j !== i))}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>
