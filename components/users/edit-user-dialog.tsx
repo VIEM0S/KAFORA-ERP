@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useAuthStore } from '@/hooks/store';
 import { Eye, EyeOff, RefreshCw, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,11 +14,12 @@ interface EditForm {
   phone: string; role: 'ADMIN' | 'MANAGER' | 'CASHIER';
   newPassword: string; confirmNewPassword: string;
   workStart: string; workEnd: string;
+  storeIds: string[];
 }
 const EMPTY_EDIT_FORM: EditForm = {
   uid: '', email: '', firstName: '', lastName: '',
   phone: '', role: 'MANAGER', newPassword: '', confirmNewPassword: '',
-  workStart: '', workEnd: '',
+  workStart: '', workEnd: '', storeIds: [],
 };
 
 interface EditUserDialogProps {
@@ -28,6 +30,7 @@ interface EditUserDialogProps {
 
 export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogProps) {
   const { toast } = useToast();
+  const { stores } = useAuthStore();
   const [editForm, setEditForm] = useState<EditForm>(EMPTY_EDIT_FORM);
   const [showEditPassword, setShowEditPassword] = useState(false);
   const [isEditSaving, setIsEditSaving] = useState(false);
@@ -47,6 +50,10 @@ export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogP
       confirmNewPassword: '',
       workStart: user.workingHours?.start || '',
       workEnd: user.workingHours?.end || '',
+      // Compte créé avant le cloisonnement : storeIds absent = accès global.
+      // On pré-coche alors tous les magasins plutôt que rien, pour ne pas
+      // faire croire à une restriction déjà en place.
+      storeIds: Array.isArray(user.storeIds) ? user.storeIds : stores.map(st => st.id),
     });
     setEditError(null);
     setShowEditPassword(false);
@@ -59,6 +66,9 @@ export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogP
     if (!editForm.firstName.trim() || !editForm.lastName.trim()) { setEditError('Prénom et nom obligatoires'); return; }
     if (!editForm.email.trim()) { setEditError('Email obligatoire'); return; }
     if (editForm.newPassword && editForm.newPassword.length < 6) { setEditError('Nouveau mot de passe : 6 caractères minimum'); return; }
+    if (editForm.role !== 'ADMIN' && editForm.storeIds.length === 0) {
+      setEditError('Sélectionnez au moins un magasin pour cet utilisateur'); return;
+    }
     if (editForm.newPassword && editForm.newPassword !== editForm.confirmNewPassword) { setEditError('Les mots de passe ne correspondent pas'); return; }
 
     setIsEditSaving(true); setEditError(null);
@@ -74,6 +84,7 @@ export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogP
           lastName: editForm.lastName,
           phone: editForm.phone,
           role: editForm.role,
+          storeIds: editForm.role === 'ADMIN' ? null : editForm.storeIds,
           newPassword: editForm.newPassword || undefined,
           workingHours: (editForm.workStart && editForm.workEnd)
             ? { start: editForm.workStart, end: editForm.workEnd } : null,
@@ -127,6 +138,44 @@ export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogP
               </SelectContent>
             </Select>
             <p className="text-xs text-gray-400">Ex. : promouvoir un Caissier en Responsable, ou l'inverse.</p>
+          </div>
+
+          <div className="col-span-2">
+            {editForm.role === 'ADMIN' ? (
+              <p className="text-xs text-gray-500">
+                Un Administrateur a accès à tous les magasins.
+              </p>
+            ) : (
+              <>
+                <Label>Magasins autorisés *</Label>
+                <div className="mt-2 space-y-2 max-h-36 overflow-y-auto rounded-lg border border-gray-200 p-3">
+                  {stores.length === 0 && (
+                    <p className="text-xs text-gray-500">Aucun magasin disponible.</p>
+                  )}
+                  {stores.map(store => (
+                    <label key={store.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-gray-300"
+                        checked={editForm.storeIds.includes(store.id)}
+                        onChange={e =>
+                          setEditForm(f => ({
+                            ...f,
+                            storeIds: e.target.checked
+                              ? [...f.storeIds, store.id]
+                              : f.storeIds.filter(id => id !== store.id),
+                          }))
+                        }
+                      />
+                      {store.name}
+                    </label>
+                  ))}
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  Cet utilisateur ne verra que les données des magasins cochés.
+                </p>
+              </>
+            )}
           </div>
           <div className="col-span-2 border-t pt-3 mt-1">
             <p className="text-sm font-medium text-gray-700 mb-1">Horaires habituels (optionnel)</p>
