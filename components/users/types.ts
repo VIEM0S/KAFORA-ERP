@@ -4,6 +4,8 @@ export interface UserProfile {
   role: 'OWNER' | 'ADMIN' | 'MANAGER' | 'CASHIER';
   isActive: boolean; lastLoginAt?: string; createdAt: unknown;
   workingHours?: { start: string; end: string } | null;
+  /** Magasins autorisés ; absent ou null = accès à tous (cf. lib/types). */
+  storeIds?: string[] | null;
   deletedAt?: unknown; deletedBy?: string;
 }
 
