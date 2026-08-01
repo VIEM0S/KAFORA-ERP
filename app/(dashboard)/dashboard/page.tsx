@@ -19,6 +19,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
+import { isManagerPlus as isManagerPlusRole } from '@/lib/auth/roles';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -116,7 +117,7 @@ export default function DashboardPage() {
   const { tenant, currentStore, user } = useAuthStore();
   const tenantId = tenant?.id;
   const storeId = currentStore?.id;
-  const isManagerPlus = ['OWNER', 'ADMIN', 'MANAGER'].includes(user?.role || '');
+  const isManagerPlus = isManagerPlusRole(user?.role);
 
   // Fix (demande explicite) : le CA jour/mois est réservé à Manager+. Le menu
   // et la redirection post-login évitent déjà ce cas, ceci protège contre un

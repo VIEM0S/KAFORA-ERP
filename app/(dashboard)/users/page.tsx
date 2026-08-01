@@ -13,6 +13,7 @@ import { EditUserDialog } from '@/components/users/edit-user-dialog';
 import { DeletionRequestsSection } from '@/components/users/deletion-requests-section';
 import { UsersTable } from '@/components/users/users-table';
 import type { UserProfile } from '@/components/users/types';
+import { isOwnerOrAdmin as isOwnerOrAdminRole, isManagerPlus as isManagerPlusRole } from '@/lib/auth/roles';
 
 export default function UsersPage() {
   const { tenant, user: currentUser } = useAuthStore();
@@ -24,8 +25,8 @@ export default function UsersPage() {
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  const isOwnerOrAdmin = ['OWNER', 'ADMIN'].includes(currentUser?.role || '');
-  const isManagerPlus = ['OWNER', 'ADMIN', 'MANAGER'].includes(currentUser?.role || '');
+  const isOwnerOrAdmin = isOwnerOrAdminRole(currentUser?.role);
+  const isManagerPlus = isManagerPlusRole(currentUser?.role);
 
   const byRole = (role: string) => users.filter(u => u.role === role);
 

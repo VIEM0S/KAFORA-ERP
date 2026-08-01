@@ -8,6 +8,7 @@ import { useAuthStore, useUIStore } from '@/hooks/store';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
+import { isManagerPlus as isManagerPlusRole, isOwnerOrAdmin as isOwnerOrAdminRole } from '@/lib/auth/roles';
 
 export function Header() {
   const { user, tenant, currentStore, stores, setCurrentStore } = useAuthStore();
@@ -54,7 +55,7 @@ export function Header() {
           if (data.isRead) return false;
           if (data.targetUserId) return data.targetUserId === userId;
           if (data.targetRole) return data.targetRole === userRole;
-          return ['OWNER', 'ADMIN', 'MANAGER'].includes(userRole || '');
+          return isManagerPlusRole(userRole);
         }).length;
         update();
       },
@@ -159,7 +160,7 @@ export function Header() {
         </Link>
 
         {/* Settings (Owner/Admin seulement) */}
-        {['OWNER', 'ADMIN'].includes(user?.role || '') && (
+        {isOwnerOrAdminRole(user?.role) && (
           <Link href="/settings"
             className="p-2.5 rounded-xl text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors">
             <Settings className="h-5 w-5" />

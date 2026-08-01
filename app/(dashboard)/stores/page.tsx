@@ -31,6 +31,7 @@ import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 import { checkPlanLimitClient } from '@/lib/firebase/plan-limits-client';
 import type { Store } from '@/lib/types';
+import { isOwnerOrAdmin as isOwnerOrAdminRole } from '@/lib/auth/roles';
 
 interface StoreForm {
   name: string; code: string; address: string; city: string;
@@ -55,7 +56,7 @@ export default function StoresPage() {
   const [deleteTarget, setDeleteTarget] = useState<Store | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const isOwnerOrAdmin = ['OWNER', 'ADMIN'].includes(useAuthStore.getState().user?.role || '');
+  const isOwnerOrAdmin = isOwnerOrAdminRole(useAuthStore.getState().user?.role);
   const isOwner = useAuthStore.getState().user?.role === 'OWNER';
 
   useEffect(() => {

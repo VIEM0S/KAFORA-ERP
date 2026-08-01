@@ -17,6 +17,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
+import { isManagerPlus as isManagerPlusRole } from '@/lib/auth/roles';
 
 interface Notification {
   id: string;
@@ -171,7 +172,7 @@ function useFirestoreAlerts(tenantId: string | undefined, userRole: string | und
         } else if (targetRole) {
           if (targetRole !== userRole) return;
         } else {
-          const isManagerPlus = ['OWNER', 'ADMIN', 'MANAGER'].includes(userRole);
+          const isManagerPlus = isManagerPlusRole(userRole);
           if (!isManagerPlus) return;
         }
         if (data.isRead) return;

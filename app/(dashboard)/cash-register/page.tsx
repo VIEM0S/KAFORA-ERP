@@ -25,6 +25,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
+import { isManagerPlus as isManagerPlusRole } from '@/lib/auth/roles';
 
 interface CashSession {
   status: 'OPEN' | 'CLOSED';
@@ -100,7 +101,7 @@ export default function CashRegisterPage() {
   // Réservé à Manager+ : un Caissier n'a besoin que du statut de la session en
   // cours pour ouvrir/fermer son poste, pas de l'historique des clôtures
   // passées (CA d'autres jours/caissiers/magasins).
-  const canViewHistory = user?.role && ['OWNER', 'ADMIN', 'MANAGER'].includes(user.role);
+  const canViewHistory = isManagerPlusRole(user?.role);
   useEffect(() => {
     if (!tenantId || !storeId || !canViewHistory) { setSessionHistory([]); return; }
     const q = query(
