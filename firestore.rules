@@ -297,7 +297,9 @@ service cloud.firestore {
 
       // ─── Sale returns (retours / remboursements) ─────────────────────────────
       match /sale_returns/{returnId} {
-        allow read: if belongsToTenant(tenantId);
+        // Cloisonné par magasin, comme les ventes : un retour révèle le
+        // chiffre et les remboursements d'une boutique.
+        allow read: if belongsToTenant(tenantId) && docInMyStore();
         // Écriture uniquement via /api/sales/returns/create (Admin SDK) :
         // le serveur recalcule le montant remboursé depuis la vente d'origine.
         allow write: if false;

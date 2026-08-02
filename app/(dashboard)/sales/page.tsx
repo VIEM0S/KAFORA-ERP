@@ -69,7 +69,10 @@ export default function SalesPage() {
   const [returnQty, setReturnQty] = useState<Record<string, string>>({});
   const [returnRestock, setReturnRestock] = useState<Record<string, boolean>>({});
   const [returnReason, setReturnReason] = useState('');
-  const [refundMethod, setRefundMethod] = useState<'CASH' | 'STORE_CREDIT' | 'ORIGINAL_PAYMENT_METHOD'>('CASH');
+  // « Avoir en magasin » retiré : aucune fonction ne créait d'avoir, le
+  // client repartait avec une promesse sans trace. Voir la route
+  // app/api/sales/returns/create.
+  const [refundMethod, setRefundMethod] = useState<'CASH' | 'ORIGINAL_PAYMENT_METHOD'>('CASH');
   const [isReturning, setIsReturning] = useState(false);
   const [returnError, setReturnError] = useState<string | null>(null);
 
@@ -476,7 +479,6 @@ export default function SalesPage() {
                 <SelectContent>
                   <SelectItem value="CASH">Espèces</SelectItem>
                   <SelectItem value="ORIGINAL_PAYMENT_METHOD">Mode de paiement d'origine</SelectItem>
-                  <SelectItem value="STORE_CREDIT">Avoir en magasin</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
       tenantId, saleId, items, reason, refundMethod, processedByName,
     }: {
       tenantId: string; saleId: string; items: ReturnItemInput[];
-      reason: string; refundMethod: 'CASH' | 'STORE_CREDIT' | 'ORIGINAL_PAYMENT_METHOD';
+      reason: string; refundMethod: 'CASH' | 'ORIGINAL_PAYMENT_METHOD';
       processedByName?: string;
     } = await request.json();
 
@@ -45,7 +45,11 @@ export async function POST(request: NextRequest) {
     if (tenantId !== callerTenantId) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
     }
-    if (!['CASH', 'STORE_CREDIT', 'ORIGINAL_PAYMENT_METHOD'].includes(refundMethod)) {
+    // « Avoir en magasin » a été retiré : l'option existait, la valeur était
+    // enregistrée, et RIEN ne créait d'avoir. Le client repartait persuadé
+    // d'avoir un crédit chez le commerçant, sans aucune trace exploitable.
+    // Mieux vaut ne pas proposer une fonction que d'en simuler une.
+    if (!['CASH', 'ORIGINAL_PAYMENT_METHOD'].includes(refundMethod)) {
       return NextResponse.json({ error: 'Mode de remboursement invalide' }, { status: 400 });
     }
 
@@ -110,7 +114,28 @@ export async function POST(request: NextRequest) {
       if (!invSnap.empty) invRefs[l.productId] = { ref: invSnap.docs[0].ref };
     }
 
+    // ── Crédit lié à la vente d'origine ──────────────────────────────────────
+    //
+    // Un retour sur une vente à crédit doit D'ABORD réduire la dette : rendre
+    // des espèces à un client qui doit encore de l'argent revient à le payer
+    // pour une marchandise qu'il n'a jamais réglée.
+    //
+    // Requête hors transaction : Firestore ne les autorise pas à l'intérieur.
+    const creditSnap = await adminDb
+      .collection(`tenants/${tenantId}/credits`)
+      .where('saleId', '==', saleId)
+      .limit(1)
+      .get();
+    const creditRef = creditSnap.empty ? null : creditSnap.docs[0].ref;
+    const customerRef = sale.customerId
+      ? adminDb.doc(`tenants/${tenantId}/customers/${sale.customerId}`)
+      : null;
+
     const returnRef = adminDb.collection(`tenants/${tenantId}/sale_returns`).doc();
+
+    /** Part du remboursement imputée sur la dette, et part rendue en espèces. */
+    let creditReduction = 0;
+    let cashRefund = refundAmount;
 
     await adminDb.runTransaction(async (tx) => {
       // ── Lectures ────────────────────────────────────────────────────────
@@ -166,6 +191,37 @@ export async function POST(request: NextRequest) {
       }, 0);
       const newSaleStatus = totalReturnedQty >= totalOriginalQty ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
 
+      // ── Imputation sur la dette avant tout remboursement en espèces ──────
+      const freshCredit = creditRef ? await tx.get(creditRef) : null;
+      const freshCustomer = customerRef ? await tx.get(customerRef) : null;
+
+      creditReduction = 0;
+      cashRefund = refundAmount;
+
+      if (freshCredit?.exists) {
+        const soldeAvant = (freshCredit.data()?.solde as number) || 0;
+        creditReduction = Math.min(refundAmount, soldeAvant);
+        cashRefund = refundAmount - creditReduction;
+
+        if (creditReduction > 0) {
+          const soldeApres = soldeAvant - creditReduction;
+          tx.update(freshCredit.ref, {
+            solde: soldeApres,
+            status: soldeApres === 0 ? 'PAID' : (freshCredit.data()?.status || 'PENDING'),
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+
+          // Libération du plafond, à hauteur de ce qui a été imputé.
+          if (freshCustomer?.exists) {
+            const used = (freshCustomer.data()?.creditUsed as number) || 0;
+            tx.update(freshCustomer.ref, {
+              creditUsed: Math.max(0, used - creditReduction),
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+          }
+        }
+      }
+
       tx.update(saleRef, { status: newSaleStatus, updatedAt: FieldValue.serverTimestamp() });
 
       tx.set(returnRef, {
@@ -173,6 +229,12 @@ export async function POST(request: NextRequest) {
         storeId: sale.storeId, customerId: sale.customerId || null,
         items: returnLines,
         refundAmount, refundMethod, reason: reason.trim(),
+        // Ventilation : ce qui a effacé de la dette, et ce qui est réellement
+        // sorti du tiroir. Sans cette distinction, le rapprochement de caisse
+        // déduirait la totalité du remboursement, y compris la part qui n'a
+        // jamais quitté la caisse.
+        creditReduction,
+        cashRefund,
         status: 'COMPLETED',
         processedBy: callerUid,
         processedByName: processedByName || null,

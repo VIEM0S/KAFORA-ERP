@@ -58,6 +58,7 @@ export default function CashRegisterPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [todaySales, setTodaySales] = useState<Sale[]>([]);
   const [creditRepaymentTotal, setCreditRepaymentTotal] = useState(0);
+  const [cashRefundTotal, setCashRefundTotal] = useState(0);
   const [sessionHistory, setSessionHistory] = useState<{ id: string; data: CashSession }[]>([]);
 
   const [showOpen, setShowOpen] = useState(false);
@@ -137,6 +138,41 @@ export default function CashRegisterPage() {
     );
   }, [tenantId, storeId, session?.status, session?.openedAt]);
 
+  // ─── Remboursements sortis du tiroir pendant la session ──────────────────
+  //
+  // Un retour de marchandise remboursé en espèces retire de l'argent de la
+  // caisse. Sans cette déduction, le solde attendu reste trop élevé et le
+  // caissier apparaît en manquant pour de l'argent qu'il a légitimement rendu.
+  //
+  // On ne compte que `cashRefund`, pas `refundAmount` : la part imputée sur
+  // une dette client n'a jamais quitté le tiroir.
+  useEffect(() => {
+    if (!tenantId || !storeId) { setCashRefundTotal(0); return; }
+
+    const sinceStart = session?.status === 'OPEN' && session.openedAt
+      ? new Date(session.openedAt)
+      : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
+
+    const q = query(
+      collection(db, tenantCol(tenantId, 'sale_returns')),
+      where('storeId', '==', storeId),
+      where('createdAt', '>=', sinceStart)
+    );
+    return onSnapshot(
+      q,
+      snap => {
+        const total = snap.docs
+          .map(d => d.data() as { refundMethod?: string; cashRefund?: number; refundAmount?: number })
+          .filter(d => (d.refundMethod || 'CASH') === 'CASH')
+          // `cashRefund` n'existe que sur les retours récents : pour les
+          // anciens, on retombe sur le montant total, seule valeur connue.
+          .reduce((sum, d) => sum + (Number(d.cashRefund ?? d.refundAmount) || 0), 0);
+        setCashRefundTotal(total);
+      },
+      () => setCashRefundTotal(0)
+    );
+  }, [tenantId, storeId, session?.status, session?.openedAt]);
+
   // ─── Historique des sessions (Firestore) ──────────────────────────────────
   // Réservé à Manager+ : un Caissier n'a besoin que du statut de la session en
   // cours pour ouvrir/fermer son poste, pas de l'historique des clôtures
@@ -185,7 +221,11 @@ export default function CashRegisterPage() {
     .reduce((sum, v) => sum + (v.acompte || 0), 0);
 
   const expectedBalance =
-    (session?.openingBalance || 0) + cashTotal + acompteTotal + creditRepaymentTotal;
+    (session?.openingBalance || 0)
+    + cashTotal
+    + acompteTotal
+    + creditRepaymentTotal
+    - cashRefundTotal;
   // Chiffre d'affaires et nombre de transactions : sur les ventes valides
   // également — afficher les annulées gonflerait le CA de la session.
   const totalToday = validSales.reduce((s, v) => s + (v.total || 0), 0);
@@ -445,6 +485,11 @@ export default function CashRegisterPage() {
                 )}
                 {creditRepaymentTotal > 0 && (
                   <li>Règlements de dettes : {formatCurrency(creditRepaymentTotal)}</li>
+                )}
+                {cashRefundTotal > 0 && (
+                  <li className="text-red-600">
+                    Remboursements rendus : −{formatCurrency(cashRefundTotal)}
+                  </li>
                 )}
               </ul>
             </div>
