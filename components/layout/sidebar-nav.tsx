@@ -167,7 +167,9 @@ export function Sidebar() {
       snap => setOverdueCount(snap.size)
     );
 
-    const unsubInv = onSnapshot(collection(db, tenantCol(tenantId, 'inventory')), async snap => {
+    const unsubInv = onSnapshot(
+      query(collection(db, tenantCol(tenantId, 'inventory')), where('storeId', '==', storeId)),
+      async snap => {
       const { getDocs } = await import('firebase/firestore');
       const prodSnap = await getDocs(collection(db, tenantCol(tenantId, 'products')));
       const thresh: Record<string, number> = {};

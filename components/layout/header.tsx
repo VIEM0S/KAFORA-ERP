@@ -34,7 +34,9 @@ export function Header() {
       query(collection(db, tenantCol(tenantId, 'credits')), where('status', '==', 'OVERDUE')),
       snap => { overdue = snap.size; update(); }
     );
-    const unsubI = onSnapshot(collection(db, tenantCol(tenantId, 'inventory')), async snap => {
+    const unsubI = onSnapshot(
+      query(collection(db, tenantCol(tenantId, 'inventory')), where('storeId', '==', currentStore?.id || '')),
+      async snap => {
       const { getDocs } = await import('firebase/firestore');
       const prodSnap = await getDocs(collection(db, tenantCol(tenantId, 'products')));
       const thresh: Record<string, number> = {};

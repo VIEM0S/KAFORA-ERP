@@ -32,7 +32,9 @@ export default function AlertsPage() {
       query(collection(db, tenantCol(tenantId, 'products')), where('isActive', '==', true), where('trackInventory', '==', true), orderBy('name')),
       snap => { setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Product[]); setIsLoading(false); }
     );
-    const unsubI = onSnapshot(collection(db, tenantCol(tenantId, 'inventory')), snap => {
+    const unsubI = onSnapshot(
+      query(collection(db, tenantCol(tenantId, 'inventory')), where('storeId', '==', storeId)),
+      snap => {
       setInventory(snap.docs.map(d => ({ id: d.id, ...d.data() })) as InventoryItem[]);
     });
     return () => { unsubP(); unsubI(); };

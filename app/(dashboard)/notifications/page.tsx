@@ -116,7 +116,9 @@ function useDerivedNotifications(tenantId: string | undefined, storeId: string |
       buildNotifications();
     });
 
-    const unsubI = onSnapshot(collection(db, tenantCol(tenantId, 'inventory')), snap => {
+    const unsubI = onSnapshot(
+      query(collection(db, tenantCol(tenantId, 'inventory')), where('storeId', '==', storeId)),
+      snap => {
       inventory = snap.docs.map(d => ({
         productId: d.data().productId, storeId: d.data().storeId, quantity: d.data().quantity || 0,
       }));

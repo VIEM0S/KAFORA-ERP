@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { formatCurrency } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
-import { collection, query, orderBy, onSnapshot, doc, updateDoc, addDoc, serverTimestamp, getDocs } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, doc, updateDoc, addDoc, serverTimestamp, getDocs, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { tenantCol, inventoryKey } from '@/lib/firebase/collections';
 import type { Product } from '@/lib/types';
@@ -43,7 +43,9 @@ export default function InventoryPage() {
       setProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Product[]);
       setIsLoading(false);
     });
-    const unsubI = onSnapshot(query(collection(db, tenantCol(tenantId, 'inventory'))), (snap) => {
+    const unsubI = onSnapshot(
+      query(collection(db, tenantCol(tenantId, 'inventory')), where('storeId', '==', storeId)),
+      (snap) => {
       setInventory(snap.docs.map((d) => ({ id: d.id, ...d.data() })) as InventoryItem[]);
     });
     return () => { unsubP(); unsubI(); };

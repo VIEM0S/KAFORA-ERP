@@ -39,8 +39,32 @@ const STATUS_STYLE: Record<TransferStatus, string> = {
 };
 
 export default function TransfersPage() {
-  const { tenant, stores, user } = useAuthStore();
+  const { tenant, stores: myStores } = useAuthStore();
   const tenantId = tenant?.id;
+
+  // TOUS les magasins du tenant, pas seulement ceux de l'utilisateur.
+  //
+  // `myStores` ne contient que les magasins auxquels il est affecté. Un
+  // responsable de boutique n'en voit donc qu'un — et se retrouvait dans
+  // l'impossibilité de demander un transfert, alors que c'est justement lui
+  // qui a besoin d'être réapprovisionné.
+  //
+  // Le cloisonnement reste entier : seul le NOM des magasins est lisible
+  // (leur stock et leurs ventes restent inaccessibles), et le serveur vérifie
+  // que l'utilisateur est bien concerné par le transfert qu'il demande.
+  const [allStores, setAllStores] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    if (!tenantId) return;
+    const unsub = onSnapshot(
+      collection(db, tenantCol(tenantId, 'stores')),
+      snap => setAllStores(snap.docs.map(d => ({ id: d.id, name: (d.data().name as string) || '—' })))
+    );
+    return () => unsub();
+  }, [tenantId]);
+
+  const stores = allStores.length > 0 ? allStores : myStores;
+  const myStoreIds = myStores.map(s => s.id);
 
   const [transfers, setTransfers] = useState<TransferRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -196,6 +220,8 @@ export default function TransfersPage() {
         open={showCreate}
         onOpenChange={setShowCreate}
         onError={setError}
+        stores={stores}
+        myStoreIds={myStoreIds}
       />
     </DashboardLayout>
   );
@@ -204,9 +230,15 @@ export default function TransfersPage() {
 /* ────────────────────────────────────────────────────────────────────────── */
 
 function CreateTransferDialog({
-  open, onOpenChange, onError,
-}: { open: boolean; onOpenChange: (o: boolean) => void; onError: (m: string | null) => void }) {
-  const { tenant, stores } = useAuthStore();
+  open, onOpenChange, onError, stores, myStoreIds,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onError: (m: string | null) => void;
+  stores: { id: string; name: string }[];
+  myStoreIds: string[];
+}) {
+  const { tenant } = useAuthStore();
   const [fromStoreId, setFromStoreId] = useState('');
   const [toStoreId, setToStoreId] = useState('');
   const [note, setNote] = useState('');
@@ -274,7 +306,14 @@ function CreateTransferDialog({
               <Select value={toStoreId} onValueChange={setToStoreId}>
                 <SelectTrigger><SelectValue placeholder="Choisir" /></SelectTrigger>
                 <SelectContent>
-                  {stores.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                  {stores.map(s => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                      {/* Repère visuel : un responsable de boutique demande
+                          presque toujours un transfert VERS son magasin. */}
+                      {myStoreIds.includes(s.id) ? ' (le vôtre)' : ''}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -331,6 +370,14 @@ function CreateTransferDialog({
             <Label>Note (optionnel)</Label>
             <Textarea value={note} onChange={e => setNote(e.target.value)} rows={2} />
           </div>
+
+          {fromStoreId && toStoreId &&
+            !myStoreIds.includes(fromStoreId) && !myStoreIds.includes(toStoreId) && (
+            <p className="text-sm text-amber-700">
+              Vous devez être affecté à l&apos;un des deux magasins pour créer ce
+              transfert. Choisissez le vôtre comme source ou comme destination.
+            </p>
+          )}
 
           {localError && <p className="text-sm text-red-600">{localError}</p>}
         </div>

@@ -37,7 +37,7 @@ interface Category { id: string; name: string; }
 
 // ─── Hook données dashboard ───────────────────────────────────────────────────
 
-function useDashboardData(tenantId: string | undefined, isManagerPlus: boolean) {
+function useDashboardData(tenantId: string | undefined, storeId: string | undefined, isManagerPlus: boolean) {
   const [sales, setSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
@@ -47,7 +47,7 @@ function useDashboardData(tenantId: string | undefined, isManagerPlus: boolean) 
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !storeId) return;
     let loaded = 0;
     const checkDone = () => { loaded++; if (loaded >= 4) setIsLoading(false); };
 
@@ -60,7 +60,7 @@ function useDashboardData(tenantId: string | undefined, isManagerPlus: boolean) 
       snap => { setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Product[]); checkDone(); }
     );
     const unsubI = onSnapshot(
-      collection(db, tenantCol(tenantId, 'inventory')),
+      query(collection(db, tenantCol(tenantId, 'inventory')), where('storeId', '==', storeId)),
       snap => { setInventory(snap.docs.map(d => ({ id: d.id, ...d.data() })) as InventoryItem[]); checkDone(); }
     );
     const unsubC = onSnapshot(
@@ -126,7 +126,7 @@ export default function DashboardPage() {
     if (user && !isManagerPlus) router.replace('/pos');
   }, [user, isManagerPlus, router]);
 
-  const { sales, products, inventory, credits, categories, monthlyCostTotal, isLoading } = useDashboardData(tenantId, isManagerPlus);
+  const { sales, products, inventory, credits, categories, monthlyCostTotal, isLoading } = useDashboardData(tenantId, storeId, isManagerPlus);
 
   // ─── Calculs stats ──────────────────────────────────────────────────────────
 
