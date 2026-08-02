@@ -33,6 +33,7 @@ import {
   parseProductFile, parsePastedText, buildTemplateWorkbook, type ParsedProductRow,
 } from '@/lib/utils/product-import';
 import { formatCurrency } from '@/lib/utils/helpers';
+import { skuKey } from '@/lib/products/sku';
 
 function slugify(str: string) {
   return str.toLowerCase().normalize('NFD')
@@ -180,6 +181,17 @@ export default function ProductImportPage() {
           trackInventory: true, alertThreshold: r.alertThreshold, isActive: true,
           createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
         });
+        // Réservation du SKU dans le même lot : un fichier contenant une
+        // référence déjà utilisée fait échouer ce lot au lieu de créer un
+        // doublon silencieux — le pire cas pour un import, car il ne se
+        // découvre qu'au moment où un scan tombe sur le mauvais article.
+        if (r.sku && r.sku.trim()) {
+          batch.set(doc(db, tenantCol(tenantId, 'product_skus'), skuKey(r.sku)), {
+            sku: r.sku.trim(),
+            productId: productRef.id,
+            createdAt: serverTimestamp(),
+          });
+        }
         if (r.initialStock > 0) {
           const invRef = doc(collection(db, tenantCol(tenantId, 'inventory')));
           batch.set(invRef, {

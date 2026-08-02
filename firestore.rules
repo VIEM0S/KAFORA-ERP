@@ -185,6 +185,27 @@ service cloud.firestore {
       }
 
       // ─── Products ──────────────────────────────────────────────────────────
+      // ─── Unicité des SKU ─────────────────────────────────────────────────
+      //
+      // Firestore n'a pas de contrainte d'unicité. Celle-ci en tient lieu :
+      // le SKU sert d'IDENTIFIANT de document, et `allow create` ne
+      // s'applique QUE si le document n'existe pas encore. Une seconde
+      // tentative sur le même SKU est donc refusée par la base — et comme
+      // la réservation est écrite dans le même lot que le produit, le refus
+      // annule aussi la création du produit.
+      //
+      // Le contrôle est ainsi arbitré par la base, pas par le code : deux
+      // utilisateurs enregistrant le même SKU au même instant ne peuvent pas
+      // passer tous les deux.
+      //
+      // Pas de `update` : une réservation ne se modifie pas, elle se libère
+      // (delete) puis se reprend (create).
+      match /product_skus/{skuId} {
+        allow read: if belongsToTenant(tenantId);
+        allow create, delete: if canWrite(tenantId) && isManager();
+        allow update: if false;
+      }
+
       match /products/{productId} {
         allow read: if belongsToTenant(tenantId);
         allow write: if canWrite(tenantId) && isManager();

@@ -8,7 +8,8 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { formatCurrency } from '@/lib/utils/helpers';
-import { collection, doc, addDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, updateDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { skuKey, hasSku } from '@/lib/products/sku';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 import { checkPlanLimitClient } from '@/lib/firebase/plan-limits-client';
@@ -132,17 +133,57 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
     };
 
     try {
+      // Produit + réservation du SKU dans un MÊME lot : si le SKU est déjà
+      // pris, la règle Firestore refuse la réservation et l'ensemble du lot
+      // est annulé. Le produit n'est donc jamais créé en doublon, même si
+      // deux personnes enregistrent le même SKU au même instant.
+      const batch = writeBatch(db);
+      const skusCol = tenantCol(tenantId, 'product_skus');
+      const newSku = form.sku.trim();
+
       if (editingProduct) {
-        await updateDoc(doc(db, tenantCol(tenantId, 'products'), editingProduct.id), payload);
+        const productRef = doc(db, tenantCol(tenantId, 'products'), editingProduct.id);
+        batch.update(productRef, payload);
+
+        // SKU modifié : on libère l'ancienne réservation et on prend la
+        // nouvelle. Sans la libération, l'ancien SKU resterait bloqué à vie.
+        const oldSku = editingProduct.sku?.trim() || '';
+        if (skuKey(oldSku) !== skuKey(newSku)) {
+          if (hasSku(oldSku)) {
+            batch.delete(doc(db, skusCol, skuKey(oldSku)));
+          }
+          if (hasSku(newSku)) {
+            batch.set(doc(db, skusCol, skuKey(newSku)), {
+              sku: newSku,
+              productId: editingProduct.id,
+              createdAt: serverTimestamp(),
+            });
+          }
+        }
       } else {
-        await addDoc(collection(db, tenantCol(tenantId, 'products')), {
-          ...payload,
-          createdAt: serverTimestamp(),
-        });
+        const productRef = doc(collection(db, tenantCol(tenantId, 'products')));
+        batch.set(productRef, { ...payload, createdAt: serverTimestamp() });
+        if (hasSku(newSku)) {
+          batch.set(doc(db, skusCol, skuKey(newSku)), {
+            sku: newSku,
+            productId: productRef.id,
+            createdAt: serverTimestamp(),
+          });
+        }
       }
+
+      await batch.commit();
       onOpenChange(false);
     } catch (err) {
-      setFormError('Erreur lors de la sauvegarde. R├®essayez.');
+      // L'échec le plus probable est un SKU déjà utilisé : on le dit
+      // explicitement plutôt que d'afficher une erreur générique qui
+      // laisserait l'utilisateur retenter indéfiniment la même saisie.
+      const msg = err instanceof Error ? err.message : '';
+      setFormError(
+        msg.includes('permission') || msg.includes('PERMISSION')
+          ? `La référence « ${form.sku.trim()} » est déjà utilisée par un autre produit.`
+          : 'Erreur lors de la sauvegarde. Réessayez.'
+      );
       console.error(err);
     } finally {
       setIsSaving(false);

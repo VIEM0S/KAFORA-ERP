@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { doc, deleteDoc } from 'firebase/firestore';
+import { doc, writeBatch } from 'firebase/firestore';
+import { skuKey, hasSku } from '@/lib/products/sku';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 import {
@@ -21,7 +22,15 @@ export function DeleteProductDialog({ tenantId, product, onOpenChange }: DeleteP
     if (!tenantId || !product) return;
     setIsDeleting(true);
     try {
-      await deleteDoc(doc(db, tenantCol(tenantId, 'products'), product.id));
+      // On libère la réservation du SKU en même temps que le produit :
+      // sinon la référence resterait bloquée et le commerçant ne pourrait
+      // plus la réutiliser pour un nouvel article.
+      const batch = writeBatch(db);
+      batch.delete(doc(db, tenantCol(tenantId, 'products'), product.id));
+      if (hasSku(product.sku)) {
+        batch.delete(doc(db, tenantCol(tenantId, 'product_skus'), skuKey(product.sku)));
+      }
+      await batch.commit();
       onOpenChange(false);
     } catch (err) {
       console.error(err);
