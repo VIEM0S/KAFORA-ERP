@@ -119,6 +119,15 @@ export async function POST(request: NextRequest) {
       }
 
       // ── Lectures d'abord ────────────────────────────────────────────────
+      // Coût d'achat actuel de chaque produit : nécessaire au calcul du coût
+      // moyen pondéré (voir plus bas).
+      const currentCosts: Record<string, number | null> = {};
+      for (const item of freshPoItems) {
+        const prodSnap = await tx.get(adminDb.doc(`tenants/${tenantId}/products/${item.productId}`));
+        const raw = prodSnap.data()?.purchasePrice;
+        currentCosts[item.productId] = raw == null ? null : Number(raw);
+      }
+
       const freshQtys: Record<string, number> = {};
       for (const item of freshPoItems) {
         const inv = invRefs[item.productId];
@@ -156,10 +165,33 @@ export async function POST(request: NextRequest) {
           qty: qtyNow, previousQuantity, newQuantity, unitCost: item.unitCost,
         });
 
-        // Met à jour le dernier coût d'achat connu du produit (utile pour le
-        // prochain checkout POS, où purchasePrice sert au calcul de marge).
+        // ── Coût moyen pondéré (CUMP) ─────────────────────────────────────
+        //
+        // Le code écrasait auparavant le prix d'achat par le DERNIER coût
+        // reçu. Conséquence : 100 sacs achetés à 5 000, plus 10 reçus à
+        // 8 000, et les 110 se retrouvaient valorisés à 8 000 — une valeur de
+        // stock surévaluée de 300 000 FCFA, et une marge sous-estimée sur les
+        // 100 anciens sacs.
+        //
+        // Le coût moyen pondéré est l'une des méthodes de valorisation
+        // retenues en comptabilité OHADA ; le « dernier coût » n'en est pas
+        // une. Formule : (stock ancien × coût ancien + reçu × coût reçu)
+        // divisé par le stock total.
+        //
+        // Les ventes DÉJÀ enregistrées ne sont pas affectées : leur coût est
+        // figé dans cost_summary au moment de la vente.
+        const previousCost = currentCosts[item.productId];
+        const weightedCost =
+          previousCost == null || previousQuantity <= 0
+            // Aucun coût connu, ou plus de stock : le coût reçu fait
+            // référence, sans moyenne à calculer.
+            ? item.unitCost
+            : Math.round(
+                (previousQuantity * previousCost + qtyNow * item.unitCost) / newQuantity
+              );
+
         tx.update(adminDb.doc(`tenants/${tenantId}/products/${item.productId}`), {
-          purchasePrice: item.unitCost,
+          purchasePrice: weightedCost,
           updatedAt: FieldValue.serverTimestamp(),
         });
       }
