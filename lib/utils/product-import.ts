@@ -1,4 +1,19 @@
-import ExcelJS from 'exceljs';
+// `exceljs` pèse à lui seul l'essentiel du poids de la page d'import
+// (~270 ko). Importé statiquement, il était téléchargé par tout visiteur de
+// la page — y compris ceux qui déposent un simple .csv, ou qui repartent
+// sans rien importer. Il est donc chargé À LA DEMANDE, au moment où un
+// classeur Excel doit réellement être lu ou écrit.
+//
+// Le type reste importé statiquement : `import type` disparaît à la
+// compilation et n'ajoute rien au bundle.
+import type ExcelJS from 'exceljs';
+
+/** Charge exceljs à la demande. Le module est mis en cache par le navigateur
+ *  après le premier appel : un second import ne le retélécharge pas. */
+async function loadExcelJS() {
+  const mod = await import('exceljs');
+  return mod.default ?? mod;
+}
 
 export interface ParsedProductRow {
   rowIndex: number; // 1-based, pour affichage humain (ligne du fichier)
@@ -176,7 +191,8 @@ export async function parseProductFile(file: File): Promise<ParsedProductRow[]> 
   }
 
   const buffer = await file.arrayBuffer();
-  const workbook = new ExcelJS.Workbook();
+  const ExcelJSRuntime = await loadExcelJS();
+  const workbook = new ExcelJSRuntime.Workbook();
   try {
     await workbook.xlsx.load(buffer);
   } catch {
@@ -207,7 +223,8 @@ export async function buildTemplateWorkbook(): Promise<Blob> {
   const headers = ['SKU', 'Nom', 'Catégorie', 'Prix Achat', 'Prix Vente', 'Stock Initial', 'Code Barre', 'Unité', 'TVA', 'Seuil Alerte'];
   const example = ['CLOU-4CM', 'Clous 4cm (boîte)', 'Quincaillerie', 800, 1200, 50, '', 'piece', 0, 10];
 
-  const workbook = new ExcelJS.Workbook();
+  const ExcelJSRuntime = await loadExcelJS();
+  const workbook = new ExcelJSRuntime.Workbook();
   const sheet = workbook.addWorksheet('Produits');
   sheet.addRow(headers);
   sheet.addRow(example);

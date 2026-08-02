@@ -5,11 +5,6 @@ import {
   TrendingUp, TrendingDown, DollarSign, Package,
   ShoppingCart, Users, RefreshCw, Calendar
 } from 'lucide-react';
-import {
-  AreaChart, Area, BarChart, Bar, LineChart, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend
-} from 'recharts';
 import { DashboardLayout } from '@/components/layout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -19,6 +14,22 @@ import {
   collection, query, orderBy, onSnapshot, where
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
+import dynamic from 'next/dynamic';
+
+// Graphiques chargés À LA DEMANDE : `recharts` pèse ~120 ko et bloquait
+// l'affichage de la page. Les indicateurs chiffrés apparaissent maintenant
+// tout de suite, les courbes se dessinent juste après.
+// `ssr: false` car recharts mesure le conteneur pour se dimensionner : il n'a
+// rien à faire côté serveur.
+const chartFallback = (
+  <div className="flex items-center justify-center h-[220px] text-sm text-gray-400">
+    Chargement du graphique…
+  </div>
+);
+const RevenueChart = dynamic(() => import('@/components/analytics/charts').then(m => m.RevenueChart), { ssr: false, loading: () => chartFallback });
+const WeeklyChart = dynamic(() => import('@/components/analytics/charts').then(m => m.WeeklyChart), { ssr: false, loading: () => chartFallback });
+const PaymentChart = dynamic(() => import('@/components/analytics/charts').then(m => m.PaymentChart), { ssr: false, loading: () => chartFallback });
+const VolumeChart = dynamic(() => import('@/components/analytics/charts').then(m => m.VolumeChart), { ssr: false, loading: () => chartFallback });
 import { tenantCol } from '@/lib/firebase/collections';
 
 /** Agrégat quotidien pré-calculé (voir netlify/functions/aggregate-daily-stats). */
@@ -36,25 +47,6 @@ interface DailyStat {
 
 
 const MONTHS_FR = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
-const COLORS = ['#2563eb','#16a34a','#d97706','#dc2626','#7c3aed','#0891b2','#ea580c','#4f46e5'];
-
-const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: { value: number; name: string; color: string }[]; label?: string }) => {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-sm min-w-[160px]">
-      <p className="font-semibold text-gray-800 mb-2">{label}</p>
-      {payload.map((p, i) => (
-        <div key={i} className="flex items-center justify-between gap-4">
-          <span className="flex items-center gap-1.5 text-gray-600">
-            <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ background: p.color }} />
-            {p.name}
-          </span>
-          <span className="font-bold text-gray-900">{p.value > 999 ? formatCurrency(p.value) : p.value}</span>
-        </div>
-      ))}
-    </div>
-  );
-};
 
 export default function AnalyticsPage() {
   const { tenant, currentStore } = useAuthStore();
@@ -250,28 +242,7 @@ export default function AnalyticsPage() {
             <CardDescription>Évolution sur les {monthsCount} derniers mois</CardDescription>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={monthlyData} margin={{ top:5, right:10, left:10, bottom:5 }}>
-                <defs>
-                  <linearGradient id="colorCA" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="colorMarge" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#16a34a" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#16a34a" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                <XAxis dataKey="month" tick={{ fontSize:12, fill:'#6b7280' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize:11, fill:'#6b7280' }} axisLine={false} tickLine={false}
-                  tickFormatter={v => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(0)}k` : v} />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend iconType="circle" iconSize={10} />
-                <Area type="monotone" dataKey="ca" name="CA" stroke="#2563eb" strokeWidth={2.5} fill="url(#colorCA)" />
-                <Area type="monotone" dataKey="marge" name="Marge" stroke="#16a34a" strokeWidth={2.5} fill="url(#colorMarge)" />
-              </AreaChart>
-            </ResponsiveContainer>
+            <RevenueChart data={monthlyData} />
           </CardContent>
         </Card>
 
@@ -283,16 +254,7 @@ export default function AnalyticsPage() {
               <CardDescription>CA par jour</CardDescription>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={weeklyData} margin={{ top:5, right:10, left:10, bottom:5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
-                  <XAxis dataKey="day" tick={{ fontSize:12, fill:'#6b7280' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize:11, fill:'#6b7280' }} axisLine={false} tickLine={false}
-                    tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k` : v} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar dataKey="ca" name="CA" fill="#2563eb" radius={[6,6,0,0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <WeeklyChart data={weeklyData} />
             </CardContent>
           </Card>
 
@@ -303,20 +265,7 @@ export default function AnalyticsPage() {
               <CardDescription>Répartition du CA total</CardDescription>
             </CardHeader>
             <CardContent>
-              {paymentData.length === 0 ? (
-                <div className="flex items-center justify-center h-48 text-gray-400 text-sm">Aucune donnée</div>
-              ) : (
-                <ResponsiveContainer width="100%" height={220}>
-                  <PieChart>
-                    <Pie data={paymentData} cx="50%" cy="50%" innerRadius={55} outerRadius={85}
-                      paddingAngle={3} dataKey="value">
-                      {paymentData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                    </Pie>
-                    <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                    <Legend iconType="circle" iconSize={10} formatter={v => <span className="text-sm text-gray-700">{v}</span>} />
-                  </PieChart>
-                </ResponsiveContainer>
-              )}
+              <PaymentChart data={paymentData} />
             </CardContent>
           </Card>
         </div>
@@ -373,16 +322,7 @@ export default function AnalyticsPage() {
               <CardDescription>Nombre de transactions par mois</CardDescription>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={monthlyData} margin={{ top:5, right:10, left:10, bottom:5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                  <XAxis dataKey="month" tick={{ fontSize:12, fill:'#6b7280' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize:11, fill:'#6b7280' }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Line type="monotone" dataKey="ventes" name="Ventes" stroke="#7c3aed" strokeWidth={2.5}
-                    dot={{ fill:'#7c3aed', r:4 }} activeDot={{ r:6 }} />
-                </LineChart>
-              </ResponsiveContainer>
+              <VolumeChart data={monthlyData} />
             </CardContent>
           </Card>
         </div>
