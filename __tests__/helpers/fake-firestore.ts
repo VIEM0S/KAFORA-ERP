@@ -117,6 +117,18 @@ export class FakeCollectionRef {
   limit(n: number): FakeQuery {
     return new FakeQuery(this.db, this.path, []).limit(n);
   }
+
+  /** Lecture de toute la collection, sans filtre — utilisé par exemple pour
+   *  récupérer les lignes d'une vente (sales/{id}/sale_items). */
+  async get() {
+    return new FakeQuery(this.db, this.path, []).get();
+  }
+
+  orderBy(_field: string, _dir?: string): FakeQuery {
+    // Le tri n'est pas simulé : les tests n'en dépendent pas, mais la méthode
+    // doit exister pour que les chaînes d'appel du code réel fonctionnent.
+    return new FakeQuery(this.db, this.path, []);
+  }
 }
 
 class FakeQuery {

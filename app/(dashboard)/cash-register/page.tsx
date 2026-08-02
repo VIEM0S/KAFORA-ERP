@@ -43,6 +43,7 @@ interface Sale {
   id: string; total: number; paymentMethod?: string;
   /** Part réglée immédiatement sur une vente à crédit — argent dans le tiroir. */
   acompte?: number;
+  status?: string;
   createdAt: unknown;
 }
 
@@ -169,18 +170,26 @@ export default function CashRegisterPage() {
   //
   // Un écart permanent et inexpliqué rend le contrôle de caisse inutile —
   // pire, il masque les vrais écarts, ceux qu'on cherche justement à détecter.
-  const cashSalesToday = todaySales.filter(s => (s.paymentMethod || 'CASH') === 'CASH');
+  // Seules les ventes FINALISÉES sont dans le tiroir. Une vente annulée a
+  // été remboursée au client : la compter gonflerait le solde attendu et
+  // ferait apparaître un manquant au caissier, pour une erreur qui n'est pas
+  // la sienne.
+  const validSales = todaySales.filter(s => (s.status || 'COMPLETED') === 'COMPLETED');
+
+  const cashSalesToday = validSales.filter(s => (s.paymentMethod || 'CASH') === 'CASH');
   const cashTotal = cashSalesToday.reduce((s, v) => s + (v.total || 0), 0);
 
   // Acomptes encaissés sur les ventes à crédit de la session.
-  const acompteTotal = todaySales
+  const acompteTotal = validSales
     .filter(s => (s.paymentMethod || '') === 'CREDIT')
     .reduce((sum, v) => sum + (v.acompte || 0), 0);
 
   const expectedBalance =
     (session?.openingBalance || 0) + cashTotal + acompteTotal + creditRepaymentTotal;
-  const totalToday = todaySales.reduce((s, v) => s + (v.total || 0), 0);
-  const txCount = todaySales.length;
+  // Chiffre d'affaires et nombre de transactions : sur les ventes valides
+  // également — afficher les annulées gonflerait le CA de la session.
+  const totalToday = validSales.reduce((s, v) => s + (v.total || 0), 0);
+  const txCount = validSales.length;
 
   // ─── Ouvrir la caisse ───────────────────────────────────────────────────
   const handleOpen = async () => {

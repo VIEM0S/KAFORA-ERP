@@ -61,6 +61,25 @@ export async function POST(request: NextRequest) {
       if (!invSnap.empty) invRefs[item.productId] = invSnap.docs[0].ref;
     }
 
+    // ── Crédit lié à cette vente ─────────────────────────────────────────────
+    //
+    // Annuler une vente à crédit sans toucher au crédit laissait le client
+    // débiteur d'une vente qui n'existe plus, et son plafond consommé
+    // d'autant. Au bout de quelques annulations, un bon client se retrouve
+    // bloqué en caisse sans que personne ne comprenne pourquoi.
+    //
+    // La requête est faite ICI : Firestore n'autorise pas les requêtes à
+    // l'intérieur d'une transaction.
+    const creditSnap = await adminDb
+      .collection(`tenants/${tenantId}/credits`)
+      .where('saleId', '==', saleId)
+      .limit(1)
+      .get();
+    const creditRef = creditSnap.empty ? null : creditSnap.docs[0].ref;
+    const customerRef = sale.customerId
+      ? adminDb.doc(`tenants/${tenantId}/customers/${sale.customerId}`)
+      : null;
+
     let movementsToWrite: Array<{ productId: string; qty: number; previousQuantity: number; newQuantity: number }> = [];
 
     await adminDb.runTransaction(async (tx) => {
@@ -89,6 +108,10 @@ export async function POST(request: NextRequest) {
         freshQtys[productId] = fresh.data()?.quantity || 0;
       }
 
+      // Lectures du crédit et du client, avant toute écriture.
+      const freshCredit = creditRef ? await tx.get(creditRef) : null;
+      const freshCustomer = customerRef ? await tx.get(customerRef) : null;
+
       // ── Écritures ────────────────────────────────────────────────────────
       for (const item of items) {
         const ref = invRefs[item.productId];
@@ -97,6 +120,30 @@ export async function POST(request: NextRequest) {
         const newQuantity = previousQuantity + item.quantity;
         tx.update(ref, { quantity: newQuantity, updatedAt: FieldValue.serverTimestamp() });
         movementsToWrite.push({ productId: item.productId, qty: item.quantity, previousQuantity, newQuantity });
+      }
+
+      // ── Crédit : on solde et on libère le plafond ────────────────────────
+      if (freshCredit?.exists) {
+        const creditData = freshCredit.data() as { solde?: number; status?: string };
+        const soldeRestant = creditData.solde || 0;
+
+        tx.update(freshCredit.ref, {
+          solde: 0,
+          status: 'CANCELLED',
+          motifAnnulation: motif.trim(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+
+        // On ne libère que le solde RESTANT, pas le montant initial : si le
+        // client a déjà remboursé une partie, ces versements ont déjà réduit
+        // son encours. Libérer le total le créditerait à tort.
+        if (freshCustomer?.exists && soldeRestant > 0) {
+          const used = (freshCustomer.data()?.creditUsed as number) || 0;
+          tx.update(freshCustomer.ref, {
+            creditUsed: Math.max(0, used - soldeRestant),
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+        }
       }
 
       tx.update(saleRef, {
