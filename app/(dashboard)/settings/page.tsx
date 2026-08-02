@@ -33,6 +33,14 @@ export default function SettingsPage() {
   const { tenant, user, setTenant } = useAuthStore();
   const tenantId = tenant?.id;
 
+  // Compte éditeur (SUPER_ADMIN) : il administre Kafora, il n'a pas
+  // d'entreprise. Les blocs « Informations entreprise » et « Mon profil »
+  // écrivent dans `tenants/{id}/...` — sans tenant, ils sont non seulement
+  // vides de sens (RCCM, NIF, devise, mentions de facture) mais leurs
+  // enregistrements échoueraient. Seul le changement de mot de passe, qui
+  // passe par Firebase Auth, reste pertinent.
+  const isPublisher = !tenantId && user?.role === 'SUPER_ADMIN';
+
   // ─── Infos entreprise ───────────────────────────────────────────────────────
   const [company, setCompany] = useState({
     name: tenant?.name || '',
@@ -171,10 +179,23 @@ export default function SettingsPage() {
       <div className="space-y-6 max-w-2xl">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Paramètres</h1>
-          <p className="text-sm text-gray-500 mt-1">Configuration de votre compte et entreprise</p>
+          <p className="text-sm text-gray-500 mt-1">
+            {isPublisher ? 'Configuration de votre compte administrateur' : 'Configuration de votre compte et entreprise'}
+          </p>
         </div>
 
+        {isPublisher && (
+          <Card>
+            <CardContent className="p-4 text-sm text-gray-600">
+              Ce compte administre la plateforme Kafora : il n&apos;est rattaché à
+              aucune entreprise cliente et n&apos;a donc ni informations de
+              facturation, ni magasins, ni stock.
+            </CardContent>
+          </Card>
+        )}
+
         {/* Infos entreprise */}
+        {!isPublisher && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Building2 className="h-5 w-5 text-primary-600" />Informations entreprise</CardTitle>
@@ -230,7 +251,10 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
+        )}
+
         {/* Profil personnel */}
+        {!isPublisher && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><User className="h-5 w-5 text-blue-600" />Mon profil</CardTitle>
@@ -264,6 +288,8 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        )}
 
         {/* Sécurité */}
         <Card>
