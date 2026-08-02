@@ -28,6 +28,15 @@ const STEPS = [
 // la source unique SUBSCRIPTION_PLANS.
 const PLANS = PLAN_DISPLAY_LIST;
 
+/**
+ * Version des conditions acceptées, enregistrée avec chaque compte.
+ *
+ * À INCRÉMENTER à chaque modification substantielle des CGV : sans cela,
+ * impossible de savoir plus tard quelle version un client donné a acceptée,
+ * ni de démontrer qu'il a bien consenti au texte qui lui est opposé.
+ */
+const TERMS_VERSION = '2026-08-01';
+
 export default function SetupPage() {
   const router = useRouter();
   const [step, setStep] = useState(0);
@@ -44,10 +53,20 @@ export default function SetupPage() {
   });
   const [plan, setPlan] = useState('BUSINESS');
 
+  // Acceptation explicite des conditions. Sans cette case, des CGV même
+  // parfaitement rédigées ne sont opposables à personne : il faut pouvoir
+  // démontrer que le client les a acceptées, à une date donnée, dans une
+  // version donnée.
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+
   const isStepValid = () => {
     if (step === 0) return !!(company.name && company.email);
     if (step === 1) return !!(store.name);
     if (step === 2) return !!(user.firstName && user.lastName && user.email && user.password && user.password === user.confirmPassword);
+    // Dernière étape : impossible de créer le compte sans accepter les
+    // conditions. Case NON pré-cochée — un consentement pré-coché n'en est
+    // pas un, et se retourne contre celui qui s'en prévaut.
+    if (step === 3) return acceptedTerms;
     return true;
   };
 
@@ -64,7 +83,13 @@ export default function SetupPage() {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company, store, user, plan }),
+        body: JSON.stringify({
+          company, store, user, plan,
+          // Preuve d'acceptation : version et horodatage sont enregistrés
+          // côté serveur avec le compte.
+          acceptedTerms: true,
+          termsVersion: TERMS_VERSION,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur lors de la création du compte');
@@ -291,6 +316,32 @@ export default function SetupPage() {
                   </button>
                 ))}
               </div>
+            )}
+
+            {step === 3 && (
+              <label className="mt-6 flex items-start gap-3 rounded-xl border border-gray-200 p-4 cursor-pointer hover:border-gray-300 transition-colors">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 flex-shrink-0"
+                  checked={acceptedTerms}
+                  onChange={e => setAcceptedTerms(e.target.checked)}
+                />
+                <span className="text-sm text-gray-700">
+                  J&apos;ai lu et j&apos;accepte les{' '}
+                  <a href="/cgv" target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline font-medium">
+                    conditions générales
+                  </a>{' '}
+                  et la{' '}
+                  <a href="/confidentialite" target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline font-medium">
+                    politique de confidentialité
+                  </a>{' '}
+                  de Kafora.
+                  <span className="block text-xs text-gray-500 mt-1">
+                    Les liens s&apos;ouvrent dans un nouvel onglet : vous ne perdrez
+                    pas les informations déjà saisies.
+                  </span>
+                </span>
+              </label>
             )}
 
             {/* Navigation */}

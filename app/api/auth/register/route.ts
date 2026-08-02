@@ -33,11 +33,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { company, store, user, plan } = await request.json();
+    const { company, store, user, plan, acceptedTerms, termsVersion } = await request.json();
 
     // Validation minimale
     if (!company?.name || !company?.email || !user?.email || !user?.password || !store?.name) {
       return NextResponse.json({ error: 'Champs obligatoires manquants' }, { status: 400 });
+    }
+
+    // Acceptation des conditions : contrôlée CÔTÉ SERVEUR, pas seulement par
+    // la case du formulaire. Sans ce contrôle, un appel direct à l'API
+    // créerait un compte sans consentement — et l'on ne pourrait plus
+    // opposer les conditions à ce client.
+    if (acceptedTerms !== true || !termsVersion) {
+      return NextResponse.json(
+        { error: 'Vous devez accepter les conditions générales pour créer un compte.' },
+        { status: 400 }
+      );
     }
 
     // 1. Créer le compte Firebase Auth
@@ -86,6 +97,15 @@ export async function POST(request: NextRequest) {
       isActive: true,
       createdAt: now,
       updatedAt: now,
+      // Preuve d'acceptation des conditions : version, date et adresse IP.
+      // C'est ce triplet qui permet, en cas de contestation, de démontrer
+      // QUI a accepté QUOI et QUAND.
+      termsAcceptance: {
+        version: termsVersion,
+        acceptedAt: now,
+        acceptedByEmail: user.email,
+        ip: getClientIp(request),
+      },
     });
 
     // Abonnement (période d'essai 14 jours)

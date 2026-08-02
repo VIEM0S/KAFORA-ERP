@@ -69,6 +69,11 @@ export async function GET(_request: NextRequest) {
           name: t.name || '(sans nom)',
           isActive: t.isActive !== false,
           suspensionReason: t.suspensionReason || null,
+          // Preuve d'acceptation des conditions : inutile de l'enregistrer
+          // si on ne peut pas la consulter le jour où elle sert.
+          termsAcceptance: t.termsAcceptance
+            ? { version: t.termsAcceptance.version, acceptedAt: t.termsAcceptance.acceptedAt }
+            : null,
           email: t.email || null,
           phone: t.phone || null,
           city: t.city || null,

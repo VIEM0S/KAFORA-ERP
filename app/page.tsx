@@ -272,9 +272,24 @@ export default function HomePage() {
               <Store className="h-6 w-6 text-white" />
               <span className="text-xl font-bold text-white">Kafora</span>
             </div>
-            <p className="text-gray-400">
-              © 2024 Kafora. Tous droits réservés.
-            </p>
+            <div className="flex flex-col md:flex-row items-center gap-4 md:gap-6">
+              <nav className="flex gap-4 text-sm">
+                <a href="/mentions-legales" className="text-gray-400 hover:text-white transition-colors">
+                  Mentions légales
+                </a>
+                <a href="/cgv" className="text-gray-400 hover:text-white transition-colors">
+                  CGV
+                </a>
+                <a href="/confidentialite" className="text-gray-400 hover:text-white transition-colors">
+                  Confidentialité
+                </a>
+              </nav>
+              {/* Année calculée : un copyright figé finit toujours par dater
+                  le site, ce qui donne l'impression d'un produit abandonné. */}
+              <p className="text-gray-400">
+                © {new Date().getFullYear()} Kafora. Tous droits réservés.
+              </p>
+            </div>
           </div>
         </div>
       </footer>

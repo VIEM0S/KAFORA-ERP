@@ -225,7 +225,7 @@ export default function LoginPage() {
         </Card>
 
         <p className="text-center text-sm text-primary-200 mt-8">
-          © 2024 Kafora. Tous droits réservés.
+          © {new Date().getFullYear()} Kafora. Tous droits réservés.
         </p>
       </div>
     </div>

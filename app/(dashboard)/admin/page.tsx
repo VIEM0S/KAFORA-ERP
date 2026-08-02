@@ -23,6 +23,7 @@ interface TenantRow {
   name: string;
   isActive: boolean;
   suspensionReason: string | null;
+  termsAcceptance: { version: string; acceptedAt: string } | null;
   email: string | null;
   phone: string | null;
   city: string | null;
@@ -197,6 +198,19 @@ export default function AdminConsolePage() {
                         <p className="text-xs text-gray-500 mt-2">
                           {t.userCount ?? '?'} utilisateur(s) · {t.storeCount ?? '?'} magasin(s) ·{' '}
                           {t.saleCount ?? '?'} vente(s)
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          {t.termsAcceptance ? (
+                            <>
+                              CGV v{t.termsAcceptance.version} acceptées le{' '}
+                              {new Date(t.termsAcceptance.acceptedAt).toLocaleDateString('fr-FR')}
+                            </>
+                          ) : (
+                            // Comptes créés avant la mise en place de
+                            // l'acceptation : à régulariser avant toute
+                            // facturation.
+                            <span className="text-amber-600">Conditions non acceptées</span>
+                          )}
                         </p>
                         <p className="text-xs mt-1">
                           {idle === null ? (
