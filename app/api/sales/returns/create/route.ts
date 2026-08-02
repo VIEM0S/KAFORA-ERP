@@ -85,7 +85,9 @@ export async function POST(request: NextRequest) {
       }
       // Prix unitaire net (remise + taxe déjà appliquées) recalculé à partir de la ligne d'origine
       const netUnitPrice = (original.unitPrice * (1 - (original.discount || 0) / 100)) * (1 + (original.tax || 0) / 100);
-      const lineTotal = Math.round(netUnitPrice * qty * 100) / 100;
+      // Arrondi à l'unité : le franc CFA n'a pas de centimes, et un
+      // remboursement à décimales ne peut pas être rendu en caisse.
+      const lineTotal = Math.round(netUnitPrice * qty);
       refundAmount += lineTotal;
       returnLines.push({
         productId: it.productId, productName: original.productName,
@@ -93,7 +95,7 @@ export async function POST(request: NextRequest) {
         restocked: !!it.restock,
       });
     }
-    refundAmount = Math.round(refundAmount * 100) / 100;
+    refundAmount = Math.round(refundAmount);
 
     // ── Trouver les docs inventory pour les articles à réintégrer ────────────
     const invRefs: Record<string, { ref: FirebaseFirestore.DocumentReference }> = {};

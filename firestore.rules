@@ -200,6 +200,25 @@ service cloud.firestore {
       //
       // Pas de `update` : une réservation ne se modifie pas, elle se libère
       // (delete) puis se reprend (create).
+      // ─── Statistiques quotidiennes ───────────────────────────────────────
+      //
+      // Agrégats calculés chaque nuit par la fonction planifiée
+      // netlify/functions/aggregate-daily-stats. La page Analytics les lit
+      // directement ; sans cette règle, la règle de refus par défaut les rend
+      // invisibles — les chiffres seraient calculés mais jamais affichés.
+      //
+      // Réservé aux Managers+ : ces documents contiennent le coût d'achat et
+      // la marge, que le personnel de caisse ne doit pas voir (cohérent avec
+      // la restriction déjà appliquée à cost_summary).
+      //
+      // Écriture interdite au client : seule la fonction planifiée écrit ici,
+      // via le SDK Admin. Un utilisateur pouvant modifier ces documents
+      // pourrait maquiller son propre chiffre d'affaires.
+      match /daily_stats/{dayId} {
+        allow read: if belongsToTenant(tenantId) && isManager();
+        allow write: if false;
+      }
+
       match /product_skus/{skuId} {
         allow read: if belongsToTenant(tenantId);
         allow create, delete: if canWrite(tenantId) && isManager();

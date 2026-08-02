@@ -182,37 +182,31 @@ export default function SetupPage() {
                   <Select value={company.country} onValueChange={v => setCompany({...company, country: v})}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
+                      {/* Zone UEMOA uniquement : tous ces pays utilisent le
+                          franc CFA (XOF), seule devise gérée par Kafora.
+                          Proposer le Ghana, le Nigeria ou le Maroc laissait
+                          croire à une prise en charge de leur monnaie, qui
+                          n'existe pas — les montants y seraient affichés en
+                          FCFA sans aucune conversion. */}
                       <SelectItem value="Mali">Mali</SelectItem>
                       <SelectItem value="Sénégal">Sénégal</SelectItem>
-                      <SelectItem value="Côte d'Ivoire">Côte d'Ivoire</SelectItem>
+                      <SelectItem value="Côte d'Ivoire">Côte d&apos;Ivoire</SelectItem>
                       <SelectItem value="Burkina Faso">Burkina Faso</SelectItem>
                       <SelectItem value="Niger">Niger</SelectItem>
-                      <SelectItem value="Guinée">Guinée</SelectItem>
-                      <SelectItem value="Mauritanie">Mauritanie</SelectItem>
                       <SelectItem value="Bénin">Bénin</SelectItem>
                       <SelectItem value="Togo">Togo</SelectItem>
-                      <SelectItem value="Ghana">Ghana</SelectItem>
-                      <SelectItem value="Nigeria">Nigeria</SelectItem>
-                      <SelectItem value="Cameroun">Cameroun</SelectItem>
-                      <SelectItem value="Maroc">Maroc</SelectItem>
-                      <SelectItem value="Tunisie">Tunisie</SelectItem>
-                      <SelectItem value="Algérie">Algérie</SelectItem>
-                      <SelectItem value="Turquie">Turquie</SelectItem>
-                      <SelectItem value="France">France</SelectItem>
-                      <SelectItem value="Autre">Autre</SelectItem>
+                      <SelectItem value="Guinée-Bissau">Guinée-Bissau</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
                   <Label>Devise</Label>
-                  <Select value={company.currency} onValueChange={v => setCompany({...company, currency: v})}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="XOF">XOF (Franc CFA UEMOA)</SelectItem>
-                      <SelectItem value="GNF">GNF (Franc guinéen)</SelectItem>
-                      <SelectItem value="MRU">MRU (Ouguiya)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  {/* Pas un choix : Kafora fonctionne exclusivement en franc
+                      CFA et ne convertit rien. Un sélecteur laisserait croire
+                      le contraire dès la première minute d'utilisation. */}
+                  <div className="flex h-10 items-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-700">
+                    FCFA (XOF)
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label>RCCM</Label>

@@ -120,15 +120,28 @@ export async function POST(request: NextRequest) {
       const quantity = Math.max(1, Math.floor(Number(it.quantity) || 0));
       const unitPrice = p.sellingPrice;
       const tax = p.taxRate || 0;
-      const lineTotal = quantity * unitPrice * (1 - discount / 100) * (1 + tax / 100);
+      // Arrondi À L'UNITÉ, pas au centime : le franc CFA n'a pas de
+      // subdivision. Un total à 12 345,67 serait affiché « 12 346 FCFA »,
+      // le client paierait 12 346, mais la base garderait 12 345,67 —
+      // un écart invisible qui s'accumule dans les crédits clients, la
+      // caisse et les agrégats mensuels.
+      // On arrondit LIGNE PAR LIGNE pour qu'une facture s'additionne
+      // exactement : sinon la somme des lignes affichées ne correspondrait
+      // pas au total réclamé, et un commerçant ne peut pas défendre une
+      // facture qui ne tombe pas juste.
+      const lineTotal = Math.round(quantity * unitPrice * (1 - discount / 100) * (1 + tax / 100));
       return { product: p, quantity, discount, unitPrice, tax, lineTotal };
     });
 
-    const subtotal = lines.reduce((s, l) => s + l.quantity * l.unitPrice * (1 - l.discount / 100), 0);
-    const taxTotal = lines.reduce((s, l) => s + l.quantity * l.unitPrice * (1 - l.discount / 100) * (l.tax / 100), 0);
+    const subtotal = Math.round(
+      lines.reduce((s, l) => s + l.quantity * l.unitPrice * (1 - l.discount / 100), 0)
+    );
+    const taxTotal = Math.round(
+      lines.reduce((s, l) => s + l.quantity * l.unitPrice * (1 - l.discount / 100) * (l.tax / 100), 0)
+    );
     const cartDiscountPercent = Math.min(Math.max(Number(discountPercent) || 0, 0), 100);
-    const discountAmount = subtotal * (cartDiscountPercent / 100);
-    const total = Math.round((subtotal + taxTotal - discountAmount) * 100) / 100;
+    const discountAmount = Math.round(subtotal * (cartDiscountPercent / 100));
+    const total = subtotal + taxTotal - discountAmount;
     const itemCount = lines.reduce((s, l) => s + l.quantity, 0);
 
     const acompte = paymentMethod === 'CREDIT' ? Math.max(0, Math.min(Number(amountReceived) || 0, total)) : total;

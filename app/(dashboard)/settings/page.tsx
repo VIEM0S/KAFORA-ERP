@@ -17,16 +17,13 @@ import { db } from '@/lib/firebase/client';
 import { auth } from '@/lib/firebase/client';
 import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 
-const CURRENCIES = [
-  { value: 'XOF', label: 'FCFA (XOF) — Franc CFA UEMOA' },
-  { value: 'GNF', label: 'Franc guinéen (GNF)' },
-  { value: 'MRU', label: 'Ouguiya (MRU)' },
-  { value: 'EUR', label: 'Euro (EUR)' },
-];
-
+// Pays de la zone UEMOA, tous en franc CFA (XOF). La Guinée et la
+// Mauritanie en ont été retirées : elles utilisent le franc guinéen et
+// l'ouguiya, que Kafora ne gère pas — les proposer laissait croire à une
+// prise en charge qui n'existe pas.
 const COUNTRIES = [
   'Mali', 'Sénégal', "Côte d'Ivoire", 'Burkina Faso',
-  'Niger', 'Guinée', 'Mauritanie', 'Togo', 'Bénin',
+  'Niger', 'Togo', 'Bénin', 'Guinée-Bissau',
 ];
 
 export default function SettingsPage() {
@@ -237,10 +234,16 @@ export default function SettingsPage() {
               </div>
               <div className="col-span-2 space-y-2">
                 <Label>Devise</Label>
-                <Select value={company.currency} onValueChange={v => setCompany(p => ({ ...p, currency: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{CURRENCIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
-                </Select>
+                {/* Champ informatif, pas un choix : Kafora fonctionne
+                    exclusivement en franc CFA. Un sélecteur laisserait croire
+                    à une conversion qui n'existe pas. */}
+                <div className="flex h-10 items-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-700">
+                  FCFA (XOF) — Franc CFA UEMOA
+                </div>
+                <p className="text-xs text-gray-500">
+                  Kafora fonctionne en franc CFA. Tous les montants — ventes,
+                  stock, crédits, factures — sont exprimés dans cette devise.
+                </p>
               </div>
             </div>
             <div className="flex justify-end">

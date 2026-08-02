@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
-import { doc, getDoc, collection, query, where, orderBy, getDocs, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, orderBy, limit, getDocs, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 import type { Customer } from '@/lib/types';
@@ -53,11 +53,16 @@ export default function CustomerDetailPage() {
       setIsLoading(false);
     });
 
-    // Charger les ventes du client
+    // Charger les ventes du client — bornées aux 100 plus récentes.
+    // Sans limite, la fiche d'un client fidèle depuis plusieurs années
+    // chargeait tout son historique à chaque ouverture : lent pour lui,
+    // coûteux en lectures Firestore, et sans utilité — on consulte les
+    // dernières transactions, pas celles d'il y a trois ans.
     getDocs(query(
       collection(db, tenantCol(tenantId, 'sales')),
       where('customerId', '==', id),
-      orderBy('createdAt', 'desc')
+      orderBy('createdAt', 'desc'),
+      limit(100)
     )).then(snap => setSales(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Sale[]));
 
     // Charger les crédits du client
