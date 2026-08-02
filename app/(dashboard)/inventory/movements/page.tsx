@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatCurrency, formatDateTime } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
-import { collection, query, orderBy, onSnapshot, limit } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, limit, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 
@@ -18,7 +18,9 @@ interface Movement {
   productId: string;
   productName?: string;
   storeId: string;
-  type: 'IN' | 'OUT' | 'ADJUSTMENT' | 'SALE';
+  type: 'IN' | 'OUT' | 'ADJUSTMENT' | 'SALE'
+      | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'TRANSFER_CANCEL'
+      | 'RETURN' | 'PURCHASE';
   quantity: number;
   previousQuantity: number;
   newQuantity: number;
@@ -27,16 +29,28 @@ interface Movement {
   createdAt: unknown;
 }
 
+// Tous les types de mouvement réellement écrits par l'application.
+//
+// Les types de transfert manquaient : ils retombaient sur « Ajustement » par
+// défaut, avec un signe erroné — une réception de 50 sacs s'affichait
+// « -50 » alors que le stock passait bien de 0 à 50. Un commerçant qui lit
+// son historique doit pouvoir distinguer une vente d'un transfert reçu.
 const TYPE_CONFIG = {
-  IN:         { label: 'Entrée',      color: 'bg-green-100 text-green-700',  icon: ArrowUpCircle,   sign: '+' },
-  OUT:        { label: 'Sortie',      color: 'bg-red-100 text-red-700',      icon: ArrowDownCircle, sign: '-' },
-  ADJUSTMENT: { label: 'Ajustement', color: 'bg-blue-100 text-blue-700',    icon: Settings,        sign: '±' },
-  SALE:       { label: 'Vente',       color: 'bg-orange-100 text-orange-700',icon: ArrowDownCircle, sign: '-' },
+  IN:              { label: 'Entrée',           color: 'bg-green-100 text-green-700',   icon: ArrowUpCircle,   sign: '+' },
+  OUT:             { label: 'Sortie',           color: 'bg-red-100 text-red-700',       icon: ArrowDownCircle, sign: '-' },
+  ADJUSTMENT:      { label: 'Ajustement',       color: 'bg-blue-100 text-blue-700',     icon: Settings,        sign: '±' },
+  SALE:            { label: 'Vente',            color: 'bg-orange-100 text-orange-700', icon: ArrowDownCircle, sign: '-' },
+  PURCHASE:        { label: 'Achat',            color: 'bg-green-100 text-green-700',   icon: ArrowUpCircle,   sign: '+' },
+  RETURN:          { label: 'Retour client',    color: 'bg-green-100 text-green-700',   icon: ArrowUpCircle,   sign: '+' },
+  TRANSFER_IN:     { label: 'Transfert reçu',   color: 'bg-teal-100 text-teal-700',     icon: ArrowUpCircle,   sign: '+' },
+  TRANSFER_OUT:    { label: 'Transfert envoyé', color: 'bg-purple-100 text-purple-700', icon: ArrowDownCircle, sign: '-' },
+  TRANSFER_CANCEL: { label: 'Transfert annulé', color: 'bg-gray-100 text-gray-700',     icon: ArrowUpCircle,   sign: '+' },
 };
 
 export default function MovementsPage() {
-  const { tenant } = useAuthStore();
+  const { tenant, currentStore } = useAuthStore();
   const tenantId = tenant?.id;
+  const storeId = currentStore?.id;
   const [movements, setMovements] = useState<Movement[]>([]);
   const [products, setProducts] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -53,7 +67,16 @@ export default function MovementsPage() {
     });
     // Charger les mouvements
     const unsubM = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'inventory_movements')), orderBy('createdAt', 'desc'), limit(500)),
+      // Filtre magasin OBLIGATOIRE : sans lui, chaque responsable voyait
+      // l'historique de TOUTES les boutiques — y compris celles qu'il ne gère
+      // pas. Et avec le cloisonnement dans les règles, la requête serait
+      // purement rejetée, laissant la page vide.
+      query(
+        collection(db, tenantCol(tenantId, 'inventory_movements')),
+        where('storeId', '==', storeId),
+        orderBy('createdAt', 'desc'),
+        limit(500)
+      ),
       snap => {
         setMovements(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Movement[]);
         setIsLoading(false);
@@ -70,8 +93,19 @@ export default function MovementsPage() {
   });
 
   // Stats
-  const totalEntrees = movements.filter(m => m.type === 'IN').reduce((s, m) => s + Math.abs(m.quantity), 0);
-  const totalSorties = movements.filter(m => ['OUT', 'SALE'].includes(m.type)).reduce((s, m) => s + Math.abs(m.quantity), 0);
+  // Les totaux se calculent à partir du SENS du type, pas d'une liste
+  // figée : sans les types de transfert, « Total entrées » comptait 200 alors
+  // qu'aucun mouvement d'entrée classique n'existait — les réceptions étaient
+  // comptées comme des ajustements.
+  const ENTREES = ['IN', 'PURCHASE', 'RETURN', 'TRANSFER_IN', 'TRANSFER_CANCEL'];
+  const SORTIES = ['OUT', 'SALE', 'TRANSFER_OUT'];
+
+  const totalEntrees = movements
+    .filter(m => ENTREES.includes(m.type))
+    .reduce((s, m) => s + Math.abs(m.quantity), 0);
+  const totalSorties = movements
+    .filter(m => SORTIES.includes(m.type))
+    .reduce((s, m) => s + Math.abs(m.quantity), 0);
   const totalAjustements = movements.filter(m => m.type === 'ADJUSTMENT').length;
 
   return (
@@ -114,6 +148,8 @@ export default function MovementsPage() {
                 <SelectItem value="OUT">Sorties</SelectItem>
                 <SelectItem value="SALE">Ventes</SelectItem>
                 <SelectItem value="ADJUSTMENT">Ajustements</SelectItem>
+                <SelectItem value="TRANSFER_IN">Transferts reçus</SelectItem>
+                <SelectItem value="TRANSFER_OUT">Transferts envoyés</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -147,7 +183,13 @@ export default function MovementsPage() {
                 {filtered.map(m => {
                   const cfg = TYPE_CONFIG[m.type] ?? TYPE_CONFIG.ADJUSTMENT;
                   const Icon = cfg.icon;
-                  const isPositive = m.type === 'IN' || (m.type === 'ADJUSTMENT' && m.quantity > 0);
+                  // Le signe vient du TYPE, pas de la valeur brute : les
+                  // mouvements sont enregistrés en valeur absolue ou signée
+                  // selon la route qui les écrit, et se fier au signe stocké
+                  // affichait « -50 » pour une réception de 50 sacs.
+                  const isPositive =
+                    cfg.sign === '+' ||
+                    (cfg.sign === '±' && m.quantity > 0);
                   return (
                     <TableRow key={m.id} className="hover:bg-gray-50">
                       <TableCell className="text-sm text-gray-500 whitespace-nowrap">{formatDateTime(m.createdAt)}</TableCell>

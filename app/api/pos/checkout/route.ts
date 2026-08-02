@@ -372,6 +372,8 @@ export async function POST(request: NextRequest) {
         await adminDb.collection(`tenants/${tenantId}/credits/${creditRef.id}/credit_payments`).add({
           creditId: creditRef.id, montant: acompte,
           soldeAvant: total, soldeApres: soldeCredit,
+          // Voir credits/page.tsx : nécessaires au rapprochement de caisse.
+          tenantId, storeId, paymentMethod: 'CASH',
           userId: callerUid,
           userName: userName || null,
           note: 'Acompte versé lors de la vente',

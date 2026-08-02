@@ -93,6 +93,22 @@ service cloud.firestore {
 
     // ─── Tenants ─────────────────────────────────────────────────────────────
 
+    // ─── Versements de dette : requête par groupe de collections ─────────────
+    //
+    // La règle imbriquée sous credits/{id}/credit_payments ne s'applique PAS à
+    // une requête collectionGroup : celle-ci exige un chemin `{path=**}`.
+    // Sans cette règle, le rapprochement de caisse (qui doit additionner les
+    // règlements de dettes encaissés pendant la session) serait refusé.
+    //
+    // Lecture seule, cloisonnée par tenant ET par magasin : un règlement
+    // révèle l'activité d'une boutique.
+    match /{path=**}/credit_payments/{payId} {
+      allow read: if isAuth()
+                  && resource.data.tenantId == tenantId()
+                  && (allStores() || (resource.data.storeId in request.auth.token.storeIds));
+      allow write: if false;
+    }
+
     // ─── Comptes éditeur ─────────────────────────────────────────────────────
     // C'est cette collection qui détermine QUI administre Kafora. Y écrire
     // reviendrait à s'auto-promouvoir éditeur et à voir tous les clients :
@@ -250,8 +266,11 @@ service cloud.firestore {
       }
 
       match /inventory_movements/{movId} {
-        allow read: if belongsToTenant(tenantId);
-        allow create: if belongsToTenant(tenantId);
+        // Cloisonné comme l'inventaire lui-même : l'historique d'une boutique
+        // révèle ses volumes de vente et ses réassorts. Un responsable ne doit
+        // pas pouvoir déduire l'activité d'un magasin qu'il ne gère pas.
+        allow read: if belongsToTenant(tenantId) && docInMyStore();
+        allow create: if belongsToTenant(tenantId) && docInMyStore();
         allow update, delete: if false; // Les mouvements sont immuables
       }
 

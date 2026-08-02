@@ -87,7 +87,7 @@ function isEnRetard(dateStr: string, status: string): boolean {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CreditsPage() {
-  const { tenant, user } = useAuthStore();
+  const { tenant, user, currentStore } = useAuthStore();
   const tenantId = tenant?.id;
   const canManageCredits = user?.role
     ? Boolean(ROLE_PERMISSIONS[user.role as keyof typeof ROLE_PERMISSIONS]?.canManageCredits)
@@ -223,6 +223,14 @@ export default function CreditsPage() {
           montant,
           soldeAvant,
           soldeApres,
+          // tenantId / storeId / paymentMethod : indispensables au
+          // rapprochement de caisse. Un client qui vient régler sa dette
+          // dépose de l'argent dans un TIROIR PRÉCIS ; sans le magasin, ce
+          // versement n'apparaît nulle part à la clôture et la caisse
+          // semble excédentaire.
+          tenantId,
+          storeId: currentStore?.id || null,
+          paymentMethod: 'CASH',
           userId: user.id,
           userName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
           createdAt: serverTimestamp(),

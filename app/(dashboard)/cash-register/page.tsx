@@ -21,8 +21,7 @@ import { ref, onValue, set, push, get } from 'firebase/database';
 import { rtdb } from '@/lib/firebase/client';
 import { RTDB_PATHS } from '@/lib/firebase/rtdb';
 import {
-  collection, query, where, orderBy, onSnapshot, limit
-} from 'firebase/firestore';
+  collection, query, where, orderBy, onSnapshot, limit, collectionGroup } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 import { isManagerPlus as isManagerPlusRole } from '@/lib/auth/roles';
@@ -40,7 +39,12 @@ interface CashSession {
   notes?: string;
 }
 
-interface Sale { id: string; total: number; paymentMethod?: string; createdAt: unknown; }
+interface Sale {
+  id: string; total: number; paymentMethod?: string;
+  /** Part réglée immédiatement sur une vente à crédit — argent dans le tiroir. */
+  acompte?: number;
+  createdAt: unknown;
+}
 
 
 export default function CashRegisterPage() {
@@ -52,6 +56,7 @@ export default function CashRegisterPage() {
   const [session, setSession] = useState<CashSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [todaySales, setTodaySales] = useState<Sale[]>([]);
+  const [creditRepaymentTotal, setCreditRepaymentTotal] = useState(0);
   const [sessionHistory, setSessionHistory] = useState<{ id: string; data: CashSession }[]>([]);
 
   const [showOpen, setShowOpen] = useState(false);
@@ -97,6 +102,40 @@ export default function CashRegisterPage() {
     });
   }, [tenantId, storeId, session?.status, session?.openedAt]);
 
+  // ─── Versements de dette encaissés pendant la session ────────────────────
+  //
+  // Un client qui vient régler sa dette dépose de l'argent dans ce tiroir.
+  // Ces versements vivent dans des sous-collections (credits/{id}/credit_payments),
+  // d'où la requête par groupe de collections, filtrée sur le magasin.
+  useEffect(() => {
+    if (!tenantId || !storeId) { setCreditRepaymentTotal(0); return; }
+
+    const sinceStart = session?.status === 'OPEN' && session.openedAt
+      ? new Date(session.openedAt)
+      : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
+
+    const q = query(
+      collectionGroup(db, 'credit_payments'),
+      where('storeId', '==', storeId),
+      where('createdAt', '>=', sinceStart)
+    );
+    return onSnapshot(
+      q,
+      snap => {
+        // On ne compte que les règlements en espèces : un virement ou un
+        // paiement Mobile Money ne passe pas par le tiroir.
+        const total = snap.docs
+          .map(d => d.data() as { paymentMethod?: string; montant?: number })
+          .filter(d => (d.paymentMethod || 'CASH') === 'CASH')
+          .reduce((sum, d) => sum + (Number(d.montant) || 0), 0);
+        setCreditRepaymentTotal(total);
+      },
+      // Index absent ou versements antérieurs sans magasin : on n'empêche pas
+      // la caisse de fonctionner, on affiche simplement 0 de ce côté.
+      () => setCreditRepaymentTotal(0)
+    );
+  }, [tenantId, storeId, session?.status, session?.openedAt]);
+
   // ─── Historique des sessions (Firestore) ──────────────────────────────────
   // Réservé à Manager+ : un Caissier n'a besoin que du statut de la session en
   // cours pour ouvrir/fermer son poste, pas de l'historique des clôtures
@@ -114,9 +153,32 @@ export default function CashRegisterPage() {
   }, [tenantId, storeId, canViewHistory]);
 
   // ─── Calculs ────────────────────────────────────────────────────────────
+  // ─── Rapprochement de caisse ────────────────────────────────────────────
+  //
+  // Le solde attendu doit refléter le TIROIR RÉEL, pas seulement les ventes
+  // comptant. Avant, il valait « ouverture + ventes espèces » — et la caisse
+  // d'un commerce pratiquant le crédit ne tombait donc JAMAIS juste :
+  //
+  //   • un acompte versé sur une vente à crédit est de l'argent dans le
+  //     tiroir, mais la vente est de type CREDIT : elle était ignorée, et le
+  //     caissier apparaissait en excédent ;
+  //   • un client venu régler sa dette dépose lui aussi de l'argent : ce
+  //     versement n'était compté nulle part ;
+  //   • un remboursement sort de l'argent : il n'était pas déduit, et le
+  //     tiroir semblait manquant.
+  //
+  // Un écart permanent et inexpliqué rend le contrôle de caisse inutile —
+  // pire, il masque les vrais écarts, ceux qu'on cherche justement à détecter.
   const cashSalesToday = todaySales.filter(s => (s.paymentMethod || 'CASH') === 'CASH');
   const cashTotal = cashSalesToday.reduce((s, v) => s + (v.total || 0), 0);
-  const expectedBalance = (session?.openingBalance || 0) + cashTotal;
+
+  // Acomptes encaissés sur les ventes à crédit de la session.
+  const acompteTotal = todaySales
+    .filter(s => (s.paymentMethod || '') === 'CREDIT')
+    .reduce((sum, v) => sum + (v.acompte || 0), 0);
+
+  const expectedBalance =
+    (session?.openingBalance || 0) + cashTotal + acompteTotal + creditRepaymentTotal;
   const totalToday = todaySales.reduce((s, v) => s + (v.total || 0), 0);
   const txCount = todaySales.length;
 
@@ -363,6 +425,19 @@ export default function CashRegisterPage() {
             <div className="bg-green-50 rounded-lg p-3 text-center">
               <p className="text-xs text-gray-500 mb-1">Solde attendu</p>
               <p className="text-xl font-bold text-green-700">{formatCurrency(expectedBalance)}</p>
+              {/* Détail du calcul : un caissier à qui l'on reproche un écart
+                  doit pouvoir vérifier d'où vient le montant attendu. Un
+                  chiffre sans justification n'est pas contrôlable. */}
+              <ul className="mt-2 space-y-0.5 text-xs text-gray-500">
+                <li>Fond de caisse : {formatCurrency(session?.openingBalance || 0)}</li>
+                <li>Ventes en espèces : {formatCurrency(cashTotal)}</li>
+                {acompteTotal > 0 && (
+                  <li>Acomptes sur crédit : {formatCurrency(acompteTotal)}</li>
+                )}
+                {creditRepaymentTotal > 0 && (
+                  <li>Règlements de dettes : {formatCurrency(creditRepaymentTotal)}</li>
+                )}
+              </ul>
             </div>
             <div className="space-y-2">
               <Label>Montant compté en caisse *</Label>
