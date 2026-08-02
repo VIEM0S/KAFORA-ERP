@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { checkRateLimit, getClientIp } from '@/lib/api/rate-limit';
 import { sendEmail } from '@/lib/email/send';
 
 // Endpoint public (pas d'auth) pour le formulaire de contact de la landing
@@ -9,6 +10,16 @@ import { sendEmail } from '@/lib/email/send';
 // clairement "indisponible pour le moment" plutôt qu'un faux succès.
 export async function POST(request: NextRequest) {
   try {
+    // Formulaire public : sans limitation, il sert de relais à spam — chaque
+    // envoi consommant en plus du quota SendGrid, qui est facturé.
+    const ipLimit = await checkRateLimit(`contact:ip:${getClientIp(request)}`, 5, 60 * 60);
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Trop de messages envoyés. Réessayez dans une heure.' },
+        { status: 429 }
+      );
+    }
+
     const { name, email, message }: { name?: string; email?: string; message?: string } =
       await request.json();
 

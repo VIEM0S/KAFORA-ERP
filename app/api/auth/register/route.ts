@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase/admin';
+import { checkRateLimit, getClientIp } from '@/lib/api/rate-limit';
 import { Timestamp } from 'firebase-admin/firestore';
 import { SUBSCRIPTION_PLANS, PlanId } from '@/lib/constants';
 
@@ -17,6 +18,21 @@ function slugify(str: string): string {
 
 export async function POST(request: NextRequest) {
   try {
+    // Limitation d'inscription : sans elle, un script peut créer des comptes
+    // en boucle. Chaque inscription crée un tenant, un magasin, un
+    // abonnement et un utilisateur — c'est-à-dire du stockage facturé, une
+    // liste de clients polluée, et des comptes Firebase Auth à nettoyer un
+    // par un. La fenêtre est large (3 par heure et par IP) : personne ne
+    // crée trois entreprises légitimes dans la même heure depuis la même
+    // connexion.
+    const ipLimit = await checkRateLimit(`register:ip:${getClientIp(request)}`, 3, 60 * 60);
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: "Trop de tentatives d'inscription. Réessayez dans une heure." },
+        { status: 429 }
+      );
+    }
+
     const { company, store, user, plan } = await request.json();
 
     // Validation minimale
