@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
       }
     }
     const products = productSnaps.map(s => ({ id: s.id, ...s.data() } as {
-      id: string; name: string; sku: string; sellingPrice: number; purchasePrice: number;
+      id: string; name: string; sku: string; sellingPrice: number; purchasePrice: number | null;
       taxRate: number; trackInventory: boolean;
     }));
 
@@ -297,9 +297,18 @@ export async function POST(request: NextRequest) {
     // ── Sous-collections (hors transaction) ──────────────────────────────────
     const batchWrites: Promise<unknown>[] = [];
     let saleCostTotal = 0;
+    // Certaines lignes peuvent n'avoir aucun prix d'achat connu : le champ est
+    // facultatif. On les compte pour signaler que la marge de cette vente est
+    // PARTIELLE — plutôt que de leur attribuer un coût nul, qui gonflerait la
+    // marge à 100 % et fausserait tous les rapports sans avertissement.
+    let linesWithoutCost = 0;
     for (const l of lines) {
-      const lineCostTotal = l.quantity * l.product.purchasePrice;
-      saleCostTotal += lineCostTotal;
+      const unitCost = l.product.purchasePrice;
+      if (unitCost == null) {
+        linesWithoutCost++;
+      } else {
+        saleCostTotal += l.quantity * unitCost;
+      }
       batchWrites.push(
         adminDb.collection(`tenants/${tenantId}/sales/${saleRef.id}/sale_items`).add({
           // tenantId + createdAt sont nécessaires à l'agrégation quotidienne :
@@ -348,6 +357,10 @@ export async function POST(request: NextRequest) {
         tenantId,
         costTotal: saleCostTotal,
         margin: total - saleCostTotal,
+        // true = le coût ne couvre pas toutes les lignes : la marge affichée
+        // est un maximum, pas une valeur exacte.
+        costIncomplete: linesWithoutCost > 0,
+        linesWithoutCost,
         createdAt: FieldValue.serverTimestamp(),
       })
     );

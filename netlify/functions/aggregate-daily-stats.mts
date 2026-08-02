@@ -118,13 +118,24 @@ async function aggregateTenantDay(
   stats.uniqueCustomers = customers.size;
 
   // Coût réel, tel qu'enregistré au moment de la vente — jamais estimé.
+  //
+  // Une vente peut porter un coût PARTIEL : le prix d'achat étant facultatif,
+  // certaines lignes n'en ont pas. Le résumé de coût le signale via
+  // `costIncomplete`. Sans cette prise en compte, la marge du jour serait
+  // présentée comme exacte alors qu'elle est surestimée.
+  let partialCostSales = 0;
   for (const doc of costSnap.docs) {
-    stats.cost += doc.data().costTotal || 0;
+    const d = doc.data();
+    stats.cost += d.costTotal || 0;
+    if (d.costIncomplete) partialCostSales++;
   }
   stats.margin = stats.revenue - stats.cost;
   // Si le nombre de résumés de coût ne correspond pas au nombre de ventes,
   // la marge est incomplète : on le signale au lieu de faire comme si de rien.
-  stats.costIncomplete = stats.saleCount > 0 && costSnap.size < stats.saleCount;
+  // Incomplet si un résumé de coût manque, OU si l'un d'eux ne couvre pas
+  // toutes ses lignes.
+  stats.costIncomplete =
+    (stats.saleCount > 0 && costSnap.size < stats.saleCount) || partialCostSales > 0;
 
   // Top produits : agrégés sur TOUTES les lignes du jour, pas sur un
   // échantillon (l'ancienne page se limitait à 20 ventes).

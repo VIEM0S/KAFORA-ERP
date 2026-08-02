@@ -29,8 +29,9 @@ export function ProductsTable({
 }: ProductsTableProps) {
   const catName = (id: string | null) => categories.find((c) => c.id === id)?.name ?? '—';
 
+  // null si le prix d'achat n'est pas renseigné : on n'invente pas une marge.
   const margin = (p: Product) =>
-    p.purchasePrice > 0
+    p.purchasePrice != null && p.purchasePrice > 0
       ? Math.round(((p.sellingPrice - p.purchasePrice) / p.purchasePrice) * 100)
       : null;
 
@@ -102,7 +103,11 @@ export function ProductsTable({
                       <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">{p.sku}</code>
                     </TableCell>
                     <TableCell className="text-sm text-gray-500">{catName(p.categoryId)}</TableCell>
-                    <TableCell className="text-right text-sm">{formatCurrency(p.purchasePrice)}</TableCell>
+                    <TableCell className="text-right text-sm">
+                      {p.purchasePrice == null
+                        ? <span className="text-amber-600" title="Prix d'achat non renseigné — ce produit est exclu des marges et de la valeur du stock">non renseigné</span>
+                        : formatCurrency(p.purchasePrice)}
+                    </TableCell>
                     <TableCell className="text-right text-sm font-medium">{formatCurrency(p.sellingPrice)}</TableCell>
                     <TableCell className="text-right">
                       {m !== null ? (

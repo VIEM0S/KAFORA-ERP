@@ -20,7 +20,7 @@ export interface ParsedProductRow {
   sku: string;
   name: string;
   categoryName: string | null;
-  purchasePrice: number;
+  purchasePrice: number | null;
   sellingPrice: number;
   initialStock: number;
   barcode: string | null;
@@ -157,7 +157,10 @@ function rowsToProducts(rows: unknown[][]): ParsedProductRow[] {
       sku: sku.toUpperCase(),
       name,
       categoryName: colMap.categoryName !== undefined ? (get('categoryName') || null) : null,
-      purchasePrice: Number.isNaN(purchasePrice) ? 0 : purchasePrice,
+      // Colonne absente ou illisible => null, jamais 0 : un fichier
+      // d'import sans colonne « prix d'achat » ne signifie pas que tous les
+      // produits sont gratuits.
+      purchasePrice: Number.isNaN(purchasePrice) ? null : purchasePrice,
       sellingPrice: Number.isNaN(sellingPrice) ? 0 : sellingPrice,
       initialStock: Number.isNaN(initialStock) ? 0 : Math.max(0, Math.floor(initialStock)),
       barcode: colMap.barcode !== undefined ? (get('barcode') || null) : null,

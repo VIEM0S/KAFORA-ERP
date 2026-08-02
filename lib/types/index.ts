@@ -174,7 +174,15 @@ export interface Product {
   categoryId: string | null;
   category?: Category;
   unit: string;
-  purchasePrice: number;
+  /**
+   * Prix d'achat unitaire. `null` = non renseigné (le champ est facultatif).
+   *
+   * Ne jamais remplacer une valeur absente par 0 : 0 signifie « acquis
+   * gratuitement » et produit une marge de 100 %, ce qui fausse les rapports
+   * en silence. Les calculs de marge et de valeur de stock EXCLUENT les
+   * produits sans prix d'achat et signalent que le résultat est partiel.
+   */
+  purchasePrice: number | null;
   sellingPrice: number;
   taxRate: number;
   alertThreshold: number;

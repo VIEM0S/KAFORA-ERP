@@ -30,7 +30,7 @@ interface Sale {
 interface SaleItem {
   productId: string; productName: string; quantity: number; total: number; costTotal?: number;
 }
-interface Product { id: string; name: string; sku: string; unit: string; alertThreshold: number; purchasePrice: number; trackInventory: boolean; }
+interface Product { id: string; name: string; sku: string; unit: string; alertThreshold: number; purchasePrice: number | null; trackInventory: boolean; }
 interface InventoryItem { id: string; productId: string; storeId: string; quantity: number; }
 interface Credit { id: string; customerName: string; solde: number; dateEcheance: string; status: string; }
 interface Category { id: string; name: string; }
@@ -170,7 +170,9 @@ export default function DashboardPage() {
   const ruptureProducts = products.filter(p => p.trackInventory && getStock(p.id) === 0);
   // Valeur du stock au prix d'achat — donnée sensible, réservée aux Managers+
   const valeurStock = isManagerPlus
-    ? products.reduce((s, p) => s + getStock(p.id) * p.purchasePrice, 0)
+    // Les produits sans prix d'achat sont EXCLUS : les compter à 0
+    // sous-évaluerait le stock sans le dire.
+    ? products.reduce((s, p) => s + (p.purchasePrice == null ? 0 : getStock(p.id) * p.purchasePrice), 0)
     : null;
 
   // Crédits

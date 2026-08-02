@@ -62,6 +62,8 @@ export default function InvoicesPage() {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
+  // 'all' par défaut : la liste doit montrer la suite complète des numéros.
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [isGenerating, setIsGenerating] = useState<string | null>(null);
 
   const [previewSale, setPreviewSale] = useState<Sale | null>(null);
@@ -85,9 +87,20 @@ export default function InvoicesPage() {
     return () => { unsubS(); unsubQ(); };
   }, [tenantId]);
 
+  // ─── Toutes les factures sont affichées, y compris annulées ──────────────
+  //
+  // Le filtre était `status === 'COMPLETED'` : les ventes annulées et
+  // remboursées disparaissaient de la liste. Un contrôleur y voyait donc
+  // FAC-000001, FAC-000003, FAC-000005… avec des numéros manquants et aucune
+  // explication — exactement ce que la numérotation séquentielle est censée
+  // rendre impossible.
+  //
+  // Une facture annulée conserve son numéro et reste visible, avec sa
+  // mention : c'est ainsi qu'on justifie l'absence de trou dans la suite.
   const filteredSales = sales.filter(s =>
-    s.status === 'COMPLETED' &&
+    (statusFilter === 'all' || s.status === statusFilter) &&
     (!search || (s.customerName || '').toLowerCase().includes(search.toLowerCase()) ||
+      (s.reference || '').toLowerCase().includes(search.toLowerCase()) ||
       s.id.toLowerCase().includes(search.toLowerCase()))
   );
 
@@ -245,12 +258,34 @@ export default function InvoicesPage() {
 
         {/* Recherche */}
         <Card><CardContent className="p-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input placeholder="Rechercher par client ou numéro..." value={search}
-              onChange={e => setSearch(e.target.value)} className="pl-9" />
-            {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"><X className="h-4 w-4" /></button>}
+          <div className="flex flex-col md:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input placeholder="Rechercher par client ou numéro..." value={search}
+                onChange={e => setSearch(e.target.value)} className="pl-9" />
+              {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"><X className="h-4 w-4" /></button>}
+            </div>
+            {tab === 'sales' && (
+              <select
+                value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value)}
+                className="h-10 rounded-lg border border-gray-200 px-3 text-sm text-gray-700 md:w-56"
+              >
+                <option value="all">Toutes les factures</option>
+                <option value="COMPLETED">Validées</option>
+                <option value="CANCELLED">Annulées</option>
+                <option value="REFUNDED">Remboursées</option>
+                <option value="PARTIALLY_REFUNDED">Remboursées partiellement</option>
+              </select>
+            )}
           </div>
+          {tab === 'sales' && statusFilter === 'all' && (
+            <p className="mt-2 text-xs text-gray-500">
+              Toutes les factures sont listées, y compris annulées et
+              remboursées : la suite des numéros doit rester complète et
+              justifiable.
+            </p>
+          )}
         </CardContent></Card>
 
         {/* Table Factures */}
@@ -282,9 +317,26 @@ export default function InvoicesPage() {
                   {filteredSales.map(s => (
                     <TableRow key={s.id} className="hover:bg-gray-50">
                       <TableCell>
-                        <code className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded font-medium">
-                          {s.reference || `FAC-LEGACY-${s.id.slice(0, 8).toUpperCase()}`}
-                        </code>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <code className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded font-medium">
+                            {s.reference || `FAC-LEGACY-${s.id.slice(0, 8).toUpperCase()}`}
+                          </code>
+                          {/* La mention est indispensable : une facture
+                              annulée reste dans la suite, mais ne doit jamais
+                              être confondue avec une facture valide. */}
+                          {s.status !== 'COMPLETED' && (
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              s.status === 'CANCELLED' ? 'bg-red-100 text-red-700'
+                              : s.status === 'REFUNDED' ? 'bg-orange-100 text-orange-700'
+                              : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              {s.status === 'CANCELLED' ? 'Annulée'
+                                : s.status === 'REFUNDED' ? 'Remboursée'
+                                : s.status === 'PARTIALLY_REFUNDED' ? 'Remb. partiel'
+                                : s.status}
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-sm text-gray-500">{formatDateTime(s.createdAt)}</TableCell>
                       <TableCell className="text-sm font-medium">{s.customerName || 'Client comptoir'}</TableCell>

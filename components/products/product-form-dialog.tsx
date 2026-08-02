@@ -67,7 +67,7 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
         description: editingProduct.description || '',
         categoryId: editingProduct.categoryId || '',
         unit: editingProduct.unit,
-        purchasePrice: String(editingProduct.purchasePrice),
+        purchasePrice: editingProduct.purchasePrice == null ? '' : String(editingProduct.purchasePrice),
         sellingPrice: String(editingProduct.sellingPrice),
         taxRate: String(editingProduct.taxRate),
         alertThreshold: String(editingProduct.alertThreshold),
@@ -89,8 +89,15 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
       setFormError('Nom et SKU sont obligatoires');
       return;
     }
-    if (!form.purchasePrice || Number(form.purchasePrice) <= 0) {
-      setFormError('Le prix d\'achat doit être supérieur à 0');
+    // Prix d'achat FACULTATIF, mais recommandé.
+    //
+    // L'exiger poussait à saisir 0 quand on ne le connaissait pas — et 0
+    // signifie « ça ne m'a rien coûté », donc 100 % de marge. Le rapport de
+    // rentabilité devenait faux sans que personne ne s'en aperçoive.
+    // Une valeur absente est honnête : elle est exclue des calculs de marge,
+    // qui signalent alors être incomplets.
+    if (form.purchasePrice && Number(form.purchasePrice) < 0) {
+      setFormError('Le prix d\'achat ne peut pas être négatif');
       return;
     }
     if (!form.sellingPrice || Number(form.sellingPrice) <= 0) {
@@ -122,7 +129,9 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
       description: form.description.trim() || null,
       categoryId: form.categoryId || null,
       unit: form.unit,
-      purchasePrice: Number(form.purchasePrice) || 0,
+      // null (et non 0) quand le prix n'est pas renseigné : c'est ce qui
+      // permet aux rapports de distinguer « gratuit » de « inconnu ».
+      purchasePrice: form.purchasePrice.trim() === '' ? null : Number(form.purchasePrice),
       sellingPrice: Number(form.sellingPrice),
       taxRate: Number(form.taxRate) || 0,
       alertThreshold: Number(form.alertThreshold) || 10,
@@ -240,8 +249,14 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Prix d'achat (FCFA) *</Label>
-            <Input type="number" placeholder="0" value={form.purchasePrice} onChange={(e) => f('purchasePrice', e.target.value)} min="0" />
+            <Label>Prix d'achat (FCFA)</Label>
+            <Input type="number" placeholder="Optionnel" value={form.purchasePrice} onChange={(e) => f('purchasePrice', e.target.value)} min="0" />
+            {!form.purchasePrice.trim() && (
+              <p className="text-xs text-amber-600">
+                Recommandé : sans lui, ce produit n&apos;apparaîtra ni dans vos
+                marges ni dans la valeur de votre stock.
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label>Prix de vente (FCFA) *</Label>
