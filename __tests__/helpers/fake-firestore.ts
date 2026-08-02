@@ -96,6 +96,39 @@ export class FakeDocRef {
   }
 }
 
+/**
+ * Compare une valeur de document à un filtre.
+ *
+ * Le simulacre ignorait l'opérateur et testait toujours l'égalité stricte :
+ * toute requête `>=` sur une date ne renvoyait donc jamais rien, et les
+ * routes qui bornent par période semblaient ne voir aucune donnée. Les tests
+ * passaient alors « pour de mauvaises raisons » ou échouaient sans rapport
+ * avec le code testé.
+ */
+function matchFilter(actual: unknown, op: string, expected: unknown): boolean {
+  // Dates et Timestamps ramenés à un nombre comparable.
+  const norm = (v: unknown): unknown => {
+    if (v instanceof Date) return v.getTime();
+    if (v && typeof v === 'object' && 'toDate' in v && typeof (v as { toDate: unknown }).toDate === 'function') {
+      return ((v as { toDate: () => Date }).toDate()).getTime();
+    }
+    return v;
+  };
+  const a = norm(actual);
+  const b = norm(expected);
+
+  switch (op) {
+    case '==': return a === b;
+    case '!=': return a !== b;
+    case '>':  return (a as number) > (b as number);
+    case '>=': return (a as number) >= (b as number);
+    case '<':  return (a as number) < (b as number);
+    case '<=': return (a as number) <= (b as number);
+    case 'in': return Array.isArray(expected) && expected.some(v => norm(v) === a);
+    default:   return a === b;
+  }
+}
+
 export class FakeCollectionRef {
   constructor(private db: FakeFirestore, public path: string) {}
 
@@ -110,8 +143,8 @@ export class FakeCollectionRef {
     return ref;
   }
 
-  where(field: string, _op: string, value: unknown): FakeQuery {
-    return new FakeQuery(this.db, this.path, [{ field, value }]);
+  where(field: string, op: string, value: unknown): FakeQuery {
+    return new FakeQuery(this.db, this.path, [{ field, op, value }]);
   }
 
   limit(n: number): FakeQuery {
@@ -135,12 +168,12 @@ class FakeQuery {
   constructor(
     private db: FakeFirestore,
     private path: string,
-    private filters: { field: string; value: unknown }[],
+    private filters: { field: string; op: string; value: unknown }[],
     private limitN: number | null = null
   ) {}
 
-  where(field: string, _op: string, value: unknown): FakeQuery {
-    return new FakeQuery(this.db, this.path, [...this.filters, { field, value }], this.limitN);
+  where(field: string, op: string, value: unknown): FakeQuery {
+    return new FakeQuery(this.db, this.path, [...this.filters, { field, op, value }], this.limitN);
   }
 
   limit(n: number): FakeQuery {
@@ -151,14 +184,21 @@ class FakeQuery {
     const prefix = `${this.path}/`;
     let matches = Array.from(this.db.store.entries())
       .filter(([p]) => p.startsWith(prefix) && !p.slice(prefix.length).includes('/'))
-      .filter(([, data]) => this.filters.every(f => data[f.field] === f.value));
+      .filter(([, data]) => this.filters.every(f => matchFilter(data[f.field], f.op, f.value)));
     if (this.limitN !== null) matches = matches.slice(0, this.limitN);
     const docs = matches.map(([p, data]) => ({
       id: p.split('/').pop()!,
       ref: new FakeDocRef(this.db, p),
       data: () => ({ ...data }),
     }));
-    return { empty: docs.length === 0, docs };
+    // `forEach` et `size` : plusieurs routes parcourent le résultat ainsi
+    // plutôt que via `.docs`, comme le vrai QuerySnapshot le permet.
+    return {
+      empty: docs.length === 0,
+      size: docs.length,
+      docs,
+      forEach: (cb: (d: (typeof docs)[number]) => void) => docs.forEach(cb),
+    };
   }
 }
 

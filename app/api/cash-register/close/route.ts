@@ -54,29 +54,123 @@ export async function POST(request: NextRequest) {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
+    // Fenêtre de la SESSION, pas de la journée.
+    //
+    // Partir du début de journée était faux dès la deuxième session : une
+    // caisse ouverte l'après-midi se voyait imputer les ventes du matin,
+    // déjà comptées à la clôture précédente. Le caissier de l'après-midi
+    // apparaissait alors gravement en manque.
+    const sessionStart = openedAt ? new Date(openedAt) : startOfDay;
+
     const salesSnap = await adminDb
       .collection(`tenants/${tenantId}/sales`)
       .where('storeId', '==', storeId)
-      .where('createdAt', '>=', Timestamp.fromDate(startOfDay))
+      .where('createdAt', '>=', Timestamp.fromDate(sessionStart))
       .get();
 
     let salesTotal = 0;
     let cashSalesTotal = 0;
+    let acompteTotal = 0;
     let txCount = 0;
     salesSnap.forEach((docSnap) => {
       const sale = docSnap.data();
+      // Une vente annulée a été remboursée : la compter ferait apparaître un
+      // manquant au caissier pour une erreur qui n'est pas la sienne.
+      if ((sale.status || 'COMPLETED') !== 'COMPLETED') return;
+
       const total = Number(sale.total) || 0;
       salesTotal += total;
       txCount += 1;
-      if ((sale.paymentMethod || 'CASH') === 'CASH') {
+
+      const method = sale.paymentMethod || 'CASH';
+      if (method === 'CASH') {
         cashSalesTotal += total;
+      } else if (method === 'CREDIT') {
+        // L'acompte versé sur une vente à crédit est de l'argent RÉELLEMENT
+        // dans le tiroir, même si la vente n'est pas de type « espèces ».
+        acompteTotal += Number(sale.acompte) || 0;
       }
     });
 
+    // Règlements de dettes encaissés pendant la session : un client venu
+    // payer dépose de l'argent dans ce tiroir.
+    let creditRepaymentTotal = 0;
+    try {
+      const paySnap = await adminDb
+        .collectionGroup('credit_payments')
+        .where('storeId', '==', storeId)
+        .where('createdAt', '>=', Timestamp.fromDate(sessionStart))
+        .get();
+      paySnap.forEach(d => {
+        const p = d.data();
+        if ((p.paymentMethod || 'CASH') === 'CASH') {
+          creditRepaymentTotal += Number(p.montant) || 0;
+        }
+      });
+    } catch {
+      // Index absent ou versements antérieurs sans magasin : on n'empêche
+      // pas la clôture, mais le montant reste à 0 (voir la note ci-dessous).
+    }
+
+    // Remboursements rendus en espèces : cet argent est SORTI du tiroir.
+    let cashRefundTotal = 0;
+    try {
+      const retSnap = await adminDb
+        .collection(`tenants/${tenantId}/sale_returns`)
+        .where('storeId', '==', storeId)
+        .where('createdAt', '>=', Timestamp.fromDate(sessionStart))
+        .get();
+      retSnap.forEach(d => {
+        const r = d.data();
+        if ((r.refundMethod || 'CASH') !== 'CASH') return;
+        // `cashRefund` = part réellement sortie du tiroir ; le reste a servi
+        // à effacer une dette et n'a jamais quitté la caisse.
+        cashRefundTotal += Number(r.cashRefund ?? r.refundAmount) || 0;
+      });
+    } catch {
+      // idem
+    }
+
     const openingBal = Number(openingBalance) || 0;
     const counted = Number(countedAmount) || 0;
-    const expectedBalance = openingBal + cashSalesTotal;
+
+    // MÊME FORMULE que celle affichée au caissier pendant la session
+    // (app/(dashboard)/cash-register/page.tsx). Toute divergence entre les
+    // deux serait pire que l'absence de contrôle : le caissier verrait un
+    // montant à l'écran et s'en verrait reprocher un autre à la clôture.
+    const expectedBalance =
+      openingBal + cashSalesTotal + acompteTotal + creditRepaymentTotal - cashRefundTotal;
     const difference = counted - expectedBalance;
+
+    // ── Anti double clôture ──────────────────────────────────────────────────
+    //
+    // Sans ce contrôle, un double clic ou un réseau lent produisait DEUX
+    // sessions clôturées pour la même ouverture, chacune avec son écart. Le
+    // responsable se retrouvait avec deux manquants pour une seule journée,
+    // impossibles à départager.
+    //
+    // L'ouverture (openedAt + caisse) identifie la session de façon unique.
+    if (openedAt) {
+      const existing = await adminDb
+        .collection(`tenants/${tenantId}/cash_sessions`)
+        .where('registerId', '==', registerId)
+        .where('openedAt', '==', openedAt)
+        .limit(1)
+        .get();
+      if (!existing.empty) {
+        const prev = existing.docs[0].data();
+        return NextResponse.json(
+          {
+            error: 'Cette session de caisse a déjà été clôturée.',
+            id: existing.docs[0].id,
+            expectedBalance: prev.expectedBalance,
+            difference: prev.difference,
+            alreadyClosed: true,
+          },
+          { status: 409 }
+        );
+      }
+    }
 
     const docRef = await adminDb.collection(`tenants/${tenantId}/cash_sessions`).add({
       tenantId, storeId, registerId,
@@ -89,10 +183,15 @@ export async function POST(request: NextRequest) {
       closedAt: Date.now(),
       closingBalance: counted,
       expectedBalance,
+      // Détail conservé : un écart contesté six mois plus tard doit pouvoir
+      // être reconstitué sans relire toutes les ventes.
+      cashSalesTotal,
+      acompteTotal,
+      creditRepaymentTotal,
+      cashRefundTotal,
       difference,
       salesCount: txCount,
       salesTotal,
-      cashSalesTotal,
       notes: notes || null,
       createdAt: new Date().toISOString(),
     });
