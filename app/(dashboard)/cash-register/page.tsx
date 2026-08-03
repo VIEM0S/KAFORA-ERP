@@ -220,6 +220,32 @@ export default function CashRegisterPage() {
     .filter(s => (s.paymentMethod || '') === 'CREDIT')
     .reduce((sum, v) => sum + (v.acompte || 0), 0);
 
+  // ─── Encaissements HORS espèces ──────────────────────────────────────────
+  //
+  // Mobile Money, carte et solde à crédit ne passent PAS par le tiroir. Le
+  // caissier ne doit donc compter que les espèces — mais il faut le lui dire,
+  // sinon il se demande où sont passées ces ventes et croit à un manquant.
+  const nonCashByMethod = validSales.reduce<Record<string, number>>((acc, v) => {
+    const m = v.paymentMethod || 'CASH';
+    if (m === 'CASH') return acc;
+    if (m === 'CREDIT') {
+      // Seule la part NON versée reste hors caisse ; l'acompte est déjà
+      // compté dans le tiroir plus haut.
+      const solde = (v.total || 0) - (v.acompte || 0);
+      if (solde > 0) acc['CREDIT'] = (acc['CREDIT'] || 0) + solde;
+      return acc;
+    }
+    acc[m] = (acc[m] || 0) + (v.total || 0);
+    return acc;
+  }, {});
+
+  const NON_CASH_LABELS: Record<string, string> = {
+    MOBILE_MONEY: 'Mobile Money',
+    CARD: 'Carte bancaire',
+    BANK_TRANSFER: 'Virement',
+    CREDIT: 'Reste à crédit (non encaissé)',
+  };
+
   const expectedBalance =
     (session?.openingBalance || 0)
     + cashTotal
@@ -493,8 +519,36 @@ export default function CashRegisterPage() {
                 )}
               </ul>
             </div>
+            {Object.keys(nonCashByMethod).length > 0 && (
+              <div className="rounded-lg border border-gray-200 p-3">
+                <p className="text-xs font-medium text-gray-700 mb-1">
+                  Encaissé hors caisse — ne pas compter
+                </p>
+                <ul className="space-y-0.5 text-xs text-gray-500">
+                  {Object.entries(nonCashByMethod).map(([m, v]) => (
+                    <li key={m} className="flex justify-between gap-3">
+                      <span>{NON_CASH_LABELS[m] || m}</span>
+                      <span className="font-medium text-gray-700">{formatCurrency(v)}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-xs text-gray-400">
+                  Ces montants ne sont pas dans le tiroir : comptez uniquement
+                  les espèces présentes.
+                </p>
+              </div>
+            )}
+
+            <div className="rounded-lg border border-gray-200 p-3 flex justify-between text-xs">
+              <span className="text-gray-500">Transactions de la session</span>
+              <span className="font-medium text-gray-700">{txCount}</span>
+            </div>
+
             <div className="space-y-2">
               <Label>Montant compté en caisse *</Label>
+              <p className="text-xs text-gray-500">
+                Comptez les billets et pièces réellement présents dans le tiroir.
+              </p>
               <Input type="number" min="0" placeholder="0" value={closingAmount}
                 onChange={e => setClosingAmount(e.target.value)} className="text-lg font-bold" autoFocus />
             </div>

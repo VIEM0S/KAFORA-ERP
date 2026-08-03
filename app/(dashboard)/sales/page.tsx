@@ -22,10 +22,10 @@ import { exportToCsv, formatDateForCsv } from '@/lib/utils/export';
 import { Download } from 'lucide-react';
 import { useAuthStore } from '@/hooks/store';
 import {
-  collection, query, orderBy, onSnapshot, limit, getDocs
-} from 'firebase/firestore';
+  collection, query, orderBy, onSnapshot, limit, getDocs, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
+import { describeFirestoreError, type ReadableError } from '@/lib/utils/firestore-errors';
 
 interface SaleItem {
   productId: string; productName: string; productSku: string;
@@ -47,11 +47,13 @@ const PM_LABELS: Record<string, { label: string; icon: typeof Banknote }> = {
 };
 
 export default function SalesPage() {
-  const { tenant, user } = useAuthStore();
+  const { tenant, user, currentStore } = useAuthStore();
   const tenantId = tenant?.id;
+  const storeId = currentStore?.id;
 
   const [sales, setSales] = useState<Sale[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<ReadableError | null>(null);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterDateFrom, setFilterDateFrom] = useState('');
@@ -77,13 +79,33 @@ export default function SalesPage() {
   const [returnError, setReturnError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!tenantId) return;
-    const q = query(collection(db, tenantCol(tenantId, 'sales')), orderBy('createdAt', 'desc'), limit(300));
-    return onSnapshot(q, snap => {
-      setSales(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Sale[]);
-      setIsLoading(false);
-    });
-  }, [tenantId]);
+    if (!tenantId || !storeId) return;
+      // Filtre magasin OBLIGATOIRE : la règle Firestore contrôle le magasin de
+      // chaque vente. Une requête qui ne le prouve pas est rejetée EN BLOC
+      // pour un utilisateur affecté à un magasin — la page reste alors vide
+      // avec « permission-denied » en console, alors que les ventes existent.
+    const q = query(
+      collection(db, tenantCol(tenantId, 'sales')),
+      where('storeId', '==', storeId),
+      orderBy('createdAt', 'desc'), limit(300)
+    );
+    return onSnapshot(
+      q,
+      snap => {
+        setSales(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Sale[]);
+        setLoadError(null);
+        setIsLoading(false);
+      },
+      err => {
+        // Sans ce gestionnaire, un refus d'accès ou un index manquant
+        // laissait la page afficher « 0 vente » — indiscernable d'une
+        // boutique qui n'a réellement rien vendu.
+        console.error('Sales listener error:', err);
+        setLoadError(describeFirestoreError(err));
+        setIsLoading(false);
+      }
+    );
+  }, [tenantId, storeId]);
 
   // Charger les articles de la vente sélectionnée
   useEffect(() => {
@@ -223,6 +245,19 @@ export default function SalesPage() {
             Exporter CSV
           </Button>
         </div>
+
+        {/* Une page vide et une page en erreur ne veulent PAS dire la même
+            chose : l'une signifie « aucune vente », l'autre « je n'ai pas pu
+            regarder ». Les confondre fait chercher un problème de données là
+            où il n'y en a pas. */}
+        {loadError && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+            <p className="text-sm font-medium text-red-800">{loadError.message}</p>
+            {loadError.hint && (
+              <p className="mt-1 text-xs text-red-600 break-all">{loadError.hint}</p>
+            )}
+          </div>
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-3 gap-4">

@@ -63,8 +63,29 @@ const PM_LABELS: Record<string, string> = {
   CREDIT: 'Crédit client',
 };
 
+/**
+ * Montant formaté pour un document PDF.
+ *
+ * DEUX PIÈGES corrigés ici :
+ *
+ * 1. `Intl.NumberFormat('fr-FR')` sépare les milliers par une ESPACE FINE
+ *    INSÉCABLE (U+202F). Les polices standard du PDF (Helvetica, encodage
+ *    WinAnsi) ne connaissent pas ce caractère : il s'affichait comme « / ».
+ *    « 12 500 FCFA » devenait « 12/500 XOF » sur les reçus imprimés — un
+ *    document remis au client, donc inacceptable. On normalise donc tous les
+ *    espaces exotiques en espace ordinaire.
+ *
+ * 2. Le code ISO « XOF » était affiché tel quel. Personne au Mali ne lit un
+ *    prix en « XOF » : on affiche « FCFA », qui est le nom d'usage.
+ */
 function formatCFA(amount: number, currency = 'FCFA'): string {
-  return new Intl.NumberFormat('fr-FR').format(Math.round(amount)) + ' ' + currency;
+  const label = currency === 'XOF' ? 'FCFA' : currency;
+  const number = new Intl.NumberFormat('fr-FR')
+    .format(Math.round(amount))
+    // Espace fine insécable, espace insécable, espace fine : toutes ramenées
+    // à l'espace ASCII, seule sûre dans une police PDF standard.
+    .replace(/[\u202F\u00A0\u2009\u2007]/g, ' ');
+  return `${number} ${label}`;
 }
 
 export function generateInvoicePDF(data: InvoiceData): void {
@@ -238,6 +259,11 @@ export function generateInvoicePDF(data: InvoiceData): void {
       if (data.change) doc.text(`Monnaie rendue : ${formatCFA(data.change, currency)}`, margin, totY);
     }
     if (data.paymentMethod === 'CREDIT' && data.soldeCredit) {
+      const verseA4 = Math.max(0, (data.total || 0) - data.soldeCredit);
+      if (verseA4 > 0) {
+        doc.text(`Versé ce jour : ${formatCFA(verseA4, currency)}`, margin, totY);
+        totY += 5;
+      }
       doc.setTextColor(234, 179, 8); // amber
       doc.setFont('helvetica', 'bold');
       doc.text(`Solde en crédit : ${formatCFA(data.soldeCredit, currency)}`, margin, totY);
@@ -319,7 +345,25 @@ export function generateThermalReceipt(data: InvoiceData, widthMm: 58 | 80 = 80)
   const row = (left: string, right: string, size = fontSize, bold = false) => {
     doc.setFontSize(size);
     doc.setFont('helvetica', bold ? 'bold' : 'normal');
+
+    // Un ticket de 58 mm est étroit : « Solde en crédit » suivi de
+    // « 58 500 FCFA » ne tient pas sur une ligne. Sans contrôle, les deux
+    // textes se chevauchaient et le montant partait tronqué — « 58 500 XO ».
+    // Un montant coupé sur un reçu remis au client est inacceptable.
+    const leftW = doc.getTextWidth(left);
+    const rightW = doc.getTextWidth(right);
+
+    if (leftW + rightW + 2 <= contentW) {
+      doc.text(left, margin, y);
+      doc.text(right, pageW - margin, y, { align: 'right' });
+      y += size * 0.5 + 1;
+      return;
+    }
+
+    // Trop long : le libellé sur une ligne, le montant sur la suivante,
+    // aligné à droite. Plus haut, mais lisible et complet.
     doc.text(left, margin, y);
+    y += size * 0.5 + 1;
     doc.text(right, pageW - margin, y, { align: 'right' });
     y += size * 0.5 + 1;
   };
@@ -373,6 +417,12 @@ export function generateThermalReceipt(data: InvoiceData, widthMm: 58 | 80 = 80)
       if (data.change) row('Monnaie rendue', formatCFA(data.change, currency), fontSizeSmall, true);
     }
     if (data.paymentMethod === 'CREDIT' && data.soldeCredit) {
+      // Le montant VERSÉ manquait : le client repartait avec un reçu
+      // indiquant le total et son reste à payer, sans trace de ce qu'il
+      // venait de donner. C'est la ligne la plus contestée d'un reçu à
+      // crédit — elle doit y figurer.
+      const verse = Math.max(0, (data.total || 0) - data.soldeCredit);
+      if (verse > 0) row('Versé ce jour', formatCFA(verse, currency), fontSizeSmall);
       row('Solde en crédit', formatCFA(data.soldeCredit, currency), fontSizeSmall, true);
     }
   }
