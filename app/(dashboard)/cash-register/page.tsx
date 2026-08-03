@@ -306,8 +306,17 @@ export default function CashRegisterPage() {
           closedByName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erreur lors de la clôture');
+      // Le serveur peut répondre une page d'erreur HTML au lieu de JSON
+      // (plantage non intercepté). Parser sans précaution affichait alors
+      // « Unexpected token 'T' » au caissier — un message incompréhensible
+      // qui masque la vraie cause.
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(
+          data?.error ||
+          `La clôture a échoué (erreur ${res.status}). Réessayez ; si le problème persiste, notez le montant compté et contactez le support.`
+        );
+      }
 
       // Réinitialiser RTDB
       const path = RTDB_PATHS.cashRegister(tenantId, registerId);
