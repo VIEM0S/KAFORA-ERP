@@ -368,6 +368,13 @@ export default function CustomersPage() {
             </div>
             <div className="col-span-2 space-y-2">
               <Label>Limite de crédit (FCFA)</Label>
+              {/* 0 est la valeur par défaut ET signifie « aucun crédit
+                  autorisé ». Sans cette précision, un commerçant crée ses
+                  clients, tente une vente à crédit, et se la voit refuser
+                  sans comprendre pourquoi. */}
+              <p className="text-xs text-gray-500">
+                0 = aucune vente à crédit possible pour ce client.
+              </p>
               <Input type="number" min="0" value={form.creditLimit} onChange={(e) => f('creditLimit', e.target.value)} placeholder="0" />
             </div>
             <div className="col-span-2 space-y-2">

@@ -16,8 +16,7 @@ import { formatCurrency, toFirestoreDate, formatDate, formatDateTime } from '@/l
 import { useAuthStore } from '@/hooks/store';
 import {
   collection, query, orderBy, onSnapshot,
-  limit, getDocs, doc, getDoc
-} from 'firebase/firestore';
+  limit, getDocs, doc, getDoc, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 import { generateInvoicePDF, generateThermalReceipt } from '@/lib/utils/pdf';
@@ -25,6 +24,7 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
 import type { InvoiceData } from '@/lib/utils/pdf';
+import { describeFirestoreError, type ReadableError } from '@/lib/utils/firestore-errors';
 
 interface Sale {
   id: string; reference?: string; total: number; subtotal: number; status: string;
@@ -54,8 +54,9 @@ interface QuoteItem {
 
 
 export default function InvoicesPage() {
-  const { tenant } = useAuthStore();
+  const { tenant, currentStore } = useAuthStore();
   const tenantId = tenant?.id;
+  const storeId = currentStore?.id;
 
   const [tab, setTab] = useState<'sales' | 'quotes'>('sales');
   const [sales, setSales] = useState<Sale[]>([]);
@@ -64,6 +65,7 @@ export default function InvoicesPage() {
   const [search, setSearch] = useState('');
   // 'all' par défaut : la liste doit montrer la suite complète des numéros.
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [loadError, setLoadError] = useState<ReadableError | null>(null);
   const [isGenerating, setIsGenerating] = useState<string | null>(null);
 
   const [previewSale, setPreviewSale] = useState<Sale | null>(null);
@@ -71,21 +73,29 @@ export default function InvoicesPage() {
   const [loadingPreview, setLoadingPreview] = useState(false);
 
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !storeId) return;
     let done = 0;
     const check = () => { done++; if (done >= 2) setIsLoading(false); };
 
     const unsubS = onSnapshot(
       query(collection(db, tenantCol(tenantId, 'sales')),
+        where('storeId', '==', storeId),
         orderBy('createdAt', 'desc'), limit(200)),
-      snap => { setSales(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Sale[]); check(); }
+      snap => { setSales(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Sale[]); setLoadError(null); check(); },
+      // Sans ce gestionnaire, un index manquant laissait la page annoncer
+      // « Aucune vente trouvée » — indiscernable d'un magasin sans facture.
+      err => {
+        console.error('Invoices listener error:', err);
+        setLoadError(describeFirestoreError(err));
+        check();
+      }
     );
     const unsubQ = onSnapshot(
       query(collection(db, tenantCol(tenantId, 'quotes')), orderBy('createdAt', 'desc')),
       snap => { setQuotes(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Quote[]); check(); }
     );
     return () => { unsubS(); unsubQ(); };
-  }, [tenantId]);
+  }, [tenantId, storeId]);
 
   // ─── Toutes les factures sont affichées, y compris annulées ──────────────
   //
@@ -255,6 +265,15 @@ export default function InvoicesPage() {
             </button>
           ))}
         </div>
+
+        {loadError && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+            <p className="text-sm font-medium text-red-800">{loadError.message}</p>
+            {loadError.hint && (
+              <p className="mt-1 text-xs text-red-600 break-all">{loadError.hint}</p>
+            )}
+          </div>
+        )}
 
         {/* Recherche */}
         <Card><CardContent className="p-4">

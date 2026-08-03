@@ -99,13 +99,28 @@ export function PaymentDialog({
                 <>
                   <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm">
                     <p className="font-semibold text-blue-900">{displayCustomerName(customer)}</p>
-                    {(customer.creditLimit || 0) > 0 && (
+                    {/* Le bloc n'apparaissait QUE si la limite dépassait 0.
+                        Or 0 est la valeur par défaut de tout nouveau client,
+                        et 0 signifie « aucun crédit autorisé » : la vente
+                        allait être refusée, sans le moindre avertissement
+                        avant validation. C'était précisément le cas où il
+                        fallait prévenir. */}
+                    {(customer.creditLimit || 0) <= 0 ? (
+                      <p className="mt-1 text-red-700 font-semibold">
+                        ⚠️ Ce client n&apos;a aucun plafond de crédit : la vente sera
+                        refusée. Définissez sa limite depuis sa fiche client.
+                      </p>
+                    ) : (
                       <div className="mt-1 text-blue-700">
                         <span>Limite : {formatCurrency(customer.creditLimit)}</span>
                         <span className="mx-2">·</span>
                         <span>Utilisé : {formatCurrency(customer.creditUsed || 0)}</span>
+                        <span className="mx-2">·</span>
+                        <span className="font-semibold">
+                          Disponible : {formatCurrency(Math.max(0, (customer.creditLimit || 0) - (customer.creditUsed || 0)))}
+                        </span>
                         {soldeCredit > 0 && (customer.creditUsed || 0) + soldeCredit > (customer.creditLimit || 0) && (
-                          <p className="text-amber-700 font-semibold mt-1">⚠️ Dépassement de limite prévu</p>
+                          <p className="text-amber-700 font-semibold mt-1">⚠️ Dépassement de limite prévu — la vente sera refusée</p>
                         )}
                       </div>
                     )}
