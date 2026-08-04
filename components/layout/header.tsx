@@ -12,6 +12,7 @@ import { onSnapshot } from '@/lib/firebase/watch';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 import { isManagerPlus as isManagerPlusRole, isOwnerOrAdmin as isOwnerOrAdminRole } from '@/lib/auth/roles';
+import { estEnAlerte } from '@/lib/inventory/alert-threshold';
 
 export function Header() {
   const { user, tenant, currentStore, stores, setCurrentStore } = useAuthStore();
@@ -43,10 +44,14 @@ export function Header() {
       const { getDocs } = await import('firebase/firestore');
       const prodSnap = await getDocs(collection(db, tenantCol(tenantId, 'products')));
       const thresh: Record<string, number> = {};
-      prodSnap.docs.forEach(d => { thresh[d.id] = d.data().alertThreshold || 10; });
+      prodSnap.docs.forEach(d => { thresh[d.id] = d.data().alertThreshold ?? 10; });
       low = snap.docs.filter(d => {
         const data = d.data();
-        return data.storeId === currentStore?.id && (data.quantity || 0) <= (thresh[data.productId] || 10);
+        // Seuil du magasin s'il existe, sinon celui du produit.
+        return data.storeId === currentStore?.id && estEnAlerte(data.quantity || 0, {
+          seuilMagasin: data.minQuantity,
+          seuilProduit: thresh[data.productId],
+        });
       }).length;
       update();
     });

@@ -21,6 +21,7 @@ import { collection, query, where } from 'firebase/firestore';
 import { onSnapshot } from '@/lib/firebase/watch';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
+import { estEnAlerte } from '@/lib/inventory/alert-threshold';
 
 interface NavItem {
   title: string;
@@ -176,10 +177,13 @@ export function Sidebar() {
       const { getDocs } = await import('firebase/firestore');
       const prodSnap = await getDocs(collection(db, tenantCol(tenantId, 'products')));
       const thresh: Record<string, number> = {};
-      prodSnap.docs.forEach(d => { thresh[d.id] = d.data().alertThreshold || 10; });
+      prodSnap.docs.forEach(d => { thresh[d.id] = d.data().alertThreshold ?? 10; });
       const low = snap.docs.filter(d => {
         const data = d.data();
-        return data.storeId === storeId && (data.quantity || 0) <= (thresh[data.productId] || 10);
+        return data.storeId === storeId && estEnAlerte(data.quantity || 0, {
+          seuilMagasin: data.minQuantity,
+          seuilProduit: thresh[data.productId],
+        });
       }).length;
       setLowStockCount(low);
     });

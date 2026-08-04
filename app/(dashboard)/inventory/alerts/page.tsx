@@ -15,9 +15,10 @@ import { onSnapshot } from '@/lib/firebase/watch';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 import { useRouter } from 'next/navigation';
+import { estEnAlerte, seuilAlerte } from '@/lib/inventory/alert-threshold';
 
 interface Product { id: string; name: string; sku: string; unit: string; alertThreshold: number; purchasePrice: number; trackInventory: boolean; }
-interface InventoryItem { id: string; productId: string; storeId: string; quantity: number; }
+interface InventoryItem { id: string; productId: string; storeId: string; quantity: number; minQuantity?: number; }
 
 export default function AlertsPage() {
   const { tenant, currentStore } = useAuthStore();
@@ -48,13 +49,29 @@ export default function AlertsPage() {
 
   // Fix multi-store : getStock filtre déjà par storeId via inventory.find(i => i.storeId === storeId)
   const ruptures = products.filter(p => p.trackInventory && getStock(p.id) === 0);
-  const stockBas = products.filter(p => p.trackInventory && getStock(p.id) > 0 && getStock(p.id) <= p.alertThreshold);
+  /** Seuil applicable à ce produit dans le magasin courant. */
+  const seuilDe = (p: Product) =>
+    seuilAlerte({
+      seuilMagasin: inventory.find(i => i.productId === p.id)?.minQuantity,
+      seuilProduit: p.alertThreshold,
+    });
+
+  const stockBas = products.filter(
+    p => p.trackInventory && getStock(p.id) > 0 && estEnAlerte(getStock(p.id), {
+      seuilMagasin: inventory.find(i => i.productId === p.id)?.minQuantity,
+      seuilProduit: p.alertThreshold,
+    })
+  );
   const allAlerts = [
     ...ruptures.map(p => ({ ...p, stock: 0, type: 'RUPTURE' as const })),
     ...stockBas.map(p => ({ ...p, stock: getStock(p.id), type: 'STOCK_BAS' as const })),
   ];
 
-  const valeurManquante = ruptures.reduce((s, p) => s + p.alertThreshold * p.purchasePrice, 0);
+  // Produits sans prix d'achat exclus : les compter à 0 sous-évaluerait le
+  // réassort nécessaire sans le dire (voir la note sur le prix facultatif).
+  const valeurManquante = ruptures.reduce(
+    (s, p) => s + (p.purchasePrice == null ? 0 : seuilDe(p) * p.purchasePrice), 0
+  );
 
   return (
     <DashboardLayout>
@@ -131,9 +148,9 @@ export default function AlertsPage() {
                     <TableCell className={`text-right font-bold ${p.type === 'RUPTURE' ? 'text-red-600' : 'text-amber-600'}`}>
                       {p.stock} {p.unit}
                     </TableCell>
-                    <TableCell className="text-right text-sm text-gray-500">{p.alertThreshold} {p.unit}</TableCell>
+                    <TableCell className="text-right text-sm text-gray-500">{seuilDe(p)} {p.unit}</TableCell>
                     <TableCell className="text-right text-sm font-medium">
-                      {Math.max(0, p.alertThreshold - p.stock)} {p.unit}
+                      {Math.max(0, seuilDe(p) - p.stock)} {p.unit}
                     </TableCell>
                   </TableRow>
                 ))}

@@ -20,6 +20,7 @@ import { onSnapshot } from '@/lib/firebase/watch';
 import { db } from '@/lib/firebase/client';
 import { tenantCol, inventoryKey } from '@/lib/firebase/collections';
 import type { Product } from '@/lib/types';
+import { estEnAlerte, seuilAlerte } from '@/lib/inventory/alert-threshold';
 
 interface InventoryItem { id: string; productId: string; storeId: string; quantity: number; minQuantity?: number; }
 
@@ -35,6 +36,10 @@ export default function InventoryPage() {
   const [filterAlert, setFilterAlert] = useState('all');
 
   const [adjProduct, setAdjProduct] = useState<Product | null>(null);
+  // Seuil d'alerte PROPRE À CE MAGASIN. Vide = on retombe sur celui du
+  // produit. Une boutique et un dépôt n'ont pas le même rythme d'écoulement :
+  // un seuil unique alerte trop tôt pour l'une, trop tard pour l'autre.
+  const [adjSeuil, setAdjSeuil] = useState('');
   const [adjType, setAdjType] = useState<'add' | 'remove' | 'set'>('add');
   const [adjQty, setAdjQty] = useState('');
   const [adjNote, setAdjNote] = useState('');
@@ -57,15 +62,22 @@ export default function InventoryPage() {
   const getStock = (productId: string) =>
     inventory.find((i) => i.productId === productId && i.storeId === storeId)?.quantity ?? 0;
 
+  /** Seuil applicable à ce produit DANS CE MAGASIN (voir lib/inventory). */
+  const seuilDe = (productId: string, seuilProduit: number | null | undefined) =>
+    ({
+      seuilMagasin: inventory.find(i => i.productId === productId && i.storeId === storeId)?.minQuantity,
+      seuilProduit,
+    });
+
   const rows = products.filter((p) => {
     const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.sku.toLowerCase().includes(search.toLowerCase());
     const stock = getStock(p.id);
-    const isLow = stock <= p.alertThreshold;
+    const isLow = estEnAlerte(stock, seuilDe(p.id, p.alertThreshold));
     const matchAlert = filterAlert === 'all' || (filterAlert === 'low' && isLow) || (filterAlert === 'ok' && !isLow);
     return matchSearch && matchAlert && p.trackInventory;
   });
 
-  const lowCount = products.filter((p) => p.trackInventory && getStock(p.id) <= p.alertThreshold).length;
+  const lowCount = products.filter((p) => p.trackInventory && estEnAlerte(getStock(p.id), seuilDe(p.id, p.alertThreshold))).length;
 
   const handleAdjust = async () => {
     if (!tenantId || !storeId || !adjProduct || !adjQty) return;
@@ -78,10 +90,18 @@ export default function InventoryPage() {
       const invKey = inventoryKey(adjProduct.id, storeId);
       const existing = inventory.find((i) => i.productId === adjProduct.id && i.storeId === storeId);
       if (existing) {
-        await updateDoc(doc(db, tenantCol(tenantId, 'inventory'), existing.id), { quantity: newQty, updatedAt: serverTimestamp() });
+        await updateDoc(doc(db, tenantCol(tenantId, 'inventory'), existing.id), {
+          quantity: newQty,
+          // `null` efface le seuil propre au magasin et fait retomber sur
+          // celui du produit — distinct de 0, qui désactive l'alerte.
+          minQuantity: adjSeuil.trim() === '' ? null : Number(adjSeuil),
+          updatedAt: serverTimestamp(),
+        });
       } else {
         await addDoc(collection(db, tenantCol(tenantId, 'inventory')), {
-          tenantId, productId: adjProduct.id, storeId, quantity: newQty, minQuantity: adjProduct.alertThreshold, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+          tenantId, productId: adjProduct.id, storeId, quantity: newQty,
+          minQuantity: adjSeuil.trim() === '' ? null : Number(adjSeuil),
+          createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
         });
       }
       await addDoc(collection(db, tenantCol(tenantId, 'inventory_movements')), {
@@ -91,7 +111,7 @@ export default function InventoryPage() {
         previousQuantity: currentQty, newQuantity: newQty,
         reason: adjNote || 'Ajustement manuel', createdAt: serverTimestamp(),
       });
-      setAdjProduct(null); setAdjQty(''); setAdjNote('');
+      setAdjProduct(null); setAdjQty(''); setAdjNote(''); setAdjSeuil('');
     } catch (e) { console.error(e); }
     finally { setIsSaving(false); }
   };
@@ -147,7 +167,7 @@ export default function InventoryPage() {
               <TableBody>
                 {rows.map((p) => {
                   const stock = getStock(p.id);
-                  const isLow = stock <= p.alertThreshold;
+                  const isLow = estEnAlerte(stock, seuilDe(p.id, p.alertThreshold));
                   return (
                     <TableRow key={p.id} className={`hover:bg-gray-50 ${isLow ? 'bg-amber-50/40' : ''}`}>
                       <TableCell>
@@ -173,7 +193,13 @@ export default function InventoryPage() {
                         </span>
                       </TableCell>
                       <TableCell>
-                        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setAdjProduct(p); setAdjType('add'); setAdjQty(''); setAdjNote(''); }}>
+                        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => {
+                          setAdjProduct(p); setAdjType('add'); setAdjQty(''); setAdjNote('');
+                          // Pré-remplir le seuil existant : sans cela, chaque
+                          // ajustement de stock l'aurait silencieusement effacé.
+                          const inv = inventory.find(i => i.productId === p.id && i.storeId === storeId);
+                          setAdjSeuil(inv?.minQuantity == null ? '' : String(inv.minQuantity));
+                        }}>
                           Ajuster
                         </Button>
                       </TableCell>
@@ -208,6 +234,18 @@ export default function InventoryPage() {
               <Label>Quantité *</Label>
               <Input type="number" placeholder="0" min="0" value={adjQty} onChange={(e) => setAdjQty(e.target.value)} />
             </div>
+            <div className="space-y-2">
+              <Label>Seuil d&apos;alerte pour ce magasin</Label>
+              <Input
+                type="number" min="0" placeholder={`Par défaut : ${adjProduct?.alertThreshold ?? 10}`}
+                value={adjSeuil} onChange={(e) => setAdjSeuil(e.target.value)}
+              />
+              <p className="text-xs text-gray-500">
+                Laissez vide pour utiliser le seuil du produit. 0 = aucune alerte
+                sur cet article dans ce magasin.
+              </p>
+            </div>
+
             <div className="space-y-2">
               <Label>Motif</Label>
               <Textarea placeholder="ex: Réception commande fournisseur, inventaire physique..." value={adjNote} onChange={(e) => setAdjNote(e.target.value)} rows={2} />

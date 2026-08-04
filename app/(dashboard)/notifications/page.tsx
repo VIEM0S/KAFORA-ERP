@@ -18,6 +18,7 @@ import { onSnapshot } from '@/lib/firebase/watch';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 import { isManagerPlus as isManagerPlusRole } from '@/lib/auth/roles';
+import { estEnAlerte } from '@/lib/inventory/alert-threshold';
 
 interface Notification {
   id: string;
@@ -71,7 +72,10 @@ function useDerivedNotifications(tenantId: string | undefined, storeId: string |
             title: 'Rupture de stock', message: `${p.name} est en rupture de stock`,
             isRead: false, link: '/inventory/alerts', createdAt: { seconds: now / 1000 },
           });
-        } else if (inv.quantity <= p.alertThreshold) {
+        } else if (estEnAlerte(inv.quantity, {
+          seuilMagasin: (inv as { minQuantity?: number }).minQuantity,
+          seuilProduit: p.alertThreshold,
+        })) {
           notifs.push({
             id: `stock-low-${inv.productId}`, type: 'STOCK_LOW',
             title: 'Stock faible', message: `${p.name} : ${inv.quantity} restant(s)`,
@@ -109,7 +113,9 @@ function useDerivedNotifications(tenantId: string | undefined, storeId: string |
       snap.docs.forEach(d => {
         products[d.id] = {
           name: d.data().name,
-          alertThreshold: d.data().alertThreshold || 10,
+          // `??` et non `||` : un seuil à 0 signifie « ne pas alerter »
+          // et doit être respecté tel quel.
+          alertThreshold: d.data().alertThreshold ?? 10,
           trackInventory: d.data().trackInventory,
         };
       });
