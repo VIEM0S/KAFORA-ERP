@@ -150,14 +150,28 @@ export async function POST(request: NextRequest) {
     // impossibles à départager.
     //
     // L'ouverture (openedAt + caisse) identifie la session de façon unique.
+    //
+    // ENTOURÉ D'UN try/catch : cette requête exige un index composite. S'il
+    // n'est pas déployé, l'exception remontait et faisait échouer TOUTE la
+    // clôture avec une erreur 500 illisible. Un caissier ne doit jamais se
+    // retrouver dans l'impossibilité de fermer sa caisse à cause d'un
+    // problème d'infrastructure : en cas d'échec du contrôle, on laisse
+    // passer et on journalise.
+    let existing: { empty: boolean; docs: { id: string; data: () => Record<string, unknown> }[] } | null = null;
     if (openedAt) {
-      const existing = await adminDb
-        .collection(`tenants/${tenantId}/cash_sessions`)
-        .where('registerId', '==', registerId)
-        .where('openedAt', '==', openedAt)
-        .limit(1)
-        .get();
-      if (!existing.empty) {
+      try {
+        existing = await adminDb
+          .collection(`tenants/${tenantId}/cash_sessions`)
+          .where('registerId', '==', registerId)
+          .where('openedAt', '==', openedAt)
+          .limit(1)
+          .get();
+      } catch (err) {
+        console.warn('Contrôle anti double clôture indisponible (index manquant ?)', err);
+      }
+    }
+    if (existing && !existing.empty) {
+      {
         const prev = existing.docs[0].data();
         return NextResponse.json(
           {
