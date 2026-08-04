@@ -14,9 +14,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatCurrency, toFirestoreDate, formatDate, formatDateTime } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
-import {
-  collection, query, orderBy, onSnapshot,
-  limit, getDocs, doc, getDoc, where } from 'firebase/firestore';
+import { collection, query, orderBy, limit, getDocs, doc, getDoc, where } from 'firebase/firestore';
+// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { onSnapshot } from '@/lib/firebase/watch';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 import { generateInvoicePDF, generateThermalReceipt } from '@/lib/utils/pdf';

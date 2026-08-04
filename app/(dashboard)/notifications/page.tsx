@@ -11,10 +11,10 @@ import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/hooks/store';
 import { useRouter } from 'next/navigation';
 import { formatRelativeTime } from '@/lib/utils/helpers';
-import {
-  collection, query, orderBy, onSnapshot, where,
-  doc, updateDoc, deleteDoc, limit, writeBatch
-} from 'firebase/firestore';
+import { collection, query, orderBy, where, doc, updateDoc, deleteDoc, limit, writeBatch } from 'firebase/firestore';
+// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { onSnapshot } from '@/lib/firebase/watch';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 import { isManagerPlus as isManagerPlusRole } from '@/lib/auth/roles';

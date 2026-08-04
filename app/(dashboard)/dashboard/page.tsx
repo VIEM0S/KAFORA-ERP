@@ -13,10 +13,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { formatCurrency, formatRelativeTime } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
-import {
-  collection, collectionGroup, query, orderBy, onSnapshot,
-  where, limit, getDocs, Timestamp
-} from 'firebase/firestore';
+import { collection, collectionGroup, query, orderBy, where, limit, getDocs, Timestamp } from 'firebase/firestore';
+// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { onSnapshot } from '@/lib/firebase/watch';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 import { isManagerPlus as isManagerPlusRole } from '@/lib/auth/roles';

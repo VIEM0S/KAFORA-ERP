@@ -20,8 +20,10 @@ import { useAuthStore } from '@/hooks/store';
 import { ref, onValue, set, push, get } from 'firebase/database';
 import { rtdb } from '@/lib/firebase/client';
 import { RTDB_PATHS } from '@/lib/firebase/rtdb';
-import {
-  collection, query, where, orderBy, onSnapshot, limit, collectionGroup } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, collectionGroup } from 'firebase/firestore';
+// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { onSnapshot } from '@/lib/firebase/watch';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 import { isManagerPlus as isManagerPlusRole } from '@/lib/auth/roles';

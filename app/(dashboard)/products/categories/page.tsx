@@ -29,10 +29,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ChevronDown } from 'lucide-react';
 import { useAuthStore } from '@/hooks/store';
-import {
-  collection, query, orderBy, onSnapshot, where, getDocs,
-  doc, addDoc, updateDoc, deleteDoc, serverTimestamp
-} from 'firebase/firestore';
+import { collection, query, orderBy, where, getDocs, doc, addDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { onSnapshot } from '@/lib/firebase/watch';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 import type { Category } from '@/lib/types';

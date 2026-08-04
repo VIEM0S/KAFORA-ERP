@@ -6,9 +6,41 @@ import { Header } from './header';
 import { cn } from '@/lib/utils/helpers';
 import { useAuthStore, useUIStore } from '@/hooks/store';
 import { useAuth } from '@/hooks/useAuth';
+import { useDataErrors } from '@/hooks/use-data-errors';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
+}
+
+/**
+ * Bandeau affiché tant qu'une écoute de données est en échec.
+ *
+ * Sans lui, un refus d'accès ou un index manquant se traduisait par une page
+ * vide : le commerçant concluait à une absence de données là où il y avait un
+ * problème technique.
+ */
+function DataErrorBanner() {
+  const errors = useDataErrors(s => s.errors);
+  const list = Object.entries(errors);
+  if (list.length === 0) return null;
+
+  return (
+    <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4">
+      <p className="text-sm font-medium text-red-800">
+        {list.length === 1
+          ? 'Une partie des données n\'a pas pu être chargée.'
+          : `${list.length} sources de données n'ont pas pu être chargées.`}
+      </p>
+      <ul className="mt-2 space-y-1">
+        {list.map(([key, err]) => (
+          <li key={key} className="text-xs text-red-700">
+            <span className="font-medium">{key}</span> — {err.message}
+            {err.hint && <span className="block text-red-600 break-all">{err.hint}</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
@@ -48,6 +80,11 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       <div className={cn('transition-all duration-300', sidebarCollapsed ? 'ml-16' : 'ml-64')}>
         <Header />
         <main className="p-4 lg:p-6">
+          {/* Point d'intégration UNIQUE pour les erreurs de chargement.
+              Chaque écran déclare ses échecs dans le registre partagé
+              (hooks/use-data-errors) ; le bandeau est rendu ici, une seule
+              fois, plutôt que dupliqué dans dix-sept pages. */}
+          <DataErrorBanner />
           {children}
         </main>
       </div>

@@ -33,10 +33,10 @@ import {
 import { formatCurrency } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
 import { useRouter } from 'next/navigation';
-import {
-  collection, query, orderBy, onSnapshot,
-  doc, addDoc, updateDoc, deleteDoc, serverTimestamp
-} from 'firebase/firestore';
+import { collection, query, orderBy, doc, addDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { onSnapshot } from '@/lib/firebase/watch';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 import type { Customer, CustomerType } from '@/lib/types';

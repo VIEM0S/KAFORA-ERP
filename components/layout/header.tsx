@@ -5,7 +5,10 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils/helpers';
 import { useAuthStore, useUIStore } from '@/hooks/store';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where } from 'firebase/firestore';
+// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { onSnapshot } from '@/lib/firebase/watch';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 import { isManagerPlus as isManagerPlusRole, isOwnerOrAdmin as isOwnerOrAdminRole } from '@/lib/auth/roles';

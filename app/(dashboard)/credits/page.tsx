@@ -23,10 +23,10 @@ import {
 } from '@/components/ui/select';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
-import {
-  collection, query, orderBy, onSnapshot,
-  doc, serverTimestamp, runTransaction
-} from 'firebase/firestore';
+import { collection, query, orderBy, doc, serverTimestamp, runTransaction } from 'firebase/firestore';
+// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { onSnapshot } from '@/lib/firebase/watch';
 import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 import { ROLE_PERMISSIONS } from '@/lib/constants';
