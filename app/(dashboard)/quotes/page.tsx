@@ -44,7 +44,7 @@ const STATUS_CONFIG = {
 
 export default function QuotesPage() {
   const { tenant, user, currentStore } = useAuthStore();
-  const { addItem, setCustomer, clearCart } = useCartStore();
+  const { addItem, updateItemPrice, setCustomer, clearCart, setNotes } = useCartStore();
   const tenantId = tenant?.id;
   const router = useRouter();
 
@@ -141,22 +141,54 @@ export default function QuotesPage() {
 
   const handleConvert = async () => {
     if (!tenantId || !convertTarget || !convertTarget.items) return;
-    // Charger les produits complets pour le panier
+
     clearCart();
+    const introuvables: string[] = [];
+
     for (const item of convertTarget.items) {
       const pSnap = await getDocs(query(collection(db, tenantCol(tenantId, 'products')), where('__name__', '==', item.productId)));
-      if (!pSnap.empty) {
-        const p = { id: pSnap.docs[0].id, ...pSnap.docs[0].data() } as Product;
-        addItem(p, item.quantity);
+      if (pSnap.empty) {
+        // Produit supprimé depuis l'établissement du devis : on le signale
+        // plutôt que de le faire disparaître silencieusement du panier.
+        introuvables.push(item.productName || item.productId);
+        continue;
+      }
+      const p = { id: pSnap.docs[0].id, ...pSnap.docs[0].data() } as Product;
+      addItem(p, item.quantity);
+
+      // PRIX DU DEVIS, pas le prix courant.
+      //
+      // `addItem` reprend le prix de vente actuel du produit. Si le tarif a
+      // changé depuis l'établissement du devis, le client se voyait facturer
+      // un montant différent de celui qu'on lui avait remis par écrit — un
+      // devis n'est pas une estimation, c'est un engagement.
+      if (typeof item.unitPrice === 'number' && item.unitPrice !== p.sellingPrice) {
+        updateItemPrice(p.id, item.unitPrice);
       }
     }
-    // Charger le client
+
     const cSnap = await getDocs(query(collection(db, tenantCol(tenantId, 'customers')), where('__name__', '==', convertTarget.customerId)));
     if (!cSnap.empty) {
       setCustomer({ id: cSnap.docs[0].id, ...cSnap.docs[0].data() } as Customer);
     }
-    // Marquer comme converti
-    await handleStatus(convertTarget.id, 'CONVERTED');
+
+    // Traçabilité : la vente doit pouvoir être rattachée à son devis.
+    const ref = `Devis ${convertTarget.id.slice(0, 8).toUpperCase()}`;
+    setNotes(convertTarget.note ? `${ref} — ${convertTarget.note}` : ref);
+
+    if (introuvables.length > 0) {
+      alert(
+        `Ces articles du devis n'existent plus et n'ont pas été ajoutés :\n` +
+        `${introuvables.join(', ')}\n\nVérifiez le panier avant d'encaisser.`
+      );
+    }
+
+    // Le devis N'EST PLUS marqué « converti » ici.
+    //
+    // Il l'était avant même que la vente existe : si le caissier abandonnait
+    // le panier, le devis restait marqué converti sans qu'aucune vente n'ait
+    // eu lieu — et il devenait impossible de le reconvertir. Le statut est
+    // désormais à passer manuellement une fois la vente encaissée.
     setConvertTarget(null);
     router.push('/pos');
   };

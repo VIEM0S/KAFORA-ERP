@@ -13,6 +13,9 @@ import { PaymentDialog } from '@/components/pos/payment-dialog';
 import { CustomerPickerDialog } from '@/components/pos/customer-picker-dialog';
 import { SuccessDialog } from '@/components/pos/success-dialog';
 import type { Product } from '@/lib/types';
+import { ref, onValue } from 'firebase/database';
+import { rtdb } from '@/lib/firebase/client';
+import { RTDB_PATHS } from '@/lib/firebase/rtdb';
 
 export default function POSPage() {
   const { tenant, currentStore, user } = useAuthStore();
@@ -29,6 +32,27 @@ export default function POSPage() {
   const checkout = useCheckout({ tenantId, storeId, refreshQueue, setIsOnline });
 
   const [showCustomerPicker, setShowCustomerPicker] = useState(false);
+
+  // ─── État de la caisse ───────────────────────────────────────────────────
+  //
+  // On peut encaisser caisse fermée, et c'est VOLONTAIRE : bloquer la vente
+  // parce qu'un caissier a oublié d'ouvrir sa session empêcherait un commerce
+  // de servir ses clients — un remède pire que le mal.
+  //
+  // Mais ces ventes n'entrent alors dans AUCUNE clôture : l'argent est dans
+  // le tiroir sans qu'aucune session ne le justifie, et le rapprochement de
+  // fin de journée devient impossible. D'où cet avertissement bien visible.
+  const [registerOpen, setRegisterOpen] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!tenantId || !storeId) return;
+    const path = RTDB_PATHS.cashRegister(tenantId, `register_${storeId}`);
+    return onValue(
+      ref(rtdb, path),
+      snap => setRegisterOpen(snap.exists() && snap.val()?.status === 'OPEN'),
+      () => setRegisterOpen(null)
+    );
+  }, [tenantId, storeId]);
 
   // ─── Ajout au panier avec vérification stock ─────────────────────────────
   const handleAddItem = (p: Product) => {
@@ -74,6 +98,19 @@ export default function POSPage() {
 
   return (
     <DashboardLayout>
+      {registerOpen === false && (
+        <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3">
+          <p className="text-sm font-medium text-amber-900">
+            Caisse fermée — vos ventes ne seront rattachées à aucune session.
+          </p>
+          <p className="mt-1 text-xs text-amber-800">
+            Vous pouvez continuer à encaisser, mais ces ventes n&apos;apparaîtront
+            pas dans le rapprochement de fin de journée. Ouvrez la caisse
+            depuis le menu <strong>Caisse</strong> pour que le contrôle soit fiable.
+          </p>
+        </div>
+      )}
+
       <div className="flex gap-4 h-[calc(100vh-8rem)]">
         <ProductCatalog
           products={products}
