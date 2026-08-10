@@ -43,7 +43,7 @@ export function ProductCatalog({
       {outsideHours && (
         <div className="rounded-lg border bg-slate-50 border-slate-200 text-slate-700 text-sm px-4 py-2 flex items-center gap-2">
           <Clock className="h-4 w-4 flex-shrink-0" />
-          Tu es en dehors de tes horaires habituels ({workingHours?.start}–{workingHours?.end}). Ceci n'empêche pas de vendre — c'est juste un rappel.
+          Tu es en dehors de tes horaires habituels ({workingHours?.start}–{workingHours?.end}). Ceci n&apos;empêche pas de vendre — c&apos;est juste un rappel.
         </div>
       )}
       {(!isOnline || pendingQueue.length > 0) && (
@@ -73,7 +73,7 @@ export function ProductCatalog({
           {pendingQueue.some(s => s.status === 'ERROR') && (
             <div className="border-t border-current/20 px-4 py-2 space-y-1.5 bg-red-50 text-red-800 rounded-b-lg">
               <p className="text-xs font-medium">
-                {pendingQueue.filter(s => s.status === 'ERROR').length} vente(s) n'ont pas pu être synchronisées :
+                {pendingQueue.filter(s => s.status === 'ERROR').length} vente(s) n&apos;ont pas pu être synchronisées :
               </p>
               {pendingQueue.filter(s => s.status === 'ERROR').map(s => (
                 <div key={s.localId} className="flex items-center justify-between gap-2 text-xs">

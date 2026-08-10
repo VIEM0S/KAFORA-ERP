@@ -246,7 +246,7 @@ export default function ProductImportPage() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-gray-500 mt-1">
-                  Les quantités "Stock Initial" de ton fichier seront créées dans ce magasin.
+                  Les quantités &quot;Stock Initial&quot; de ton fichier seront créées dans ce magasin.
                 </p>
               </div>
 
@@ -414,7 +414,7 @@ export default function ProductImportPage() {
               </div>
               <div className="flex gap-2 justify-center pt-2">
                 <Button variant="outline" onClick={() => { setStep('input'); setRows([]); setPasteText(''); setResult(null); }}>
-                  Importer d'autres produits
+                  Importer d&apos;autres produits
                 </Button>
                 <Button onClick={() => router.push('/products')}>Voir le catalogue</Button>
               </div>

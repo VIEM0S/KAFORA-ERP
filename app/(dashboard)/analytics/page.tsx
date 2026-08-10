@@ -239,7 +239,7 @@ export default function AnalyticsPage() {
         {/* CA mensuel */}
         <Card>
           <CardHeader>
-            <CardTitle>Chiffre d'affaires & Marge estimée</CardTitle>
+            <CardTitle>Chiffre d&apos;affaires & Marge estimée</CardTitle>
             <CardDescription>Évolution sur les {monthsCount} derniers mois</CardDescription>
           </CardHeader>
           <CardContent>

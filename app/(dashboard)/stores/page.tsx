@@ -293,7 +293,7 @@ export default function StoresPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Supprimer ce magasin ?</AlertDialogTitle>
-            <AlertDialogDescription><strong>{deleteTarget?.name}</strong> sera définitivement supprimé. Le stock et l'historique associés ne seront pas supprimés.</AlertDialogDescription>
+            <AlertDialogDescription><strong>{deleteTarget?.name}</strong> sera définitivement supprimé. Le stock et l&apos;historique associés ne seront pas supprimés.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Annuler</AlertDialogCancel>

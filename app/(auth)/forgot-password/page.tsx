@@ -14,7 +14,7 @@ export default function ForgotPasswordPage() {
           className="inline-flex items-center gap-1.5 text-sm text-primary-200 hover:text-white transition-colors mb-6"
         >
           <ArrowLeft className="h-4 w-4" />
-          Retour à l'accueil
+          Retour à l&apos;accueil
         </Link>
 
         <div className="text-center mb-8">

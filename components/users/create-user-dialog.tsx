@@ -163,7 +163,7 @@ export function CreateUserDialog({ tenantId, open, onOpenChange, onCreated }: Cr
             )}
           </div>
           <div className="col-span-2 bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
-            ℹ️ L'utilisateur recevra ses identifiants par email. Il pourra modifier son mot de passe depuis les paramètres.
+            ℹ️ L&apos;utilisateur recevra ses identifiants par email. Il pourra modifier son mot de passe depuis les paramètres.
           </div>
         </div>
         <DialogFooter>

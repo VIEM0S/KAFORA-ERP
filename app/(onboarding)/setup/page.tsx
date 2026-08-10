@@ -116,7 +116,7 @@ export default function SetupPage() {
           className="inline-flex items-center gap-1.5 text-sm text-primary-200 hover:text-white transition-colors mb-6"
         >
           <ArrowLeft className="h-4 w-4" />
-          Retour à l'accueil
+          Retour à l&apos;accueil
         </Link>
 
         <div className="text-center mb-8">
@@ -162,7 +162,7 @@ export default function SetupPage() {
             {step === 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2 space-y-2">
-                  <Label>Nom de l'entreprise *</Label>
+                  <Label>Nom de l&apos;entreprise *</Label>
                   <Input id="company-name" name="company-name" autoComplete="organization" value={company.name} onChange={e => setCompany({...company, name: e.target.value})} placeholder="Ex: Quincaillerie Alpha" />
                 </div>
                 <div className="space-y-2">
@@ -306,7 +306,7 @@ export default function SetupPage() {
                         </li>
                       ))}
                     </ul>
-                    <p className="text-xs text-gray-400 mt-3">14 jours d'essai gratuit</p>
+                    <p className="text-xs text-gray-400 mt-3">14 jours d&apos;essai gratuit</p>
                   </button>
                 ))}
               </div>

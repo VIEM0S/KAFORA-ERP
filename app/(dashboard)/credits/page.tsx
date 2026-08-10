@@ -362,7 +362,7 @@ export default function CreditsPage() {
               <div className="flex flex-col items-center justify-center py-16 text-gray-400">
                 <CreditCard className="h-12 w-12 mb-4 opacity-30" />
                 <p className="font-medium">Aucun crédit trouvé</p>
-                <p className="text-sm mt-1">Les crédits sont créés depuis le POS lors d'un paiement en crédit</p>
+                <p className="text-sm mt-1">Les crédits sont créés depuis le POS lors d&apos;un paiement en crédit</p>
               </div>
             ) : (
               <Table>

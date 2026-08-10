@@ -247,7 +247,7 @@ export default function HomePage() {
             Prêt à transformer votre entreprise ?
           </h2>
           <p className="text-xl text-primary-200 mb-8">
-            Rejoignez des centaines d'entreprises qui font confiance à KAFORA
+            Rejoignez des centaines d&apos;entreprises qui font confiance à KAFORA
             ERP
           </p>
           <Button

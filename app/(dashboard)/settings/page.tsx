@@ -202,7 +202,7 @@ export default function SettingsPage() {
             <Msg msg={companyMsg} />
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2 space-y-2">
-                <Label>Nom de l'entreprise *</Label>
+                <Label>Nom de l&apos;entreprise *</Label>
                 <Input value={company.name} onChange={e => setCompany(p => ({ ...p, name: e.target.value }))} placeholder="Quincaillerie Alpha" />
               </div>
               <div className="space-y-2">
@@ -277,7 +277,7 @@ export default function SettingsPage() {
               <div className="col-span-2 space-y-2">
                 <Label>Email</Label>
                 <Input value={user?.email || ''} disabled className="bg-gray-50 text-gray-400" />
-                <p className="text-xs text-gray-400">L'email ne peut pas être modifié ici</p>
+                <p className="text-xs text-gray-400">L&apos;email ne peut pas être modifié ici</p>
               </div>
               <div className="space-y-2">
                 <Label>Téléphone</Label>

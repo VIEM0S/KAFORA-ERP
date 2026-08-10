@@ -13,7 +13,7 @@ export default function NotFound() {
         </div>
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Page introuvable</h1>
         <p className="text-sm text-gray-500 mb-6">
-          Cette page n'existe pas ou a été déplacée. Vérifie l'adresse, ou retourne à ton tableau de bord.
+          Cette page n&apos;existe pas ou a été déplacée. Vérifie l&apos;adresse, ou retourne à ton tableau de bord.
         </p>
         <Link href="/dashboard">
           <Button className="bg-primary-600 hover:bg-primary-700">Retour au tableau de bord</Button>

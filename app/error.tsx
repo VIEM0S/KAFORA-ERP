@@ -25,7 +25,7 @@ export default function Error({
         </div>
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Une erreur est survenue</h1>
         <p className="text-sm text-gray-500 mb-6">
-          Quelque chose s'est mal passé de notre côté. Réessaie — si le problème persiste, préviens ton administrateur.
+          Quelque chose s&apos;est mal passé de notre côté. Réessaie — si le problème persiste, préviens ton administrateur.
         </p>
         <Button onClick={() => reset()} className="bg-primary-600 hover:bg-primary-700">
           <RefreshCw className="h-4 w-4 mr-2" />

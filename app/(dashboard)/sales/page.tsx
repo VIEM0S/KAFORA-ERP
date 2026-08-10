@@ -379,7 +379,7 @@ export default function SalesPage() {
                 <div className="flex justify-between"><span className="text-gray-500">Statut</span><StatusBadge status={selected.status} /></div>
                 {selected.status === 'CANCELLED' && selected.motifAnnulation && (
                   <div className="bg-red-50 rounded-lg p-3">
-                    <p className="text-xs text-red-600 font-medium">Motif d'annulation</p>
+                    <p className="text-xs text-red-600 font-medium">Motif d&apos;annulation</p>
                     <p className="text-xs text-red-700 mt-1">{selected.motifAnnulation}</p>
                   </div>
                 )}
@@ -448,7 +448,7 @@ export default function SalesPage() {
                   ⚠️ Le stock sera automatiquement restauré pour tous les articles de cette vente.
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-sm">Motif d'annulation *</Label>
+                  <Label className="text-sm">Motif d&apos;annulation *</Label>
                   <Textarea
                     placeholder="Ex: Erreur de saisie, client a changé d'avis..."
                     value={cancelMotif}
@@ -515,7 +515,7 @@ export default function SalesPage() {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="CASH">Espèces</SelectItem>
-                  <SelectItem value="ORIGINAL_PAYMENT_METHOD">Mode de paiement d'origine</SelectItem>
+                  <SelectItem value="ORIGINAL_PAYMENT_METHOD">Mode de paiement d&apos;origine</SelectItem>
                 </SelectContent>
               </Select>
             </div>

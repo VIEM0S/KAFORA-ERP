@@ -249,7 +249,7 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Prix d'achat (FCFA)</Label>
+            <Label>Prix d&apos;achat (FCFA)</Label>
             <Input type="number" placeholder="Optionnel" value={form.purchasePrice} onChange={(e) => f('purchasePrice', e.target.value)} min="0" />
             {!form.purchasePrice.trim() && (
               <p className="text-xs text-amber-600">
@@ -273,7 +273,7 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
             <Input type="number" placeholder="0" value={form.taxRate} onChange={(e) => f('taxRate', e.target.value)} min="0" max="100" />
           </div>
           <div className="space-y-2">
-            <Label>Seuil d'alerte stock</Label>
+            <Label>Seuil d&apos;alerte stock</Label>
             <Input type="number" placeholder="10" value={form.alertThreshold} onChange={(e) => f('alertThreshold', e.target.value)} min="0" />
           </div>
           <div className="col-span-2 flex items-center justify-between p-3 bg-gray-50 rounded-lg">

@@ -220,7 +220,7 @@ export default function InventoryPage() {
               Stock actuel : <strong>{adjProduct ? getStock(adjProduct.id) : 0} {adjProduct?.unit}</strong>
             </div>
             <div className="space-y-2">
-              <Label>Type d'ajustement</Label>
+              <Label>Type d&apos;ajustement</Label>
               <Select value={adjType} onValueChange={(v) => setAdjType(v as 'add' | 'remove' | 'set')}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>

@@ -84,7 +84,7 @@ export default function AlertsPage() {
             </p>
           </div>
           <Button onClick={() => router.push('/inventory')} variant="outline">
-            Gérer l'inventaire
+            Gérer l&apos;inventaire
           </Button>
         </div>
 
@@ -114,7 +114,7 @@ export default function AlertsPage() {
           <Card><CardContent className="flex flex-col items-center justify-center py-20 text-gray-400">
             <CheckCircle2 className="h-16 w-16 mb-4 text-green-400" />
             <p className="text-lg font-medium text-gray-600">Aucune alerte stock</p>
-            <p className="text-sm mt-1">Tous vos produits sont au-dessus du seuil d'alerte</p>
+            <p className="text-sm mt-1">Tous vos produits sont au-dessus du seuil d&apos;alerte</p>
           </CardContent></Card>
         ) : (
           <Card><CardContent className="p-0">

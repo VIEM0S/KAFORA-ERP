@@ -103,7 +103,7 @@ export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogP
     <Dialog open={!!user} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Modifier l'utilisateur</DialogTitle>
+          <DialogTitle>Modifier l&apos;utilisateur</DialogTitle>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-4 py-2">
           {editError && (
@@ -137,7 +137,7 @@ export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogP
                 <SelectItem value="CASHIER">Caissier</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-gray-400">Ex. : promouvoir un Caissier en Responsable, ou l'inverse.</p>
+            <p className="text-xs text-gray-400">Ex. : promouvoir un Caissier en Responsable, ou l&apos;inverse.</p>
           </div>
 
           <div className="col-span-2">
@@ -179,7 +179,7 @@ export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogP
           </div>
           <div className="col-span-2 border-t pt-3 mt-1">
             <p className="text-sm font-medium text-gray-700 mb-1">Horaires habituels (optionnel)</p>
-            <p className="text-xs text-gray-400 mb-2">Affiche juste un avertissement dans le POS hors de ces heures — ne bloque jamais l'accès. Laisser vide pour un poste sans horaire fixe (ex. boutique ouverte en continu).</p>
+            <p className="text-xs text-gray-400 mb-2">Affiche juste un avertissement dans le POS hors de ces heures — ne bloque jamais l&apos;accès. Laisser vide pour un poste sans horaire fixe (ex. boutique ouverte en continu).</p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="eu-workStart">Début</Label>

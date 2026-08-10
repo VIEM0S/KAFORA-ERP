@@ -108,7 +108,7 @@ export function DeletionRequestsSection({ tenantId, deletionRequests, currentUse
                   <p className="font-medium text-gray-900 truncate">
                     {req.targetUserName} <span className="text-gray-400 font-normal">({req.targetUserRole})</span>
                   </p>
-                  <p className="text-xs text-gray-500 truncate">Demandé par {req.requestedByName} — "{req.reason}"</p>
+                  <p className="text-xs text-gray-500 truncate">Demandé par {req.requestedByName} — &quot;{req.reason}&quot;</p>
                 </div>
                 <div className="flex gap-1.5 flex-shrink-0">
                   <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setRespondingTo({ req, action: 'reject' })}>
@@ -132,7 +132,7 @@ export function DeletionRequestsSection({ tenantId, deletionRequests, currentUse
                   <p className="text-xs text-gray-500 truncate">Approuvé — en attente que {req.requestedByName} finalise</p>
                 </div>
                 <Button size="sm" variant="outline" className="h-7 text-xs flex-shrink-0" onClick={() => setRespondingTo({ req, action: 'revoke_approval' })}>
-                  Retirer l'approbation
+                  Retirer l&apos;approbation
                 </Button>
               </div>
             ))}
@@ -176,10 +176,10 @@ export function DeletionRequestsSection({ tenantId, deletionRequests, currentUse
               {respondingTo?.action === 'revoke_approval' && "Retirer l'approbation ?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {respondingTo?.action === 'approve' && <>L'Admin pourra finaliser la suppression de <strong>{respondingTo.req.targetUserName}</strong> depuis sa fiche.</>}
+              {respondingTo?.action === 'approve' && <>L&apos;Admin pourra finaliser la suppression de <strong>{respondingTo.req.targetUserName}</strong> depuis sa fiche.</>}
               {respondingTo?.action === 'reject' && <>La demande concernant <strong>{respondingTo.req.targetUserName}</strong> sera classée sans suite.</>}
-              {respondingTo?.action === 'delete_now' && <>Le compte de <strong>{respondingTo.req.targetUserName}</strong> sera désactivé immédiatement (connexion bloquée), et restaurable à tout moment depuis la liste des utilisateurs. L'Admin qui a fait la demande sera informé que c'est réglé.</>}
-              {respondingTo?.action === 'revoke_approval' && <>L'approbation pour <strong>{respondingTo.req.targetUserName}</strong> est annulée — {respondingTo.req.requestedByName} ne pourra plus finaliser cette suppression. Utile si une réconciliation a eu lieu entre-temps.</>}
+              {respondingTo?.action === 'delete_now' && <>Le compte de <strong>{respondingTo.req.targetUserName}</strong> sera désactivé immédiatement (connexion bloquée), et restaurable à tout moment depuis la liste des utilisateurs. L&apos;Admin qui a fait la demande sera informé que c&apos;est réglé.</>}
+              {respondingTo?.action === 'revoke_approval' && <>L&apos;approbation pour <strong>{respondingTo.req.targetUserName}</strong> est annulée — {respondingTo.req.requestedByName} ne pourra plus finaliser cette suppression. Utile si une réconciliation a eu lieu entre-temps.</>}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-1.5">

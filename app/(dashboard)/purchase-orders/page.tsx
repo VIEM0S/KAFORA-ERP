@@ -360,7 +360,7 @@ export default function PurchaseOrdersPage() {
           {receiveError && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{receiveError}</div>}
           <p className="text-sm text-gray-500">
             Indique les quantités effectivement reçues. Une réception partielle est possible :
-            le reste restera "à recevoir" et tu pourras réceptionner le solde plus tard.
+            le reste restera &quot;à recevoir&quot; et tu pourras réceptionner le solde plus tard.
           </p>
           <div className="space-y-3 py-2">
             {receiveTarget?.items.map(it => {

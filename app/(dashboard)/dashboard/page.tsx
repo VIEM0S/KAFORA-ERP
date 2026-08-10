@@ -216,7 +216,7 @@ export default function DashboardPage() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-500">CA aujourd'hui</p>
+                  <p className="text-sm text-gray-500">CA aujourd&apos;hui</p>
                   <p className="text-2xl font-bold text-gray-900">
                     {isLoading ? <span className="h-8 w-32 bg-gray-200 rounded animate-pulse inline-block" /> : formatCurrency(todayRevenue)}
                   </p>

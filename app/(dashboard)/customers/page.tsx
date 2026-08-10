@@ -335,7 +335,7 @@ export default function CustomersPage() {
             </div>
             {form.customerType === 'BUSINESS' ? (
               <div className="col-span-2 space-y-2">
-                <Label>Nom de l'entreprise *</Label>
+                <Label>Nom de l&apos;entreprise *</Label>
                 <Input value={form.companyName} onChange={(e) => f('companyName', e.target.value)} placeholder="SARL Construction..." />
               </div>
             ) : (
