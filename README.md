@@ -63,7 +63,5 @@ firestore.rules  Règles de sécurité Firestore (isolation multi-tenant, rôles
 
 ## Ce qui n'est pas encore fait (connu, pas oublié)
 
-- Pas de tests automatisés — à prioriser sur `app/api/pos/checkout` en premier (calculs financiers).
-- Pas de CI.
 - Reçu POS au format A4 uniquement — pas encore adapté aux imprimantes thermiques 58mm/80mm de comptoir.
 - Pas de module comptable SYSCOHADA complet (grand livre, bilan) — l'app couvre la gestion commerciale (ventes/stock/crédit), pas la comptabilité générale.
