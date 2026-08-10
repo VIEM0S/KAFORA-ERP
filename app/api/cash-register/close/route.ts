@@ -13,6 +13,7 @@ export async function POST(request: NextRequest) {
     const decoded = await adminAuth.verifySessionCookie(sessionCookie, true);
     const callerTenantId = decoded.tenantId as string;
     const callerUid = decoded.uid as string;
+    const callerStoreIds = decoded.storeIds as string[] | null | undefined;
 
     const {
       tenantId, storeId, registerId,
@@ -24,6 +25,17 @@ export async function POST(request: NextRequest) {
     }
     if (tenantId !== callerTenantId) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
+    }
+
+    // Cloisonnement magasin (même contrôle que /api/pos/checkout) : sans ça,
+    // un caissier affecté au magasin A pouvait forger une requête et clôturer
+    // la caisse du magasin B — contournant le cloisonnement appliqué partout
+    // ailleurs. `storeIds` absent ou null = accès à tous (direction).
+    if (Array.isArray(callerStoreIds) && !callerStoreIds.includes(storeId)) {
+      return NextResponse.json(
+        { error: "Vous n'avez pas accès à ce magasin" },
+        { status: 403 }
+      );
     }
 
     // ── Session RTDB = source de vérité, jamais le corps de la requête ──────

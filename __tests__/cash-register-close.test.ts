@@ -18,12 +18,16 @@ const OPENED_AT = Date.now() - 4 * 60 * 60 * 1000; // ouverte il y a 4 h
 
 const db = new FakeFirestore();
 
-vi.mock('@/lib/firebase/admin', () => ({
-  adminAuth: {
+const { authMock } = vi.hoisted(() => ({
+  authMock: {
     verifySessionCookie: vi.fn(async () => ({
-      uid: 'user-1', tenantId: TENANT_ID, role: 'MANAGER', storeIds: null,
+      uid: 'user-1', tenantId: TENANT_ID, role: 'MANAGER', storeIds: null as string[] | null,
     })),
   },
+}));
+
+vi.mock('@/lib/firebase/admin', () => ({
+  adminAuth: authMock,
   get adminDb() { return db; },
   // La route marque aussi la caisse comme fermée en base temps réel.
   adminRtdb: {
@@ -182,5 +186,25 @@ describe('garde-fous', () => {
       body: JSON.stringify({ tenantId: TENANT_ID, storeId: STORE_ID, registerId: REGISTER_ID }),
     }));
     expect(res.status).toBe(400);
+  });
+
+  it("refuse de clôturer un magasin qui ne fait pas partie des magasins assignés à l'appelant", async () => {
+    // Cloisonnement par magasin, comme /api/pos/checkout : un caissier affecté
+    // uniquement au magasin A ne doit pas pouvoir clôturer la caisse du B.
+    authMock.verifySessionCookie.mockResolvedValueOnce({
+      uid: 'user-1', tenantId: TENANT_ID, role: 'CASHIER', storeIds: ['un-autre-store'],
+    });
+
+    const res = await close(post(90_000));
+    expect(res.status).toBe(403);
+  });
+
+  it('autorise la clôture quand le magasin demandé fait partie des magasins assignés', async () => {
+    authMock.verifySessionCookie.mockResolvedValueOnce({
+      uid: 'user-1', tenantId: TENANT_ID, role: 'CASHIER', storeIds: [STORE_ID],
+    });
+
+    const res = await close(post(50_000)); // aucune vente => attendu = fond de caisse seul
+    expect(res.status).toBe(200);
   });
 });
