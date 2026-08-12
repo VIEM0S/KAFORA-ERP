@@ -24,8 +24,18 @@ service cloud.firestore {
       return role() == 'OWNER';
     }
 
+    // REGIONAL_MANAGER = MANAGER + gestion des utilisateurs de ses magasins
+    // (cloisonnement par storeIds, jamais ici -- ces règles ne connaissent
+    // que le rôle, pas l'affectation magasin ; l'application stricte du
+    // cloisonnement vit côté serveur dans lib/api/regional-scope.ts, utilisé
+    // par /api/users/create et /api/users/update). Il a donc, comme un
+    // MANAGER, accès aux chiffres/rapports (daily_stats, cost_summary...).
     function isManager() {
-      return role() in ['OWNER', 'ADMIN', 'MANAGER'];
+      return role() in ['OWNER', 'ADMIN', 'REGIONAL_MANAGER', 'MANAGER'];
+    }
+
+    function isRegionalManager() {
+      return role() == 'REGIONAL_MANAGER';
     }
 
     function belongsToTenant(tid) {
@@ -136,6 +146,13 @@ service cloud.firestore {
         // Propriétaire accorde/retire le rôle Admin). Un simple Admin ne
         // peut donc plus toucher un document dont le rôle est ou deviendrait
         // ADMIN ; le Propriétaire, lui, garde un accès complet.
+        // Un responsable régional (REGIONAL_MANAGER) ne touche, en création
+        // comme en mise à jour, que des comptes MANAGER/CASHIER affectés
+        // UNIQUEMENT à des magasins qu'il gère lui-même (hasOnly = sous-
+        // ensemble strict) -- même logique que /api/users/create|update
+        // (lib/api/regional-scope.ts), dupliquée ici en garde-fou côté
+        // règles, pas comme chemin d'écriture principal (qui passe par
+        // l'Admin SDK pour pouvoir aussi poser les custom claims).
         allow update: if belongsToTenant(tenantId) &&
           (
             isOwner() ||
@@ -145,13 +162,32 @@ service cloud.firestore {
               resource.data.role != 'ADMIN'
             ) ||
             (
+              isRegionalManager() &&
+              resource.data.role in ['MANAGER', 'CASHIER'] &&
+              request.resource.data.role in ['MANAGER', 'CASHIER'] &&
+              request.auth.token.storeIds is list &&
+              resource.data.storeIds is list && resource.data.storeIds.hasOnly(request.auth.token.storeIds) &&
+              request.resource.data.storeIds is list && request.resource.data.storeIds.hasOnly(request.auth.token.storeIds)
+            ) ||
+            (
               request.auth.uid == userId &&
               request.resource.data.role == resource.data.role &&
               request.resource.data.isActive == resource.data.isActive
             )
           );
         allow create: if belongsToTenant(tenantId) &&
-          (isOwner() || (isOwnerOrAdmin() && request.resource.data.role != 'ADMIN'));
+          (
+            isOwner() ||
+            (isOwnerOrAdmin() && request.resource.data.role != 'ADMIN') ||
+            (
+              isRegionalManager() &&
+              request.resource.data.role in ['MANAGER', 'CASHIER'] &&
+              request.auth.token.storeIds is list &&
+              request.resource.data.storeIds is list &&
+              request.resource.data.storeIds.size() > 0 &&
+              request.resource.data.storeIds.hasOnly(request.auth.token.storeIds)
+            )
+          );
         // Fix : "delete" était ouvert à isOwnerOrAdmin(), ce qui permettait à un
         // Admin de supprimer un Manager/Caissier directement depuis le client,
         // contournant entièrement le workflow de double vérification (demande +
