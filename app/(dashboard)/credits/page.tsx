@@ -22,6 +22,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils/helpers';
+import { exportToCsv, formatDateForCsv } from '@/lib/utils/export';
+import { Download } from 'lucide-react';
 import { useAuthStore } from '@/hooks/store';
 import { collection, query, orderBy, doc, serverTimestamp, runTransaction } from 'firebase/firestore';
 // onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
@@ -287,6 +289,25 @@ export default function CreditsPage() {
               {nbEnRetard > 0 && <span className="ml-2 text-red-600 font-medium">· {nbEnRetard} en retard</span>}
             </p>
           </div>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={filtered.length === 0}
+            onClick={() => exportToCsv(`credits-${new Date().toISOString().slice(0, 10)}`, filtered, [
+              { key: 'id', label: 'N° créance' },
+              { key: 'customerName', label: 'Client' },
+              { key: 'customerPhone', label: 'Téléphone' },
+              { key: 'montantTotal', label: 'Montant total' },
+              { key: 'acompte', label: 'Acompte versé' },
+              { key: 'solde', label: 'Solde restant' },
+              { key: 'status', label: 'Statut', format: (v) => STATUS_CONFIG[v as keyof typeof STATUS_CONFIG]?.label || String(v) },
+              { key: 'dateEcheance', label: 'Échéance', format: (v) => v ? formatDate(v as string) : '' },
+              { key: 'createdAt', label: 'Date création', format: (v) => formatDateForCsv(v) },
+            ])}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Exporter CSV
+          </Button>
         </div>
 
         {/* Alerte échéances proches */}
