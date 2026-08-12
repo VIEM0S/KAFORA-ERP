@@ -11,7 +11,7 @@ import type { UserProfile } from './types';
 
 interface EditForm {
   uid: string; email: string; firstName: string; lastName: string;
-  phone: string; role: 'ADMIN' | 'MANAGER' | 'CASHIER';
+  phone: string; role: 'ADMIN' | 'REGIONAL_MANAGER' | 'MANAGER' | 'CASHIER';
   newPassword: string; confirmNewPassword: string;
   workStart: string; workEnd: string;
   storeIds: string[];
@@ -30,8 +30,16 @@ interface EditUserDialogProps {
 
 export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogProps) {
   const { toast } = useToast();
-  const { stores } = useAuthStore();
+  const { stores, user: currentUser } = useAuthStore();
   const [editForm, setEditForm] = useState<EditForm>(EMPTY_EDIT_FORM);
+
+  // Même cloisonnement qu'à la création (voir create-user-dialog.tsx) : un
+  // responsable régional ne voit que ses propres magasins, et ne peut
+  // promouvoir personne au-delà de Manager.
+  const isRegionalManager = currentUser?.role === 'REGIONAL_MANAGER';
+  const assignableStores = isRegionalManager
+    ? stores.filter(s => (currentUser?.storeIds || []).includes(s.id))
+    : stores;
   const [showEditPassword, setShowEditPassword] = useState(false);
   const [isEditSaving, setIsEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -132,7 +140,8 @@ export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogP
             <Select value={editForm.role} onValueChange={v => ef('role', v)}>
               <SelectTrigger id="eu-role"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="ADMIN">Administrateur</SelectItem>
+                {!isRegionalManager && <SelectItem value="ADMIN">Administrateur</SelectItem>}
+                {!isRegionalManager && <SelectItem value="REGIONAL_MANAGER">Responsable régional</SelectItem>}
                 <SelectItem value="MANAGER">Responsable</SelectItem>
                 <SelectItem value="CASHIER">Caissier</SelectItem>
               </SelectContent>
@@ -149,10 +158,10 @@ export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogP
               <>
                 <Label>Magasins autorisés *</Label>
                 <div className="mt-2 space-y-2 max-h-36 overflow-y-auto rounded-lg border border-gray-200 p-3">
-                  {stores.length === 0 && (
+                  {assignableStores.length === 0 && (
                     <p className="text-xs text-gray-500">Aucun magasin disponible.</p>
                   )}
-                  {stores.map(store => (
+                  {assignableStores.map(store => (
                     <label key={store.id} className="flex items-center gap-2 text-sm cursor-pointer">
                       <input
                         type="checkbox"

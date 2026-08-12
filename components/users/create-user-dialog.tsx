@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 interface UserForm {
   email: string; password: string; confirmPassword: string;
   firstName: string; lastName: string; phone: string;
-  role: 'ADMIN' | 'MANAGER' | 'CASHIER';
+  role: 'ADMIN' | 'REGIONAL_MANAGER' | 'MANAGER' | 'CASHIER';
   storeIds: string[];
 }
 const EMPTY_FORM: UserForm = {
@@ -26,11 +26,20 @@ interface CreateUserDialogProps {
 }
 
 export function CreateUserDialog({ tenantId, open, onOpenChange, onCreated }: CreateUserDialogProps) {
-  const { stores } = useAuthStore();
+  const { stores, user: currentUser } = useAuthStore();
   const [form, setForm] = useState<UserForm>(EMPTY_FORM);
   const [showPassword, setShowPassword] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Un responsable régional ne crée que du personnel de terrain, sur SES
+  // magasins — même règle que /api/users/create (lib/api/regional-scope.ts).
+  // Ce filtrage évite d'afficher des choix qui échoueraient de toute façon
+  // côté serveur ; l'application réelle reste server-side.
+  const isRegionalManager = currentUser?.role === 'REGIONAL_MANAGER';
+  const assignableStores = isRegionalManager
+    ? stores.filter(s => (currentUser?.storeIds || []).includes(s.id))
+    : stores;
 
   const f = (field: keyof UserForm, value: string) => setForm(p => ({ ...p, [field]: value }));
 
@@ -97,7 +106,11 @@ export function CreateUserDialog({ tenantId, open, onOpenChange, onCreated }: Cr
             <Select value={form.role} onValueChange={v => f('role', v)}>
               <SelectTrigger id="cu-role"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="ADMIN">Administrateur</SelectItem>
+                {/* Un responsable régional ne crée jamais un Admin ni un
+                    pair — seulement du personnel de terrain (voir
+                    /api/users/create, qui applique la même restriction). */}
+                {!isRegionalManager && <SelectItem value="ADMIN">Administrateur</SelectItem>}
+                {!isRegionalManager && <SelectItem value="REGIONAL_MANAGER">Responsable régional</SelectItem>}
                 <SelectItem value="MANAGER">Responsable</SelectItem>
                 <SelectItem value="CASHIER">Caissier</SelectItem>
               </SelectContent>
@@ -116,10 +129,10 @@ export function CreateUserDialog({ tenantId, open, onOpenChange, onCreated }: Cr
             <div>
               <Label>Magasins autorisés *</Label>
               <div className="mt-2 space-y-2 max-h-40 overflow-y-auto rounded-lg border border-gray-200 p-3">
-                {stores.length === 0 && (
+                {assignableStores.length === 0 && (
                   <p className="text-xs text-gray-500">Aucun magasin disponible.</p>
                 )}
-                {stores.map(store => (
+                {assignableStores.map(store => (
                   <label key={store.id} className="flex items-center gap-2 text-sm cursor-pointer">
                     <input
                       type="checkbox"

@@ -68,13 +68,13 @@ const NAV_ITEMS: NavItem[] = [
   { title: 'Fournisseurs', href: '/suppliers', icon: Truck },
   { title: 'Caisse', href: '/cash-register', icon: DollarSign },
   { title: 'Factures', href: '/invoices', icon: FileText },
-  { title: 'Analytics', href: '/analytics', icon: BarChart3, roles: ['OWNER', 'ADMIN', 'MANAGER'] },
+  { title: 'Analytics', href: '/analytics', icon: BarChart3, roles: ['OWNER', 'ADMIN', 'REGIONAL_MANAGER', 'MANAGER'] },
   { title: 'Magasins', href: '/stores', icon: Store, roles: ['OWNER', 'ADMIN'] },
   { title: 'Notifications', href: '/notifications', icon: Bell },
 ];
 
 const ADMIN_ITEMS: NavItem[] = [
-  { title: 'Utilisateurs', href: '/users', icon: User, roles: ['OWNER', 'ADMIN'] },
+  { title: 'Utilisateurs', href: '/users', icon: User, roles: ['OWNER', 'ADMIN', 'REGIONAL_MANAGER'] },
   { title: 'Paramètres', href: '/settings', icon: Settings },
 ];
 

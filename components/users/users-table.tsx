@@ -15,6 +15,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatDate } from '@/lib/utils/helpers';
 import { useToast } from '@/hooks/use-toast';
+import { isSubsetOf } from '@/lib/api/regional-scope';
 import { RoleBadge } from './role-badge';
 import type { UserProfile, CurrentUser } from './types';
 
@@ -31,6 +32,19 @@ interface UsersTableProps {
 export function UsersTable({ tenantId, users, currentUser, isLoading, isOwnerOrAdmin, isManagerPlus, onEdit }: UsersTableProps) {
   const router = useRouter();
   const { toast } = useToast();
+
+  // Un REGIONAL_MANAGER peut modifier (jamais activer/désactiver ni
+  // supprimer, réservés à isOwnerOrAdmin) un compte MANAGER/CASHIER déjà
+  // cantonné à SES magasins — même règle que côté serveur
+  // (lib/api/regional-scope.ts / /api/users/update), rejouée ici pour ne
+  // pas afficher un bouton qui échouerait de toute façon en 403.
+  const canEditUser = (u: UserProfile): boolean => {
+    if (isOwnerOrAdmin) return u.role !== 'OWNER';
+    if (currentUser?.role === 'REGIONAL_MANAGER') {
+      return ['MANAGER', 'CASHIER'].includes(u.role) && isSubsetOf(u.storeIds, currentUser.storeIds);
+    }
+    return false;
+  };
 
   const [deletingUser, setDeletingUser] = useState<UserProfile | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -192,7 +206,7 @@ export function UsersTable({ tenantId, users, currentUser, isLoading, isOwnerOrA
                           {isOwnerOrAdmin && u.role !== 'OWNER' && u.id !== currentUser?.id && (
                             <Switch checked={u.isActive} onCheckedChange={() => toggleActive(u)} />
                           )}
-                          {isOwnerOrAdmin && u.role !== 'OWNER' && (
+                          {canEditUser(u) && (
                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(u)}>
                               <Pencil className="h-4 w-4 text-gray-500" />
                             </Button>

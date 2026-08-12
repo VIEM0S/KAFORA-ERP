@@ -13,7 +13,7 @@ import { EditUserDialog } from '@/components/users/edit-user-dialog';
 import { DeletionRequestsSection } from '@/components/users/deletion-requests-section';
 import { UsersTable } from '@/components/users/users-table';
 import type { UserProfile } from '@/components/users/types';
-import { isOwnerOrAdmin as isOwnerOrAdminRole, isManagerPlus as isManagerPlusRole } from '@/lib/auth/roles';
+import { isOwnerOrAdmin as isOwnerOrAdminRole, isManagerPlus as isManagerPlusRole, canManageUsers as canManageUsersRole } from '@/lib/auth/roles';
 
 export default function UsersPage() {
   const { tenant, user: currentUser } = useAuthStore();
@@ -27,6 +27,7 @@ export default function UsersPage() {
 
   const isOwnerOrAdmin = isOwnerOrAdminRole(currentUser?.role);
   const isManagerPlus = isManagerPlusRole(currentUser?.role);
+  const canManageUsers = canManageUsersRole(currentUser?.role);
 
   const byRole = (role: string) => users.filter(u => u.role === role);
 
@@ -43,7 +44,7 @@ export default function UsersPage() {
             <h1 className="text-2xl font-bold text-gray-900">Utilisateurs</h1>
             <p className="text-sm text-gray-500 mt-1">{users.filter(u => u.isActive).length} actif{users.filter(u => u.isActive).length !== 1 ? 's' : ''} sur {users.length}</p>
           </div>
-          {isOwnerOrAdmin && (
+          {canManageUsers && (
             <Button onClick={() => setShowCreateDialog(true)} className="bg-primary-600 hover:bg-primary-700">
               <Plus className="h-4 w-4 mr-2" />Nouveau compte
             </Button>
