@@ -16,6 +16,8 @@ import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 import { useRouter } from 'next/navigation';
 import { estEnAlerte, seuilAlerte } from '@/lib/inventory/alert-threshold';
+import { ShoppingCart } from 'lucide-react';
+import { PO_REORDER_SUGGESTION_KEY, type ReorderSuggestionLine } from '@/lib/purchase-orders/reorder-suggestion';
 
 interface Product { id: string; name: string; sku: string; unit: string; alertThreshold: number; purchasePrice: number; trackInventory: boolean; }
 interface InventoryItem { id: string; productId: string; storeId: string; quantity: number; minQuantity?: number; }
@@ -83,9 +85,29 @@ export default function AlertsPage() {
               {allAlerts.length} alerte{allAlerts.length !== 1 ? 's' : ''} active{allAlerts.length !== 1 ? 's' : ''}
             </p>
           </div>
-          <Button onClick={() => router.push('/inventory')} variant="outline">
-            Gérer l&apos;inventaire
-          </Button>
+          <div className="flex gap-2">
+            {allAlerts.length > 0 && (
+              <Button
+                onClick={() => {
+                  const suggestion: ReorderSuggestionLine[] = allAlerts.map(p => ({
+                    productId: p.id,
+                    // "Manquant" (déjà affiché dans le tableau ci-dessous) : la
+                    // quantité qui ramène juste au-dessus du seuil d'alerte. Au
+                    // moins 1 pour garder la ligne valide si l'écart calculé est nul.
+                    quantityOrdered: Math.max(1, seuilDe(p) - p.stock),
+                  }));
+                  sessionStorage.setItem(PO_REORDER_SUGGESTION_KEY, JSON.stringify(suggestion));
+                  router.push('/purchase-orders');
+                }}
+                className="bg-primary-600 hover:bg-primary-700"
+              >
+                <ShoppingCart className="h-4 w-4 mr-2" />Créer un bon de commande
+              </Button>
+            )}
+            <Button onClick={() => router.push('/inventory')} variant="outline">
+              Gérer l&apos;inventaire
+            </Button>
+          </div>
         </div>
 
         {/* Stats */}
