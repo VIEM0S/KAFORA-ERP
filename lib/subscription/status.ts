@@ -87,11 +87,22 @@ export function canWrite(state: SubscriptionState): boolean {
   return state === 'ACTIVE';
 }
 
-/** Jours restants avant blocage complet — pour le bandeau d'alerte. */
+/**
+ * Jours restants avant blocage complet — pour le bandeau d'alerte.
+ *
+ * Fix : ignorait le statut explicite CANCELLED/EXPIRED et calculait
+ * uniquement à partir de currentPeriodEnd. Un abonnement résilié avec une
+ * date de fin de période encore future (ex. résiliation en cours de mois
+ * déjà payé) affichait "il vous reste 60 jours" alors que
+ * getSubscriptionState() le considère déjà EXPIRED (écritures bloquées) —
+ * les deux fonctions doivent raconter la même histoire, comme documenté
+ * en tête de fichier.
+ */
 export function daysUntilFullBlock(
   sub: SubscriptionLike | null | undefined,
   now: Date = new Date()
 ): number | null {
+  if (sub && (sub.status === 'CANCELLED' || sub.status === 'EXPIRED')) return 0;
   const expiry = getExpiryDate(sub);
   if (!expiry) return null;
   const graceEnd = new Date(expiry.getTime() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000);
