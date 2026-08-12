@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
     }
     const products = productSnaps.map(s => ({ id: s.id, ...s.data() } as {
       id: string; name: string; sku: string; sellingPrice: number; purchasePrice: number | null;
-      taxRate: number; trackInventory: boolean;
+      taxRate: number; trackInventory: boolean; categoryId: string | null;
     }));
 
     // ── Calcul des totaux côté serveur (jamais depuis le client) ────────────
@@ -302,12 +302,20 @@ export async function POST(request: NextRequest) {
     // PARTIELLE — plutôt que de leur attribuer un coût nul, qui gonflerait la
     // marge à 100 % et fausserait tous les rapports sans avertissement.
     let linesWithoutCost = 0;
+    // Coût cumulé par catégorie — vit dans cost_summary (Managers+ uniquement,
+    // voir plus bas), jamais dans sale_items qui est lisible par tous les
+    // rôles. Le revenu par catégorie, lui, est déductible de sale_items
+    // (categoryId + total, non sensibles) au moment de l'agrégation.
+    const costByCategory: Record<string, number> = {};
     for (const l of lines) {
       const unitCost = l.product.purchasePrice;
+      const catKey = l.product.categoryId || 'uncategorized';
       if (unitCost == null) {
         linesWithoutCost++;
       } else {
-        saleCostTotal += l.quantity * unitCost;
+        const lineCost = l.quantity * unitCost;
+        saleCostTotal += lineCost;
+        costByCategory[catKey] = (costByCategory[catKey] || 0) + lineCost;
       }
       batchWrites.push(
         adminDb.collection(`tenants/${tenantId}/sales/${saleRef.id}/sale_items`).add({
@@ -319,6 +327,7 @@ export async function POST(request: NextRequest) {
           productId: l.product.id,
           productName: l.product.name,
           productSku: l.product.sku,
+          categoryId: l.product.categoryId,
           quantity: l.quantity,
           unitPrice: l.unitPrice,
           discount: l.discount,
@@ -357,6 +366,7 @@ export async function POST(request: NextRequest) {
         tenantId,
         costTotal: saleCostTotal,
         margin: total - saleCostTotal,
+        costByCategory,
         // true = le coût ne couvre pas toutes les lignes : la marge affichée
         // est un maximum, pas une valeur exacte.
         costIncomplete: linesWithoutCost > 0,

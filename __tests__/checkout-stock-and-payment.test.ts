@@ -264,3 +264,80 @@ describe('POST /api/pos/checkout — remises et validations de base', () => {
     expect(res.status).toBe(403);
   });
 });
+
+function savedSaleId(db: FakeFirestore): string | undefined {
+  for (const path of db.store.keys()) {
+    const parts = path.split('/');
+    if (parts.length === 4 && parts[2] === 'sales') return parts[3];
+  }
+  return undefined;
+}
+
+describe('POST /api/pos/checkout — categoryId et coût par catégorie', () => {
+  beforeEach(() => {
+    dbHolder.current = new FakeFirestore();
+    authMock.verifySessionCookie.mockResolvedValue({ tenantId: TENANT_ID, uid: USER_ID, storeIds: null });
+  });
+
+  it('propage categoryId du produit vers sale_items, et cumule le coût par catégorie dans cost_summary', async () => {
+    const db = dbHolder.current!;
+    seedProduct(db, { trackInventory: false, categoryId: 'alimentaire', sellingPrice: 1000, purchasePrice: 700 });
+    db.seed(`tenants/${TENANT_ID}/products/${PRODUCT_ID_2}`, {
+      name: 'Savon', sku: 'SAV-1', sellingPrice: 500, purchasePrice: 200,
+      taxRate: 0, trackInventory: false, categoryId: 'hygiene',
+    });
+
+    const res = await POST(makeRequest({
+      tenantId: TENANT_ID, storeId: STORE_ID,
+      items: [
+        { productId: PRODUCT_ID, quantity: 2 },   // 2 x 700 (prix d'achat) = 1400 coût alimentaire
+        { productId: PRODUCT_ID_2, quantity: 3 }, // 3 x 200 (prix d'achat) = 600 coût hygiene
+      ],
+      paymentMethod: 'CASH', amountReceived: 3500,
+    }));
+    expect(res.status).toBe(200);
+
+    const saleId = savedSaleId(db)!;
+    const items = Array.from(db.store.entries())
+      .filter(([p]) => p.startsWith(`tenants/${TENANT_ID}/sales/${saleId}/sale_items/`))
+      .map(([, data]) => data as { productId: string; categoryId: string | null });
+    expect(items.find(i => i.productId === PRODUCT_ID)?.categoryId).toBe('alimentaire');
+    expect(items.find(i => i.productId === PRODUCT_ID_2)?.categoryId).toBe('hygiene');
+
+    const costSummary = db.read(`tenants/${TENANT_ID}/sales/${saleId}/cost_summary/data`) as { costByCategory: Record<string, number> };
+    expect(costSummary.costByCategory).toEqual({ alimentaire: 1400, hygiene: 600 });
+  });
+
+  it('regroupe sous "uncategorized" le coût des produits sans catégorie', async () => {
+    const db = dbHolder.current!;
+    seedProduct(db, { trackInventory: false, categoryId: null, purchasePrice: 700 });
+
+    const res = await POST(makeRequest({
+      tenantId: TENANT_ID, storeId: STORE_ID,
+      items: [{ productId: PRODUCT_ID, quantity: 1 }],
+      paymentMethod: 'CASH', amountReceived: 1000,
+    }));
+    expect(res.status).toBe(200);
+
+    const saleId = savedSaleId(db)!;
+    const costSummary = db.read(`tenants/${TENANT_ID}/sales/${saleId}/cost_summary/data`) as { costByCategory: Record<string, number> };
+    expect(costSummary.costByCategory).toEqual({ uncategorized: 700 });
+  });
+
+  it("n'attribue aucun coût de catégorie pour une ligne sans prix d'achat connu", async () => {
+    const db = dbHolder.current!;
+    seedProduct(db, { trackInventory: false, categoryId: 'alimentaire', purchasePrice: null });
+
+    const res = await POST(makeRequest({
+      tenantId: TENANT_ID, storeId: STORE_ID,
+      items: [{ productId: PRODUCT_ID, quantity: 1 }],
+      paymentMethod: 'CASH', amountReceived: 1000,
+    }));
+    expect(res.status).toBe(200);
+
+    const saleId = savedSaleId(db)!;
+    const costSummary = db.read(`tenants/${TENANT_ID}/sales/${saleId}/cost_summary/data`) as { costByCategory: Record<string, number>; costIncomplete: boolean };
+    expect(costSummary.costByCategory).toEqual({});
+    expect(costSummary.costIncomplete).toBe(true);
+  });
+});
