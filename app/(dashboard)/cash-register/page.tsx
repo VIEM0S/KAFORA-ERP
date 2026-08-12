@@ -16,6 +16,8 @@ import {
 } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatCurrency, toFirestoreDate, formatDateTime } from '@/lib/utils/helpers';
+import { exportToCsv } from '@/lib/utils/export';
+import { Download } from 'lucide-react';
 import { useAuthStore } from '@/hooks/store';
 import { ref, onValue, set, push, get } from 'firebase/database';
 import { rtdb } from '@/lib/firebase/client';
@@ -434,9 +436,34 @@ export default function CashRegisterPage() {
         {/* Historique des sessions — réservé à Manager+ */}
         {canViewHistory && (
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><History className="h-5 w-5 text-gray-600" />Historique des sessions</CardTitle>
-            <CardDescription>Les 10 dernières fermetures de caisse</CardDescription>
+          <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+            <div>
+              <CardTitle className="flex items-center gap-2"><History className="h-5 w-5 text-gray-600" />Historique des sessions</CardTitle>
+              <CardDescription>Les 10 dernières fermetures de caisse</CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={sessionHistory.length === 0}
+              onClick={() => exportToCsv(
+                `clotures-caisse-${new Date().toISOString().slice(0, 10)}`,
+                sessionHistory.map(({ id, data }) => ({ id, ...data })),
+                [
+                  { key: 'id', label: 'N° session' },
+                  { key: 'openedByName', label: 'Ouvert par' },
+                  { key: 'openedAt', label: 'Ouverture', format: (v) => v ? formatDateTime(new Date(v as number)) : '' },
+                  { key: 'closedAt', label: 'Fermeture', format: (v) => v ? formatDateTime(new Date(v as number)) : '' },
+                  { key: 'openingBalance', label: 'Fond initial' },
+                  { key: 'expectedBalance', label: 'Attendu' },
+                  { key: 'closingBalance', label: 'Compté' },
+                  { key: 'difference', label: 'Écart' },
+                  { key: 'notes', label: 'Notes' },
+                ]
+              )}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Exporter CSV
+            </Button>
           </CardHeader>
           <CardContent className="p-0">
             {sessionHistory.length === 0 ? (
