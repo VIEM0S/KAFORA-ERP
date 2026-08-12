@@ -42,14 +42,14 @@ function getDb() {
 }
 
 /** Bornes [début, fin[ d'une journée, et sa clé AAAA-MM-JJ. */
-function dayBounds(daysAgo: number) {
+export function dayBounds(daysAgo: number) {
   const now = new Date();
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysAgo));
   const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
   return { start, end, key: start.toISOString().slice(0, 10) };
 }
 
-interface DailyStats {
+export interface DailyStats {
   date: string;
   tenantId: string;
   revenue: number;
@@ -60,6 +60,9 @@ interface DailyStats {
   uniqueCustomers: number;
   byPayment: Record<string, number>;
   byStore: Record<string, number>;
+  revenueByCategory: Record<string, number>;
+  costByCategory: Record<string, number>;
+  marginByCategory: Record<string, number>;
   topProducts: { productId: string; name: string; revenue: number; quantity: number }[];
   computedAt: FirebaseFirestore.FieldValue | Date;
   /** true si le coût réel n'a pas pu être trouvé pour toutes les ventes —
@@ -68,7 +71,7 @@ interface DailyStats {
   costIncomplete: boolean;
 }
 
-async function aggregateTenantDay(
+export async function aggregateTenantDay(
   db: FirebaseFirestore.Firestore,
   tenantId: string,
   day: { start: Date; end: Date; key: string }
@@ -93,18 +96,29 @@ async function aggregateTenantDay(
     tenantId,
     revenue: 0, cost: 0, margin: 0,
     saleCount: 0, itemCount: 0, uniqueCustomers: 0,
-    byPayment: {}, byStore: {}, topProducts: [],
+    byPayment: {}, byStore: {},
+    revenueByCategory: {}, costByCategory: {}, marginByCategory: {},
+    topProducts: [],
     computedAt: new Date(),
     costIncomplete: false,
   };
 
   const customers = new Set<string>();
+  // sale_items et cost_summary vivent en sous-collection d'une vente et ne
+  // portent PAS son statut : annuler une vente (/api/sales/cancel) ne les
+  // touche jamais (voir la route), ils restent tels qu'écrits au checkout.
+  // Sans ce filtre, une vente annulée gonflait quand même topProducts,
+  // revenueByCategory ET costByCategory/cost/margin — alors que stats.revenue
+  // l'excluait déjà correctement ci-dessous : les chiffres ne se
+  // recoupaient plus (marge par catégorie ≠ marge totale affichée à côté).
+  const completedSaleIds = new Set<string>();
 
   for (const doc of salesSnap.docs) {
     const s = doc.data();
     // Seules les ventes finalisées comptent : une vente annulée ou remboursée
     // ne doit pas gonfler le chiffre d'affaires.
     if (s.status !== 'COMPLETED') continue;
+    completedSaleIds.add(doc.id);
 
     stats.saleCount++;
     stats.revenue += s.total || 0;
@@ -117,6 +131,9 @@ async function aggregateTenantDay(
 
   stats.uniqueCustomers = customers.size;
 
+  /** Extrait l'id de vente du chemin .../sales/{saleId}/{sousCollection}/{docId}. */
+  const saleIdFromPath = (path: string): string | undefined => path.split('/').at(-3);
+
   // Coût réel, tel qu'enregistré au moment de la vente — jamais estimé.
   //
   // Une vente peut porter un coût PARTIEL : le prix d'achat étant facultatif,
@@ -124,10 +141,17 @@ async function aggregateTenantDay(
   // `costIncomplete`. Sans cette prise en compte, la marge du jour serait
   // présentée comme exacte alors qu'elle est surestimée.
   let partialCostSales = 0;
+  let completedCostSummaryCount = 0;
   for (const doc of costSnap.docs) {
+    const saleId = saleIdFromPath(doc.ref.path);
+    if (!saleId || !completedSaleIds.has(saleId)) continue;
+    completedCostSummaryCount++;
     const d = doc.data();
     stats.cost += d.costTotal || 0;
     if (d.costIncomplete) partialCostSales++;
+    for (const [catKey, cost] of Object.entries((d.costByCategory || {}) as Record<string, number>)) {
+      stats.costByCategory[catKey] = (stats.costByCategory[catKey] || 0) + cost;
+    }
   }
   stats.margin = stats.revenue - stats.cost;
   // Si le nombre de résumés de coût ne correspond pas au nombre de ventes,
@@ -135,12 +159,14 @@ async function aggregateTenantDay(
   // Incomplet si un résumé de coût manque, OU si l'un d'eux ne couvre pas
   // toutes ses lignes.
   stats.costIncomplete =
-    (stats.saleCount > 0 && costSnap.size < stats.saleCount) || partialCostSales > 0;
+    (stats.saleCount > 0 && completedCostSummaryCount < stats.saleCount) || partialCostSales > 0;
 
   // Top produits : agrégés sur TOUTES les lignes du jour, pas sur un
   // échantillon (l'ancienne page se limitait à 20 ventes).
   const perProduct: Record<string, { name: string; revenue: number; quantity: number }> = {};
   for (const doc of itemsSnap.docs) {
+    const saleId = saleIdFromPath(doc.ref.path);
+    if (!saleId || !completedSaleIds.has(saleId)) continue;
     const it = doc.data();
     const pid = it.productId as string;
     if (!pid) continue;
@@ -148,11 +174,28 @@ async function aggregateTenantDay(
     perProduct[pid].revenue += it.total || 0;
     perProduct[pid].quantity += it.quantity || 0;
     stats.itemCount += it.quantity || 0;
+
+    // Revenu par catégorie : déductible de sale_items (non sensible), à la
+    // différence du coût qui vient de cost_summary (Managers+, ci-dessus).
+    const catKey = (it.categoryId as string | null) || 'uncategorized';
+    stats.revenueByCategory[catKey] = (stats.revenueByCategory[catKey] || 0) + (it.total || 0);
   }
   stats.topProducts = Object.entries(perProduct)
     .map(([productId, v]) => ({ productId, ...v }))
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 10);
+
+  // Marge par catégorie = revenu (sale_items) − coût (cost_summary), calculée
+  // ici plutôt que stockée telle quelle : les deux sources sont indépendantes
+  // et une catégorie peut apparaître dans l'une sans l'autre (ex. produit
+  // sans prix d'achat renseigné → 0 dans costByCategory).
+  const allCategoryKeys = new Set([
+    ...Object.keys(stats.revenueByCategory),
+    ...Object.keys(stats.costByCategory),
+  ]);
+  for (const catKey of allCategoryKeys) {
+    stats.marginByCategory[catKey] = (stats.revenueByCategory[catKey] || 0) - (stats.costByCategory[catKey] || 0);
+  }
 
   return stats;
 }
