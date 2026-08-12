@@ -55,6 +55,18 @@ export class FakeFirestore {
     return new FakeCollectionRef(this, path);
   }
 
+  /**
+   * Requête de groupe de collections : contrairement à collection(path), qui
+   * ne lit que les enfants directs d'UN chemin précis, collectionGroup(name)
+   * lit tous les documents dont le segment de collection (l'avant-dernier
+   * de leur chemin) vaut `name`, quel que soit leur ancêtre — comme le vrai
+   * SDK Admin. Nécessaire pour aggregate-daily-stats.mts, qui interroge
+   * `sale_items` et `cost_summary` à travers toutes les ventes du jour.
+   */
+  collectionGroup(name: string): FakeQuery {
+    return new FakeQuery(this, null, [], null, name);
+  }
+
   async runTransaction<T>(callback: (tx: FakeTransaction) => Promise<T>): Promise<T> {
     const tx = new FakeTransaction(this);
     const result = await callback(tx);
@@ -167,24 +179,33 @@ export class FakeCollectionRef {
 class FakeQuery {
   constructor(
     private db: FakeFirestore,
-    private path: string,
+    private path: string | null,
     private filters: { field: string; op: string; value: unknown }[],
-    private limitN: number | null = null
+    private limitN: number | null = null,
+    private groupName: string | null = null
   ) {}
 
   where(field: string, op: string, value: unknown): FakeQuery {
-    return new FakeQuery(this.db, this.path, [...this.filters, { field, op, value }], this.limitN);
+    return new FakeQuery(this.db, this.path, [...this.filters, { field, op, value }], this.limitN, this.groupName);
   }
 
   limit(n: number): FakeQuery {
-    return new FakeQuery(this.db, this.path, this.filters, n);
+    return new FakeQuery(this.db, this.path, this.filters, n, this.groupName);
   }
 
   async get() {
-    const prefix = `${this.path}/`;
-    let matches = Array.from(this.db.store.entries())
-      .filter(([p]) => p.startsWith(prefix) && !p.slice(prefix.length).includes('/'))
-      .filter(([, data]) => this.filters.every(f => matchFilter(data[f.field], f.op, f.value)));
+    let matches: [string, Record<string, unknown>][];
+    if (this.groupName !== null) {
+      // Groupe de collections : le segment juste avant l'id du document doit
+      // correspondre au nom demandé, peu importe le chemin des ancêtres.
+      matches = Array.from(this.db.store.entries())
+        .filter(([p]) => p.split('/').slice(-2, -1)[0] === this.groupName);
+    } else {
+      const prefix = `${this.path}/`;
+      matches = Array.from(this.db.store.entries())
+        .filter(([p]) => p.startsWith(prefix) && !p.slice(prefix.length).includes('/'));
+    }
+    matches = matches.filter(([, data]) => this.filters.every(f => matchFilter(data[f.field], f.op, f.value)));
     if (this.limitN !== null) matches = matches.slice(0, this.limitN);
     const docs = matches.map(([p, data]) => ({
       id: p.split('/').pop()!,
