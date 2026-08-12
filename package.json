@@ -7,14 +7,14 @@
   },
   "overrides": {
     "jose": "4.15.9",
-    "@types/react": "18.3.31",
-    "@types/react-dom": "18.3.7"
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4"
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -50,16 +50,16 @@
     "@radix-ui/react-toggle-group": "^1.1.0",
     "@radix-ui/react-tooltip": "^1.1.2",
     "@types/node": "20.6.2",
-    "@types/react": "18.3.31",
-    "@types/react-dom": "18.3.7",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
     "autoprefixer": "10.4.15",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "cmdk": "^1.0.0",
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.3.0",
-    "eslint": "8.57.1",
-    "eslint-config-next": "14.2.35",
+    "eslint": "9.39.5",
+    "eslint-config-next": "15.5.23",
     "exceljs": "^4.4.0",
     "firebase": "^12.15.0",
     "firebase-admin": "^14.1.0",
@@ -67,12 +67,12 @@
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "lucide-react": "^0.446.0",
-    "next": "14.2.35",
+    "next": "15.5.23",
     "next-themes": "^0.3.0",
     "postcss": "8.4.30",
-    "react": "18.3.1",
+    "react": "19.2.8",
     "react-day-picker": "^8.10.1",
-    "react-dom": "18.3.1",
+    "react-dom": "19.2.8",
     "react-hook-form": "^7.53.0",
     "react-resizable-panels": "^2.1.3",
     "recharts": "^2.12.7",
@@ -86,6 +86,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.6",
     "@netlify/functions": "^5.3.0",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.10"
