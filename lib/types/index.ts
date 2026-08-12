@@ -29,7 +29,7 @@ export interface User {
   workingHours?: { start: string; end: string } | null;
 }
 
-export type UserRole = 'SUPER_ADMIN' | 'OWNER' | 'ADMIN' | 'MANAGER' | 'CASHIER';
+export type UserRole = 'SUPER_ADMIN' | 'OWNER' | 'ADMIN' | 'REGIONAL_MANAGER' | 'MANAGER' | 'CASHIER';
 
 export interface Tenant {
   id: string;

@@ -110,6 +110,27 @@ export const ROLE_PERMISSIONS = {
     canManageSuppliers: true,
     canManageCashRegister: true,
   },
+  // Responsable régional : MANAGER + gestion des utilisateurs (CASHIER/MANAGER
+  // uniquement), mais cantonné à ses propres magasins (storeIds) — jamais la
+  // facturation ni les réglages du tenant, contrairement à ADMIN/OWNER.
+  // Le cloisonnement par magasin est appliqué côté serveur (voir
+  // lib/api/regional-scope.ts), pas ici : ROLE_PERMISSIONS ne connaît que le
+  // rôle, jamais l'affectation magasin de l'utilisateur.
+  REGIONAL_MANAGER: {
+    canManageTenants: false,
+    canManageBilling: false,
+    canViewAllTenants: false,
+    canViewPurchasePrice: false,
+    canManageUsers: true,
+    canManageSettings: false,
+    canViewReports: true,
+    canManageProducts: true,
+    canManageInventory: true,
+    canProcessSales: true,
+    canManageCredits: true,
+    canManageSuppliers: true,
+    canManageCashRegister: true,
+  },
   MANAGER: {
     canManageTenants: false,
     canManageBilling: false,

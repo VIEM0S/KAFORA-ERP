@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSuperAdmin, isOwnerOrAdmin, isManagerPlus } from '@/lib/auth/roles';
+import { isSuperAdmin, isOwnerOrAdmin, isManagerPlus, canManageUsers } from '@/lib/auth/roles';
 
 /**
  * Ces helpers ont été créés après un bug réel : les contrôles de rôle
@@ -36,8 +36,9 @@ describe('propriétaire ou administrateur', () => {
 });
 
 describe('responsable et au-dessus', () => {
-  it('inclut le responsable', () => {
+  it('inclut le responsable et le responsable régional', () => {
     expect(isManagerPlus('MANAGER')).toBe(true);
+    expect(isManagerPlus('REGIONAL_MANAGER')).toBe(true);
     expect(isManagerPlus('OWNER')).toBe(true);
   });
 
@@ -48,6 +49,20 @@ describe('responsable et au-dessus', () => {
   });
 });
 
+describe('gestion des utilisateurs (canManageUsers)', () => {
+  it('accepte direction et responsable régional', () => {
+    expect(canManageUsers('OWNER')).toBe(true);
+    expect(canManageUsers('ADMIN')).toBe(true);
+    expect(canManageUsers('REGIONAL_MANAGER')).toBe(true);
+    expect(canManageUsers('SUPER_ADMIN')).toBe(true);
+  });
+
+  it('refuse responsable et caissier — ils ne gèrent aucun compte', () => {
+    expect(canManageUsers('MANAGER')).toBe(false);
+    expect(canManageUsers('CASHIER')).toBe(false);
+  });
+});
+
 describe('valeurs absentes', () => {
   it('ne donne aucun droit', () => {
     // Un rôle manquant ne doit jamais ouvrir un accès par défaut.
@@ -55,6 +70,7 @@ describe('valeurs absentes', () => {
       expect(isSuperAdmin(v)).toBe(false);
       expect(isOwnerOrAdmin(v)).toBe(false);
       expect(isManagerPlus(v)).toBe(false);
+      expect(canManageUsers(v)).toBe(false);
     }
   });
 });

@@ -1,7 +1,7 @@
 export interface UserProfile {
   id: string; uid: string; email: string;
   firstName: string; lastName: string; phone?: string;
-  role: 'OWNER' | 'ADMIN' | 'MANAGER' | 'CASHIER';
+  role: 'OWNER' | 'ADMIN' | 'REGIONAL_MANAGER' | 'MANAGER' | 'CASHIER';
   isActive: boolean; lastLoginAt?: string; createdAt: unknown;
   workingHours?: { start: string; end: string } | null;
   /** Magasins autorisés ; absent ou null = accès à tous (cf. lib/types). */
@@ -24,4 +24,7 @@ export interface DeletionRequest {
 export interface CurrentUser {
   id: string;
   role: string;
+  /** Nécessaire pour cloisonner ce qu'un REGIONAL_MANAGER peut modifier —
+   *  voir canEditUser dans users-table.tsx. */
+  storeIds?: string[] | null;
 }
