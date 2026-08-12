@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase/admin';
 import { checkPlanLimit } from '@/lib/firebase/plan-limits';
+import { isSubsetOf, REGIONAL_MANAGER_ASSIGNABLE_ROLES } from '@/lib/api/regional-scope';
 import { cookies } from 'next/headers';
 
 export async function POST(request: NextRequest) {
@@ -13,7 +14,8 @@ export async function POST(request: NextRequest) {
     const decoded = await adminAuth.verifySessionCookie(sessionCookie, true);
     const callerRole = decoded.role as string;
     const callerTenantId = decoded.tenantId as string;
-    if (!['OWNER', 'ADMIN'].includes(callerRole)) {
+    const callerStoreIds = decoded.storeIds as string[] | null | undefined;
+    if (!['OWNER', 'ADMIN', 'REGIONAL_MANAGER'].includes(callerRole)) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
     }
 
@@ -26,8 +28,15 @@ export async function POST(request: NextRequest) {
     if (tenantId !== callerTenantId) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
     }
-    if (!['ADMIN', 'MANAGER', 'CASHIER'].includes(role)) {
+    if (!['ADMIN', 'REGIONAL_MANAGER', 'MANAGER', 'CASHIER'].includes(role)) {
       return NextResponse.json({ error: 'Rôle invalide' }, { status: 400 });
+    }
+    // Un responsable régional ne crée que du personnel de terrain (Manager /
+    // Caissier) — jamais un Admin, ni un autre responsable régional, ce qui
+    // lui permettrait de s'étendre hors de sa région ou de créer un pair
+    // sans supervision de la direction.
+    if (callerRole === 'REGIONAL_MANAGER' && !REGIONAL_MANAGER_ASSIGNABLE_ROLES.includes(role)) {
+      return NextResponse.json({ error: 'Vous ne pouvez créer que des comptes Responsable ou Caissier' }, { status: 403 });
     }
 
     // ─── Affectation aux magasins ────────────────────────────────────────────
@@ -57,6 +66,13 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Magasin inconnu' }, { status: 400 });
       }
       normalizedStoreIds = unique as string[];
+    }
+    // Un responsable régional ne peut affecter le nouveau compte qu'à SES
+    // propres magasins — sinon il pourrait créer un caissier sur un magasin
+    // hors de sa région, ce que la restriction de rôle ci-dessus ne suffit
+    // pas à empêcher (elle ne contrôle QUE le rôle, pas les magasins choisis).
+    if (callerRole === 'REGIONAL_MANAGER' && !isSubsetOf(normalizedStoreIds, callerStoreIds)) {
+      return NextResponse.json({ error: "Vous ne pouvez affecter que vos propres magasins" }, { status: 403 });
     }
     // Fix (demande explicite) : un Admin ne doit pas pouvoir créer un autre
     // Admin sans contrôle — ça lui permettrait de se fabriquer un compte

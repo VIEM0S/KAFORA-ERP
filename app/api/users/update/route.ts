@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase/admin';
 import { writeAuditLog } from '@/lib/firebase/audit-log';
+import { isSubsetOf, REGIONAL_MANAGER_ASSIGNABLE_ROLES } from '@/lib/api/regional-scope';
 import { cookies } from 'next/headers';
 
 export async function POST(request: NextRequest) {
@@ -13,7 +14,8 @@ export async function POST(request: NextRequest) {
     const decoded = await adminAuth.verifySessionCookie(sessionCookie, true);
     const callerRole = decoded.role as string;
     const callerTenantId = decoded.tenantId as string;
-    if (!['OWNER', 'ADMIN'].includes(callerRole)) {
+    const callerStoreIds = decoded.storeIds as string[] | null | undefined;
+    if (!['OWNER', 'ADMIN', 'REGIONAL_MANAGER'].includes(callerRole)) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
     }
 
@@ -36,8 +38,22 @@ export async function POST(request: NextRequest) {
     if (existing?.role === 'OWNER') {
       return NextResponse.json({ error: "Impossible de modifier le Propriétaire" }, { status: 403 });
     }
-    if (role && !['ADMIN', 'MANAGER', 'CASHIER'].includes(role)) {
+    if (role && !['ADMIN', 'REGIONAL_MANAGER', 'MANAGER', 'CASHIER'].includes(role)) {
       return NextResponse.json({ error: 'Rôle invalide' }, { status: 400 });
+    }
+    // Un responsable régional ne touche que du personnel de terrain déjà
+    // affecté à SES magasins, et ne peut ni le promouvoir au-delà de
+    // Manager, ni le réaffecter hors de sa région.
+    if (callerRole === 'REGIONAL_MANAGER') {
+      if (!REGIONAL_MANAGER_ASSIGNABLE_ROLES.includes((existing?.role || '') as 'MANAGER' | 'CASHIER')) {
+        return NextResponse.json({ error: 'Ce compte ne relève pas de votre gestion' }, { status: 403 });
+      }
+      if (role && !REGIONAL_MANAGER_ASSIGNABLE_ROLES.includes(role)) {
+        return NextResponse.json({ error: 'Vous ne pouvez attribuer que le rôle Responsable ou Caissier' }, { status: 403 });
+      }
+      if (!isSubsetOf(existing?.storeIds, callerStoreIds)) {
+        return NextResponse.json({ error: 'Ce compte ne relève pas de votre gestion' }, { status: 403 });
+      }
     }
     // Fix (demande explicite) : même logique qu'à la création — un Admin ne
     // doit pas pouvoir promouvoir quelqu'un (ni lui-même en théorie, déjà
@@ -84,6 +100,11 @@ export async function POST(request: NextRequest) {
     } else if (finalRole === 'ADMIN') {
       // Promotion vers ADMIN sans préciser les magasins : accès global.
       claimStoreIds = null;
+    }
+    // Même logique qu'à la création : un responsable régional ne peut pas
+    // réaffecter un compte vers un magasin hors de sa propre région.
+    if (callerRole === 'REGIONAL_MANAGER' && !isSubsetOf(claimStoreIds, callerStoreIds)) {
+      return NextResponse.json({ error: "Vous ne pouvez affecter que vos propres magasins" }, { status: 403 });
     }
 
     const authUpdate: { email?: string; password?: string; displayName?: string } = {};
