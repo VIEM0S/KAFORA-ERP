@@ -16,6 +16,8 @@ import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { auth } from '@/lib/firebase/client';
 import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { SUBSCRIPTION_PLANS, type PlanId } from '@/lib/constants';
+import { getSubscriptionState, daysUntilFullBlock } from '@/lib/subscription/status';
 
 // Pays de la zone UEMOA, tous en franc CFA (XOF). La Guinée et la
 // Mauritanie en ont été retirées : elles utilisent le franc guinéen et
@@ -342,23 +344,47 @@ export default function SettingsPage() {
         </Card>
 
         {/* Abonnement */}
-        {tenant && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5 text-purple-600" />Abonnement</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div><p className="text-gray-500">Plan</p><p className="font-bold text-lg text-purple-700">{((tenant as unknown as { subscription?: { plan?: string } })?.subscription?.plan) || 'BUSINESS'}</p></div>
-                <div><p className="text-gray-500">Statut</p>
-                  <span className="inline-block mt-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                    {((tenant as unknown as { subscription?: { status?: string } })?.subscription?.status) || 'TRIAL'}
-                  </span>
+        {tenant && (() => {
+          const sub = tenant.subscription;
+          const planId = sub?.plan as PlanId | undefined;
+          const planName = planId && SUBSCRIPTION_PLANS[planId] ? SUBSCRIPTION_PLANS[planId].name : 'Aucun forfait enregistré';
+          const state = sub ? getSubscriptionState(sub) : 'ACTIVE';
+          const daysToBlock = sub ? daysUntilFullBlock(sub) : null;
+          const STATE_BADGE: Record<typeof state, string> = {
+            ACTIVE: 'bg-green-100 text-green-700',
+            GRACE: 'bg-amber-100 text-amber-700',
+            EXPIRED: 'bg-red-100 text-red-700',
+          };
+          const STATE_LABEL: Record<typeof state, string> = {
+            ACTIVE: 'Actif', GRACE: 'En tolérance', EXPIRED: 'Expiré',
+          };
+          return (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5 text-purple-600" />Abonnement</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div><p className="text-gray-500">Plan</p><p className="font-bold text-lg text-purple-700">{planName}</p></div>
+                  <div><p className="text-gray-500">Statut</p>
+                    <span className={`inline-block mt-1 px-2 py-1 rounded-full text-xs font-medium ${STATE_BADGE[state]}`}>
+                      {STATE_LABEL[state]}
+                    </span>
+                  </div>
+                  {state !== 'ACTIVE' && daysToBlock !== null && (
+                    <div className="col-span-2">
+                      <p className="text-gray-500">
+                        {state === 'GRACE'
+                          ? `${daysToBlock} jour${daysToBlock !== 1 ? 's' : ''} avant blocage complet de la caisse.`
+                          : 'Toutes les modifications sont bloquées — contactez-nous pour régulariser.'}
+                      </p>
+                    </div>
+                  )}
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+              </CardContent>
+            </Card>
+          );
+        })()}
       </div>
     </DashboardLayout>
   );

@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils/helpers';
 import { useAuthStore, useUIStore } from '@/hooks/store';
 import { useAuth } from '@/hooks/useAuth';
 import { useDataErrors } from '@/hooks/use-data-errors';
+import { getSubscriptionState, getExpiryDate, daysUntilFullBlock, GRACE_PERIOD_DAYS } from '@/lib/subscription/status';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -41,6 +42,67 @@ function DataErrorBanner() {
       </ul>
     </div>
   );
+}
+
+/**
+ * Bandeau d'alerte d'abonnement.
+ *
+ * `daysUntilFullBlock`/`getSubscriptionState` (lib/subscription/status.ts)
+ * existaient déjà et pilotent le blocage réel des écritures — mais rien ne
+ * les affichait jamais côté client. Un commerçant en période de tolérance
+ * (GRACE) n'avait donc aucun signal qu'il lui restait 7 jours avant blocage
+ * complet, sinon découvrir le blocage le jour où il arrivait.
+ */
+function SubscriptionBanner() {
+  const subscription = useAuthStore(s => s.tenant?.subscription);
+  if (!subscription) return null;
+
+  const state = getSubscriptionState(subscription);
+  const expiry = getExpiryDate(subscription);
+  const daysToBlock = daysUntilFullBlock(subscription);
+
+  if (state === 'EXPIRED') {
+    return (
+      <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4">
+        <p className="text-sm font-medium text-red-800">
+          Abonnement Kafora expiré — toutes les modifications sont bloquées, l&apos;encaissement inclus.
+        </p>
+        <p className="mt-1 text-xs text-red-700">
+          Vos données restent consultables. Contactez-nous pour régulariser et reprendre l&apos;activité.
+        </p>
+      </div>
+    );
+  }
+
+  if (state === 'GRACE') {
+    return (
+      <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
+        <p className="text-sm font-medium text-amber-800">
+          Abonnement Kafora expiré — la caisse reste utilisable {daysToBlock} jour{(daysToBlock ?? 0) !== 1 ? 's' : ''} de plus, le reste est déjà bloqué.
+        </p>
+        <p className="mt-1 text-xs text-amber-700">
+          Passé ce délai, l&apos;encaissement s&apos;arrêtera aussi. Contactez-nous pour régulariser.
+        </p>
+      </div>
+    );
+  }
+
+  // ACTIVE mais proche de l'échéance : avertissement doux, avant même
+  // d'entrer en tolérance — pour ne pas découvrir le blocage le jour même.
+  if (expiry) {
+    const daysToExpiry = Math.ceil((expiry.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+    if (daysToExpiry >= 0 && daysToExpiry <= GRACE_PERIOD_DAYS) {
+      return (
+        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+          <p className="text-sm font-medium text-blue-800">
+            Votre abonnement Kafora expire dans {daysToExpiry} jour{daysToExpiry !== 1 ? 's' : ''}.
+          </p>
+        </div>
+      );
+    }
+  }
+
+  return null;
 }
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
@@ -85,6 +147,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               (hooks/use-data-errors) ; le bandeau est rendu ici, une seule
               fois, plutôt que dupliqué dans dix-sept pages. */}
           <DataErrorBanner />
+          <SubscriptionBanner />
           {children}
         </main>
       </div>
