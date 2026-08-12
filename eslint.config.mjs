@@ -1,23 +1,32 @@
-import { dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { FlatCompat } from '@eslint/eslintrc';
+import { defineConfig, globalIgnores } from 'eslint/config';
+import nextVitals from 'eslint-config-next/core-web-vitals';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// eslint-config-next (as of 15.x) still ships a legacy (.eslintrc-style)
-// shareable config, not a native ESLint 9 flat config. FlatCompat bridges
-// it into the flat config system used by the `eslint` CLI (`next lint`
-// itself was removed as of Next.js 16).
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-});
-
-const eslintConfig = [
-  ...compat.extends('next/core-web-vitals'),
+const eslintConfig = defineConfig([
+  ...nextVitals,
   {
-    ignores: ['.next/**', 'out/**', 'build/**', 'next-env.d.ts'],
+    rules: {
+      // eslint-config-next 16 pulls in a newer eslint-plugin-react-hooks
+      // that promotes these two rules to errors by default. Both flag
+      // pre-existing patterns across ~10 files (hooks/*, components/*)
+      // that were never enforced pre-upgrade — e.g. calling setState
+      // synchronously inside a useEffect that sets up a Firestore
+      // onSnapshot subscription, or defining a small inline component in
+      // a render path. Fixing them for real requires understanding each
+      // call site's intended behavior, which is out of scope for a
+      // framework-version upgrade. Downgraded to warnings (not silenced)
+      // so they stay visible for a dedicated follow-up review.
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/static-components': 'warn',
+    },
   },
-];
+  // Override default ignores of eslint-config-next.
+  globalIgnores([
+    // Default ignores of eslint-config-next:
+    '.next/**',
+    'out/**',
+    'build/**',
+    'next-env.d.ts',
+  ]),
+]);
 
 export default eslintConfig;

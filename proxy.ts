@@ -14,7 +14,7 @@ const PUBLIC_PATHS = [
 // Préfixes publics (assets, etc.)
 const PUBLIC_PREFIXES = ['/_next', '/favicon', '/images', '/icons', '/fonts'];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Laisser passer les assets et routes publiques
