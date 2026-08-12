@@ -44,6 +44,9 @@ interface DailyStat {
   uniqueCustomers: number;
   byPayment: Record<string, number>;
   byStore: Record<string, number>;
+  revenueByCategory?: Record<string, number>;
+  costByCategory?: Record<string, number>;
+  marginByCategory?: Record<string, number>;
   topProducts: { productId: string; name: string; revenue: number; quantity: number }[];
   costIncomplete?: boolean;
 }
@@ -59,6 +62,23 @@ export default function AnalyticsPage() {
   const monthsCount = period === '3m' ? 3 : period === '6m' ? 6 : 12;
   const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [categoryNames, setCategoryNames] = useState<Record<string, string>>({});
+
+  // Résolution des noms de catégorie pour la marge par catégorie — juste des
+  // libellés, pas de donnée sensible, lue une fois indépendamment du reste.
+  useEffect(() => {
+    if (!tenantId) return;
+    const unsub = onSnapshot(
+      collection(db, tenantCol(tenantId, 'categories')),
+      snap => {
+        const names: Record<string, string> = {};
+        snap.docs.forEach(d => { names[d.id] = (d.data().name as string) || d.id; });
+        setCategoryNames(names);
+      },
+      () => setCategoryNames({})
+    );
+    return () => unsub();
+  }, [tenantId]);
 
   // Lecture des agrégats pré-calculés (un document par journée), produits par
   // la fonction planifiée netlify/functions/aggregate-daily-stats.
@@ -219,6 +239,38 @@ export default function AnalyticsPage() {
       }))
       .sort((a, b) => b.revenue - a.revenue);
   }, [dailyStats, stores]);
+
+  // Marge par catégorie : revenu/coût déjà pré-calculés par jour (voir
+  // aggregate-daily-stats), il ne reste qu'à les cumuler sur la période et
+  // résoudre les noms. Champs optionnels : les journées agrégées avant ce
+  // chantier n'ont pas ces trois champs — traitées comme "rien à ajouter",
+  // pas comme une erreur.
+  const categoryMargin = useMemo(() => {
+    const revenue: Record<string, number> = {};
+    const cost: Record<string, number> = {};
+    for (const d of dailyStats) {
+      for (const [catId, v] of Object.entries(d.revenueByCategory || {})) {
+        revenue[catId] = (revenue[catId] || 0) + v;
+      }
+      for (const [catId, v] of Object.entries(d.costByCategory || {})) {
+        cost[catId] = (cost[catId] || 0) + v;
+      }
+    }
+    const catIds = new Set([...Object.keys(revenue), ...Object.keys(cost)]);
+    return Array.from(catIds)
+      .map(catId => {
+        const rev = revenue[catId] || 0;
+        const c = cost[catId] || 0;
+        return {
+          catId,
+          name: catId === 'uncategorized' ? 'Sans catégorie' : (categoryNames[catId] || 'Catégorie supprimée'),
+          revenue: Math.round(rev),
+          margin: Math.round(rev - c),
+          marginPct: rev > 0 ? ((rev - c) / rev) * 100 : 0,
+        };
+      })
+      .sort((a, b) => b.revenue - a.revenue);
+  }, [dailyStats, categoryNames]);
 
   const monthPrefix = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   const thisMonth = dailyStats.filter(s => s.date.startsWith(monthPrefix(now)));
@@ -437,6 +489,41 @@ export default function AnalyticsPage() {
                       </TableRow>
                     );
                   })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Marge par catégorie — seulement si des daily_stats récents portent
+            déjà ces champs (rien pour les journées agrégées avant ce chantier) */}
+        {categoryMargin.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Marge par catégorie</CardTitle>
+              <CardDescription>Sur les {monthsCount} derniers mois</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Catégorie</TableHead>
+                    <TableHead className="text-right">CA</TableHead>
+                    <TableHead className="text-right">Marge</TableHead>
+                    <TableHead className="text-right">Taux</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {categoryMargin.map(c => (
+                    <TableRow key={c.catId}>
+                      <TableCell className="font-medium text-gray-800">{c.name}</TableCell>
+                      <TableCell className="text-right text-sm">{formatCurrency(c.revenue)}</TableCell>
+                      <TableCell className={`text-right text-sm font-bold ${c.margin >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {formatCurrency(c.margin)}
+                      </TableCell>
+                      <TableCell className="text-right text-sm text-gray-500">{c.marginPct.toFixed(1)}%</TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </CardContent>
