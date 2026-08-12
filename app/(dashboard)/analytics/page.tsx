@@ -8,6 +8,7 @@ import {
 import { DashboardLayout } from '@/components/layout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatCurrency } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
 import { collection, query, orderBy, where } from 'firebase/firestore';
@@ -42,6 +43,7 @@ interface DailyStat {
   saleCount: number;
   uniqueCustomers: number;
   byPayment: Record<string, number>;
+  byStore: Record<string, number>;
   topProducts: { productId: string; name: string; revenue: number; quantity: number }[];
   costIncomplete?: boolean;
 }
@@ -50,7 +52,7 @@ interface DailyStat {
 const MONTHS_FR = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
 
 export default function AnalyticsPage() {
-  const { tenant, currentStore } = useAuthStore();
+  const { tenant, currentStore, stores } = useAuthStore();
   const tenantId = tenant?.id;
 
   const [period, setPeriod] = useState<'3m' | '6m' | '12m'>('6m');
@@ -91,16 +93,63 @@ export default function AnalyticsPage() {
   // L'ancienne version échantillonnait 20 ventes maximum — un « top » qui
   // ne reflétait donc pas la réalité dès qu'il y avait un peu de volume.
   const topProducts = useMemo(() => {
-    const acc: Record<string, { name: string; revenue: number; qty: number }> = {};
+    const acc: Record<string, { productId: string; name: string; revenue: number; qty: number }> = {};
     for (const d of dailyStats) {
       for (const p of d.topProducts || []) {
-        if (!acc[p.productId]) acc[p.productId] = { name: p.name, revenue: 0, qty: 0 };
+        if (!acc[p.productId]) acc[p.productId] = { productId: p.productId, name: p.name, revenue: 0, qty: 0 };
         acc[p.productId].revenue += p.revenue || 0;
         acc[p.productId].qty += p.quantity || 0;
       }
     }
     return Object.values(acc).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
   }, [dailyStats]);
+
+  // Stock actuel des produits du top, tous magasins confondus — pour estimer
+  // la rotation. Requête à part (les daily_stats ne contiennent que des
+  // ventes, jamais un niveau de stock, qui est un état "maintenant", pas un
+  // agrégat par journée passée).
+  const [stockLevels, setStockLevels] = useState<Record<string, number>>({});
+  const topProductIds = useMemo(() => topProducts.map(p => p.productId).sort().join(','), [topProducts]);
+  useEffect(() => {
+    const ids = topProductIds ? topProductIds.split(',') : [];
+    if (!tenantId || ids.length === 0) { setStockLevels({}); return; }
+    // "in" est limité à 30 valeurs côté Firestore — le top est plafonné à 5,
+    // largement dans la marge.
+    const unsub = onSnapshot(
+      query(collection(db, tenantCol(tenantId, 'inventory')), where('productId', 'in', ids)),
+      snap => {
+        const totals: Record<string, number> = {};
+        snap.docs.forEach(d => {
+          const data = d.data();
+          const pid = data.productId as string;
+          totals[pid] = (totals[pid] || 0) + (Number(data.quantity) || 0);
+        });
+        setStockLevels(totals);
+      },
+      () => setStockLevels({})
+    );
+    return () => unsub();
+  }, [tenantId, topProductIds]);
+
+  // Rotation = vitesse de vente (unités/jour sur la période) rapportée au
+  // stock actuel → "combien de jours avant rupture au rythme actuel". Plus
+  // parlant pour un commerçant qu'un ratio de rotation abstrait, et
+  // complémentaire du seuil d'alerte statique (lib/inventory/alert-threshold) :
+  // celui-ci dit "c'est bas", la rotation dit "dans combien de temps".
+  const periodDays = monthsCount * 30;
+  const stockRotation = useMemo(() => {
+    return topProducts
+      .map(p => {
+        const stock = stockLevels[p.productId] ?? null;
+        const dailyVelocity = p.qty / periodDays;
+        const daysLeft = stock !== null && dailyVelocity > 0 ? stock / dailyVelocity : null;
+        return { ...p, stock, dailyVelocity, daysLeft };
+      })
+      // Un produit non suivi en stock (trackInventory: false) n'a pas de
+      // ligne inventory : pas de niveau de stock à comparer, donc pas de
+      // rotation calculable. On l'exclut plutôt que d'afficher un "—" vide.
+      .filter(p => p.stock !== null);
+  }, [topProducts, stockLevels, periodDays]);
 
   const now = new Date();
 
@@ -148,6 +197,28 @@ export default function AnalyticsPage() {
     const labels: Record<string, string> = { CASH:'Espèces', MOBILE_MONEY:'Mobile Money', CARD:'Carte', CREDIT:'Crédit' };
     return Object.entries(counts).map(([k, v]) => ({ name: labels[k] || k, value: Math.round(v) }));
   }, [dailyStats]);
+
+  // Comparaison entre magasins : la donnée (byStore) est déjà calculée par
+  // l'agrégation quotidienne (netlify/functions/aggregate-daily-stats), il
+  // manquait juste sa lecture ici. N'a de sens qu'à partir de 2 magasins —
+  // un tenant mono-magasin n'a rien à comparer.
+  const storeComparison = useMemo(() => {
+    const totals: Record<string, number> = {};
+    for (const d of dailyStats) {
+      for (const [storeId, revenue] of Object.entries(d.byStore || {})) {
+        totals[storeId] = (totals[storeId] || 0) + revenue;
+      }
+    }
+    const grandTotal = Object.values(totals).reduce((a, v) => a + v, 0);
+    return Object.entries(totals)
+      .map(([storeId, revenue]) => ({
+        storeId,
+        name: stores.find(s => s.id === storeId)?.name || 'Magasin supprimé',
+        revenue: Math.round(revenue),
+        pct: grandTotal > 0 ? (revenue / grandTotal) * 100 : 0,
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+  }, [dailyStats, stores]);
 
   const monthPrefix = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   const thisMonth = dailyStats.filter(s => s.date.startsWith(monthPrefix(now)));
@@ -327,6 +398,85 @@ export default function AnalyticsPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Rotation de stock — jours restants au rythme de vente actuel */}
+        {stockRotation.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Rotation de stock — top produits</CardTitle>
+              <CardDescription>Stock actuel rapporté au rythme de vente des {monthsCount} derniers mois</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Produit</TableHead>
+                    <TableHead className="text-right">Vendu (période)</TableHead>
+                    <TableHead className="text-right">Stock actuel</TableHead>
+                    <TableHead className="text-right">Estimation</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {stockRotation.map(p => {
+                    const urgent = p.daysLeft !== null && p.daysLeft < 7;
+                    const bas = p.daysLeft !== null && p.daysLeft < 30;
+                    return (
+                      <TableRow key={p.name}>
+                        <TableCell className="font-medium text-gray-800">{p.name}</TableCell>
+                        <TableCell className="text-right text-sm">{p.qty}</TableCell>
+                        <TableCell className="text-right text-sm">{p.stock}</TableCell>
+                        <TableCell className="text-right">
+                          {p.daysLeft === null ? (
+                            <span className="text-sm text-gray-400">Pas de vente récente</span>
+                          ) : (
+                            <span className={`text-sm font-bold ${urgent ? 'text-red-600' : bas ? 'text-amber-600' : 'text-green-600'}`}>
+                              ~{Math.round(p.daysLeft)} jour{Math.round(p.daysLeft) > 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Comparaison entre magasins — uniquement si le tenant en a plusieurs */}
+        {stores.length > 1 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Comparaison entre magasins</CardTitle>
+              <CardDescription>CA par magasin sur les {monthsCount} derniers mois</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {storeComparison.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-gray-400">
+                  <Package className="h-10 w-10 mb-2 opacity-30" />
+                  <p className="text-sm">Aucune vente sur la période</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {storeComparison.map(s => (
+                    <div key={s.storeId} className="space-y-1">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium text-gray-800">{s.name}</span>
+                        <div className="text-right">
+                          <p className="font-bold text-gray-900">{formatCurrency(s.revenue)}</p>
+                          <p className="text-xs text-gray-400">{s.pct.toFixed(1)}% du CA total</p>
+                        </div>
+                      </div>
+                      <div className="h-2 bg-gray-100 rounded-full">
+                        <div className="h-2 rounded-full bg-primary-500 transition-all" style={{ width: `${s.pct}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Stats textuelles */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
