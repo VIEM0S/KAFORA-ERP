@@ -28,6 +28,10 @@ interface Supplier {
   id: string; tenantId: string; name: string; contactName?: string;
   email?: string; phone?: string; address?: string; city?: string;
   country?: string; website?: string; notes?: string; isActive: boolean;
+  /** Délai de paiement accordé par le fournisseur, en jours (ex. 30 = "net 30"). */
+  paymentTerms?: number | null;
+  /** Numéro d'identification fiscale du fournisseur (NIF au Mali). */
+  taxId?: string | null;
   createdAt: unknown; updatedAt: unknown;
 }
 
@@ -35,12 +39,14 @@ interface SupplierForm {
   name: string; contactName: string; email: string; phone: string;
   address: string; city: string; country: string; website: string;
   notes: string; isActive: boolean;
+  paymentTerms: string; taxId: string;
 }
 
 const EMPTY: SupplierForm = {
   name: '', contactName: '', email: '', phone: '',
   address: '', city: 'Bamako', country: 'Mali', website: '',
   notes: '', isActive: true,
+  paymentTerms: '', taxId: '',
 };
 
 export default function SuppliersPage() {
@@ -82,6 +88,8 @@ export default function SuppliersPage() {
       phone: s.phone || '', address: s.address || '', city: s.city || 'Bamako',
       country: s.country || 'Mali', website: s.website || '',
       notes: s.notes || '', isActive: s.isActive,
+      paymentTerms: typeof s.paymentTerms === 'number' ? String(s.paymentTerms) : '',
+      taxId: s.taxId || '',
     });
     setFormError(null); setShowDialog(true);
   };
@@ -92,6 +100,15 @@ export default function SuppliersPage() {
   const handleSave = async () => {
     if (!tenantId) return;
     if (!form.name.trim()) { setFormError('Le nom du fournisseur est obligatoire'); return; }
+    let paymentTerms: number | null = null;
+    if (form.paymentTerms.trim()) {
+      const n = Number(form.paymentTerms);
+      if (!Number.isInteger(n) || n < 0) {
+        setFormError('Le délai de paiement doit être un nombre de jours entier, positif ou nul');
+        return;
+      }
+      paymentTerms = n;
+    }
     setIsSaving(true); setFormError(null);
     const payload = {
       tenantId, name: form.name.trim(),
@@ -100,6 +117,7 @@ export default function SuppliersPage() {
       address: form.address.trim() || null, city: form.city.trim() || null,
       country: form.country.trim() || null, website: form.website.trim() || null,
       notes: form.notes.trim() || null, isActive: form.isActive,
+      paymentTerms, taxId: form.taxId.trim() || null,
       updatedAt: serverTimestamp(),
     };
     try {
@@ -157,6 +175,7 @@ export default function SuppliersPage() {
                   <TableHead>Fournisseur</TableHead>
                   <TableHead>Contact</TableHead>
                   <TableHead>Localisation</TableHead>
+                  <TableHead>Paiement</TableHead>
                   <TableHead className="text-center">Statut</TableHead>
                   <TableHead className="w-12" />
                 </TableRow>
@@ -189,6 +208,9 @@ export default function SuppliersPage() {
                           {[s.city, s.country].filter(Boolean).join(', ')}
                         </div>
                       )}
+                    </TableCell>
+                    <TableCell className="text-sm text-gray-600">
+                      {typeof s.paymentTerms === 'number' ? (s.paymentTerms === 0 ? 'Comptant' : `${s.paymentTerms}j`) : '—'}
                     </TableCell>
                     <TableCell className="text-center">
                       <span className={`text-xs px-2 py-1 rounded-full font-medium ${s.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
@@ -251,6 +273,16 @@ export default function SuppliersPage() {
             <div className="col-span-2 space-y-2">
               <Label>Adresse</Label>
               <Input value={form.address} onChange={e => f('address', e.target.value)} placeholder="Zone industrielle..." />
+            </div>
+            <div className="space-y-2">
+              <Label>Délai de paiement (jours)</Label>
+              <Input type="number" min={0} step={1} value={form.paymentTerms}
+                onChange={e => f('paymentTerms', e.target.value)} placeholder="30" />
+              <p className="text-xs text-gray-400">Ex. 30 = paiement à 30 jours. Laisser vide si payé comptant.</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Numéro fiscal (NIF)</Label>
+              <Input value={form.taxId} onChange={e => f('taxId', e.target.value)} placeholder="NIF du fournisseur" />
             </div>
             <div className="col-span-2 space-y-2">
               <Label>Notes</Label>

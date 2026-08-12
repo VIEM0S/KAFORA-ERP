@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Plus, Search, PackageCheck, Truck, RefreshCw, X, ChevronDown,
   Trash2, PackagePlus, Clock, CheckCircle2, AlertCircle,
@@ -23,6 +23,7 @@ import { db } from '@/lib/firebase/client';
 import { tenantCol } from '@/lib/firebase/collections';
 import { formatCurrency } from '@/lib/utils/helpers';
 import { exportToCsv, formatDateForCsv } from '@/lib/utils/export';
+import { PO_REORDER_SUGGESTION_KEY, type ReorderSuggestionLine } from '@/lib/purchase-orders/reorder-suggestion';
 
 interface POItem {
   id?: string; productId: string; productName: string; productSku: string;
@@ -34,7 +35,7 @@ interface PurchaseOrder {
   items: POItem[]; subtotal: number; notes: string | null;
   expectedDate: string | null; createdByName: string | null; createdAt: unknown;
 }
-interface Supplier { id: string; name: string; isActive: boolean; }
+interface Supplier { id: string; name: string; isActive: boolean; paymentTerms?: number | null; }
 interface Product { id: string; name: string; sku: string; purchasePrice: number; }
 
 const STATUS_LABELS: Record<PurchaseOrder['status'], { label: string; color: string; icon: typeof Clock }> = {
@@ -65,6 +66,7 @@ export default function PurchaseOrdersPage() {
   const [lines, setLines] = useState<DraftLine[]>([{ productId: '', quantityOrdered: '', unitCost: '' }]);
   const [createError, setCreateError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [fromReorderSuggestion, setFromReorderSuggestion] = useState(false);
 
   const [receiveTarget, setReceiveTarget] = useState<PurchaseOrder | null>(null);
   const [receiveQty, setReceiveQty] = useState<Record<string, string>>({});
@@ -88,6 +90,39 @@ export default function PurchaseOrdersPage() {
     return () => { unsub1(); unsub2(); unsub3(); };
   }, [tenantId]);
 
+  // Reprend une suggestion de réappro déposée par la page Alertes stock (voir
+  // lib/purchase-orders/reorder-suggestion.ts). On attend que `products` soit
+  // chargé pour pouvoir pré-remplir le coût d'achat de chaque ligne comme le
+  // fait déjà onPickProduct() à la sélection manuelle. Le ref évite de
+  // rouvrir le formulaire à chaque mise à jour live de `products`.
+  const suggestionConsumed = useRef(false);
+  useEffect(() => {
+    if (suggestionConsumed.current || products.length === 0) return;
+    const raw = sessionStorage.getItem(PO_REORDER_SUGGESTION_KEY);
+    if (!raw) return;
+    suggestionConsumed.current = true;
+    sessionStorage.removeItem(PO_REORDER_SUGGESTION_KEY);
+    try {
+      const suggestion = JSON.parse(raw) as ReorderSuggestionLine[];
+      const prefilled: DraftLine[] = suggestion
+        .map(s => {
+          const p = products.find(pp => pp.id === s.productId);
+          if (!p) return null; // produit supprimé entre-temps : ligne ignorée
+          return { productId: p.id, quantityOrdered: String(s.quantityOrdered), unitCost: String(p.purchasePrice ?? '') };
+        })
+        .filter((l): l is DraftLine => l !== null);
+      if (prefilled.length === 0) return;
+      setSupplierId(''); setExpectedDate(''); setNotes('');
+      setLines(prefilled);
+      setCreateError(null);
+      setFromReorderSuggestion(true);
+      setShowCreate(true);
+    } catch {
+      // Suggestion illisible (format changé, storage corrompu...) : on ignore
+      // silencieusement, l'utilisateur peut toujours créer le bon à la main.
+    }
+  }, [products]);
+
   const filtered = orders.filter(o =>
     (filterStatus === 'all' || o.status === filterStatus) &&
     (!search || o.reference.toLowerCase().includes(search.toLowerCase()))
@@ -100,6 +135,7 @@ export default function PurchaseOrdersPage() {
     setSupplierId(''); setExpectedDate(''); setNotes('');
     setLines([{ productId: '', quantityOrdered: '', unitCost: '' }]);
     setCreateError(null);
+    setFromReorderSuggestion(false);
   };
   const openCreate = () => { resetCreateForm(); setShowCreate(true); };
 
@@ -285,6 +321,11 @@ export default function PurchaseOrdersPage() {
       <Dialog open={showCreate} onOpenChange={o => { if (!o) setShowCreate(false); }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Nouveau bon de commande</DialogTitle></DialogHeader>
+          {fromReorderSuggestion && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-700">
+              Lignes pré-remplies depuis les alertes de stock — vérifiez les quantités et choisissez un fournisseur.
+            </div>
+          )}
           {createError && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{createError}</div>}
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-4">
@@ -296,6 +337,14 @@ export default function PurchaseOrdersPage() {
                     {activeSuppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                {(() => {
+                  const terms = activeSuppliers.find(s => s.id === supplierId)?.paymentTerms;
+                  return typeof terms === 'number' ? (
+                    <p className="text-xs text-gray-400">
+                      {terms === 0 ? 'Ce fournisseur est payé comptant.' : `Ce fournisseur accorde un paiement à ${terms} jours.`}
+                    </p>
+                  ) : null;
+                })()}
               </div>
               <div className="space-y-2">
                 <Label>Livraison attendue</Label>
