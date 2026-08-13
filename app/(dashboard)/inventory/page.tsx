@@ -178,7 +178,12 @@ export default function InventoryPage() {
                       </TableCell>
                       <TableCell><code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">{p.sku}</code></TableCell>
                       <TableCell className={`text-right font-bold ${isLow ? 'text-amber-600' : 'text-gray-900'}`}>{stock} <span className="text-xs font-normal text-gray-400">{p.unit}</span></TableCell>
-                      <TableCell className="text-right text-sm text-gray-500">{p.alertThreshold}</TableCell>
+                      {/* Seuil EFFECTIF (magasin s'il est défini, sinon produit) — pas
+                          p.alertThreshold brut, qui affichait toujours le seuil du
+                          produit même quand ce magasin avait son propre seuil, en
+                          contradiction avec la colonne État juste à côté qui, elle,
+                          utilise déjà le bon seuil via seuilDe(). */}
+                      <TableCell className="text-right text-sm text-gray-500">{seuilAlerte(seuilDe(p.id, p.alertThreshold))}</TableCell>
                       <TableCell className="text-right text-sm">
                         {/* Sans prix d'achat, la valeur du stock est inconnue —
                             l'afficher à 0 laisserait croire à un stock sans
