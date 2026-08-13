@@ -47,7 +47,7 @@ const STATUS_CONFIG = {
 
 export default function QuotesPage() {
   const { tenant, user, currentStore } = useAuthStore();
-  const { addItem, updateItemPrice, setCustomer, clearCart, setNotes } = useCartStore();
+  const { addItem, updateItemPrice, setCustomer, clearCart, setNotes, setSourceQuoteId } = useCartStore();
   const tenantId = tenant?.id;
   const router = useRouter();
 
@@ -178,6 +178,9 @@ export default function QuotesPage() {
     // Traçabilité : la vente doit pouvoir être rattachée à son devis.
     const ref = `Devis ${convertTarget.id.slice(0, 8).toUpperCase()}`;
     setNotes(convertTarget.note ? `${ref} — ${convertTarget.note}` : ref);
+    // Lu par le checkout pour faire passer CE devis en "Converti" une fois la
+    // vente réellement encaissée (voir commentaire plus bas et hooks/store.ts).
+    setSourceQuoteId(convertTarget.id);
 
     if (introuvables.length > 0) {
       alert(
@@ -186,12 +189,13 @@ export default function QuotesPage() {
       );
     }
 
-    // Le devis N'EST PLUS marqué « converti » ici.
+    // Le devis N'EST PAS marqué « converti » ici.
     //
     // Il l'était avant même que la vente existe : si le caissier abandonnait
     // le panier, le devis restait marqué converti sans qu'aucune vente n'ait
-    // eu lieu — et il devenait impossible de le reconvertir. Le statut est
-    // désormais à passer manuellement une fois la vente encaissée.
+    // eu lieu — et il devenait impossible de le reconvertir. Le statut passe
+    // désormais à CONVERTED côté serveur (/api/pos/checkout), uniquement une
+    // fois la vente réellement encaissée — voir sourceQuoteId (hooks/store.ts).
     setConvertTarget(null);
     router.push('/pos');
   };

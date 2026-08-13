@@ -29,10 +29,11 @@ export async function POST(request: NextRequest) {
     const {
       tenantId, storeId, items, customerId,
       paymentMethod, amountReceived, discountPercent,
-      userName,
+      userName, quoteId,
     }: {
       tenantId: string; storeId: string; items: CheckoutItem[]; customerId?: string | null;
       paymentMethod: string; amountReceived?: number; discountPercent?: number; userName?: string;
+      quoteId?: string;
     } = await request.json();
 
     if (!tenantId || !storeId || !Array.isArray(items) || items.length === 0) {
@@ -292,6 +293,27 @@ export async function POST(request: NextRequest) {
         isRead: false, isResolved: false, resolvedBy: null, resolvedAt: null,
         createdAt: FieldValue.serverTimestamp(),
       });
+    }
+
+    // ── Devis d'origine (si cette vente vient d'un "Convertir en vente") ────
+    // Marqué CONVERTED seulement ICI, une fois la vente réellement encaissée
+    // — jamais au moment du chargement dans le POS, sinon un panier abandonné
+    // laisserait le devis marqué converti sans vente correspondante (voir
+    // app/(dashboard)/quotes/page.tsx). Admin SDK : contourne volontairement
+    // la règle firestore.rules qui réserve l'écriture des devis aux
+    // Managers+, un Caissier devant pouvoir encaisser un devis qu'on lui a
+    // transmis. Ne doit jamais faire échouer une vente déjà actée : le devis
+    // a pu être supprimé entre-temps, ou l'ID être invalide.
+    if (quoteId) {
+      try {
+        await adminDb.doc(`tenants/${tenantId}/quotes/${quoteId}`).update({
+          status: 'CONVERTED',
+          saleId: saleRef.id,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        console.error('Échec mise à jour du devis après conversion:', e);
+      }
     }
 
     // ── Sous-collections (hors transaction) ──────────────────────────────────

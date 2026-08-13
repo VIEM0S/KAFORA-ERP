@@ -19,7 +19,7 @@ interface UseCheckoutParams {
 
 export function useCheckout({ tenantId, storeId, refreshQueue, setIsOnline }: UseCheckoutParams) {
   const { tenant, user } = useAuthStore();
-  const { items, clearCart, customer, getTotal, discountPercent } = useCartStore();
+  const { items, clearCart, customer, getTotal, discountPercent, sourceQuoteId } = useCartStore();
 
   const [showPayment, setShowPayment] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('CASH');
@@ -71,6 +71,7 @@ export function useCheckout({ tenantId, storeId, refreshQueue, setIsOnline }: Us
       amountReceived: Number(amountReceived) || undefined,
       discountPercent,
       userName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+      quoteId: sourceQuoteId || undefined,
     };
 
     // Réutilisé tel quel entre les tentatives (voir sa génération dans

@@ -58,6 +58,11 @@ interface CartState {
   discountPercent: number;
   discountReason: string | null;
   notes: string | null;
+  // Devis en cours de conversion (voir app/(dashboard)/quotes/page.tsx) : lu
+  // par le checkout pour faire passer le devis en "Converti" une fois la
+  // vente réellement encaissée — jamais avant, sinon un panier abandonné
+  // laisserait le devis marqué converti sans vente correspondante.
+  sourceQuoteId: string | null;
   addItem: (product: Product, quantity?: number) => void;
   removeItem: (productId: string) => void;
   updateItemQuantity: (productId: string, quantity: number) => void;
@@ -66,6 +71,7 @@ interface CartState {
   setCustomer: (customer: Customer | null) => void;
   setDiscount: (percent: number, reason: string | null) => void;
   setNotes: (notes: string | null) => void;
+  setSourceQuoteId: (quoteId: string | null) => void;
   getSubtotal: () => number;
   getTax: () => number;
   getTotal: () => number;
@@ -81,6 +87,7 @@ export const useCartStore = create<CartState>()(
       discountPercent: 0,
       discountReason: null,
       notes: null,
+      sourceQuoteId: null,
 
       addItem: (product, quantity = 1) => {
         const items = get().items;
@@ -152,6 +159,7 @@ export const useCartStore = create<CartState>()(
           discountPercent: 0,
           discountReason: null,
           notes: null,
+          sourceQuoteId: null,
         }),
 
       setCustomer: (customer) =>
@@ -161,6 +169,8 @@ export const useCartStore = create<CartState>()(
         set({ discountPercent: percent, discountReason: reason }),
 
       setNotes: (notes) => set({ notes }),
+
+      setSourceQuoteId: (quoteId) => set({ sourceQuoteId: quoteId }),
 
       getSubtotal: () =>
         get().items.reduce(
