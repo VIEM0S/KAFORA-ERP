@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Sidebar } from './sidebar-nav';
 import { Header } from './header';
 import { cn } from '@/lib/utils/helpers';
@@ -55,10 +55,30 @@ function DataErrorBanner() {
  */
 function SubscriptionBanner() {
   const subscription = useAuthStore(s => s.tenant?.subscription);
+
+  // Toutes les valeurs dérivées AVANT tout retour anticipé : les Hooks
+  // doivent être appelés inconditionnellement à chaque rendu (règle des
+  // Hooks) — un retour anticipé avant eux casserait cette règle.
+  //
+  // Date.now() n'est lu que dans un effet, jamais pendant le rendu : appeler
+  // une fonction impure (non déterministe) pendant le rendu est désormais une
+  // erreur de lint (eslint-config-next 16) — et c'est un vrai risque, pas du
+  // style : le serveur et le client n'ont pas la même horloge, donc calculer
+  // "jours restants" pendant le rendu produirait une valeur différente au
+  // premier rendu client (hydratation) qu'au rendu serveur. `now` reste donc
+  // `null` le temps du premier rendu (bandeau simplement absent avant
+  // l'hydratation), rempli juste après via l'effet.
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => { setNow(Date.now()); }, []);
+
+  const expiry = subscription ? getExpiryDate(subscription) : null;
+  const daysToExpiry = expiry && now !== null
+    ? Math.ceil((expiry.getTime() - now) / (24 * 60 * 60 * 1000))
+    : null;
+
   if (!subscription) return null;
 
   const state = getSubscriptionState(subscription);
-  const expiry = getExpiryDate(subscription);
   const daysToBlock = daysUntilFullBlock(subscription);
 
   if (state === 'EXPIRED') {
@@ -90,8 +110,7 @@ function SubscriptionBanner() {
   // ACTIVE mais proche de l'échéance : avertissement doux, avant même
   // d'entrer en tolérance — pour ne pas découvrir le blocage le jour même.
   if (expiry) {
-    const daysToExpiry = Math.ceil((expiry.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
-    if (daysToExpiry >= 0 && daysToExpiry <= GRACE_PERIOD_DAYS) {
+    if (daysToExpiry !== null && daysToExpiry >= 0 && daysToExpiry <= GRACE_PERIOD_DAYS) {
       return (
         <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
           <p className="text-sm font-medium text-blue-800">

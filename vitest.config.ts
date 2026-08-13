@@ -14,6 +14,9 @@ export default defineConfig({
     // des tests internes de zod executes par erreur, en echec car il leur
     // manque des dependances non installees a ce niveau). '**/…/**' exclut
     // a toute profondeur, y compris les worktrees d'agents eux-memes.
-    exclude: ['**/node_modules/**', '**/.next/**', '**/.claude/worktrees/**'],
+    // '.worktree-*' couvre aussi les worktrees crees ad hoc a la racine du
+    // repo (ex. .worktree-netlify-preview), pas seulement ceux d'agents sous
+    // .claude/worktrees/ — meme categorie de bug, revu une seconde fois.
+    exclude: ['**/node_modules/**', '**/.next/**', '**/.claude/worktrees/**', '**/.worktree-*/**'],
   },
 });
