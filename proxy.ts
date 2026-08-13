@@ -9,6 +9,13 @@ const PUBLIC_PATHS = [
   '/api/auth/login',
   '/api/auth/logout',
   '/api/auth/register',
+  // Pages légales : doivent rester consultables sans compte (avant
+  // inscription, ou obligation légale d'accessibilité publique) — un
+  // visiteur qui clique "Mentions légales" en pied de page ne doit jamais
+  // se retrouver renvoyé vers l'écran de connexion.
+  '/mentions-legales',
+  '/cgv',
+  '/confidentialite',
 ];
 
 // Préfixes publics (assets, etc.)
