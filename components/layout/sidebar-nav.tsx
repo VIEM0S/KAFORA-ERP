@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils/helpers';
 import { useAuthStore, useUIStore } from '@/hooks/store';
 import { useLogout } from '@/hooks/useAuth';
 import { COMPANY_COLORS } from '@/lib/constants';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { collection, query, where } from 'firebase/firestore';
 // onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
 // (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
@@ -154,74 +155,24 @@ function NavItemComponent({
   );
 }
 
-export function Sidebar() {
-  const { sidebarCollapsed } = useUIStore();
-  const { user, tenant, currentStore } = useAuthStore();
-  const handleLogout = useLogout();
-  const [lowStockCount, setLowStockCount] = useState(0);
-  const [overdueCount, setOverdueCount] = useState(0);
-
-  useEffect(() => {
-    const tenantId = tenant?.id;
-    const storeId = currentStore?.id;
-    if (!tenantId || !storeId) return;
-
-    const unsubCred = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'credits')), where('status', '==', 'OVERDUE')),
-      snap => setOverdueCount(snap.size)
-    );
-
-    const unsubInv = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'inventory')), where('storeId', '==', storeId)),
-      async snap => {
-      const { getDocs } = await import('firebase/firestore');
-      const prodSnap = await getDocs(collection(db, tenantCol(tenantId, 'products')));
-      const thresh: Record<string, number> = {};
-      prodSnap.docs.forEach(d => { thresh[d.id] = d.data().alertThreshold ?? 10; });
-      const low = snap.docs.filter(d => {
-        const data = d.data();
-        return data.storeId === storeId && estEnAlerte(data.quantity || 0, {
-          seuilMagasin: data.minQuantity,
-          seuilProduit: thresh[data.productId],
-        });
-      }).length;
-      setLowStockCount(low);
-    });
-
-    return () => { unsubCred(); unsubInv(); };
-  }, [tenant?.id, currentStore?.id]);
-
-  const getBadge = (key?: string, val?: number): number => {
-    if (key === 'lowStock') return lowStockCount;
-    if (key === 'overdueCredits') return overdueCount;
-    return val || 0;
-  };
-
-  const userRole = user?.role || 'CASHIER';
-  // SUPER_ADMIN (rôle éditeur) voit tout : sans cette exception, se promouvoir
-  // ferait DISPARAÎTRE le tableau de bord, le POS et le reste, puisqu'aucune
-  // entrée ne mentionne ce rôle dans sa liste. C'est cohérent avec
-  // ROLE_PERMISSIONS, où SUPER_ADMIN a toutes les permissions.
-  // Un compte éditeur n'appartient à aucun tenant : les pages métier
-  // (POS, stock, ventes…) n'auraient aucune donnée à afficher et
-  // planteraient sur un tenantId absent. On ne lui montre donc que ce qui
-  // le concerne : la console clients.
-  const isPublisher = userRole === 'SUPER_ADMIN';
-  const allowed = (item: { roles?: string[] }) =>
-    isPublisher
-      ? item.roles?.includes('SUPER_ADMIN') ?? false
-      : !item.roles || item.roles.includes(userRole);
-
-  const filteredNav = NAV_ITEMS.filter(allowed);
-  const filteredAdmin = ADMIN_ITEMS.filter(allowed);
-
-  const collapsed = sidebarCollapsed;
-
+/**
+ * Contenu partagé entre la barre latérale fixe (desktop) et le tiroir
+ * mobile (Sheet) — même logo, mêmes liens, même profil. Évite de dupliquer
+ * le JSX (et un bug corrigé dans l'un mais pas l'autre) entre les deux
+ * présentations.
+ */
+function SidebarBody({
+  collapsed, filteredNav, filteredAdmin, getBadge, user, handleLogout,
+}: {
+  collapsed: boolean;
+  filteredNav: NavItem[];
+  filteredAdmin: NavItem[];
+  getBadge: (key?: string, val?: number) => number;
+  user: { firstName?: string | null; lastName?: string | null; email?: string | null } | null | undefined;
+  handleLogout: () => void;
+}) {
   return (
-    <aside className={cn(
-      'fixed left-0 top-0 z-40 h-screen bg-white border-r border-gray-100 transition-all duration-300 flex flex-col shadow-sm',
-      collapsed ? 'w-16' : 'w-64'
-    )}>
+    <>
       {/* Logo */}
       <div className={cn('flex items-center h-16 px-4 border-b border-gray-100 flex-shrink-0', collapsed ? 'justify-center' : 'gap-3')}>
         <div className="h-9 w-9 bg-primary-600 rounded-xl flex items-center justify-center shadow-sm flex-shrink-0">
@@ -282,6 +233,103 @@ export function Sidebar() {
           </button>
         )}
       </div>
-    </aside>
+    </>
+  );
+}
+
+export function Sidebar() {
+  const { sidebarCollapsed, sidebarOpen, setSidebarOpen } = useUIStore();
+  const { user, tenant, currentStore } = useAuthStore();
+  const handleLogout = useLogout();
+  const [lowStockCount, setLowStockCount] = useState(0);
+  const [overdueCount, setOverdueCount] = useState(0);
+
+  useEffect(() => {
+    const tenantId = tenant?.id;
+    const storeId = currentStore?.id;
+    if (!tenantId || !storeId) return;
+
+    const unsubCred = onSnapshot(
+      query(collection(db, tenantCol(tenantId, 'credits')), where('status', '==', 'OVERDUE')),
+      snap => setOverdueCount(snap.size)
+    );
+
+    const unsubInv = onSnapshot(
+      query(collection(db, tenantCol(tenantId, 'inventory')), where('storeId', '==', storeId)),
+      async snap => {
+      const { getDocs } = await import('firebase/firestore');
+      const prodSnap = await getDocs(collection(db, tenantCol(tenantId, 'products')));
+      const thresh: Record<string, number> = {};
+      prodSnap.docs.forEach(d => { thresh[d.id] = d.data().alertThreshold ?? 10; });
+      const low = snap.docs.filter(d => {
+        const data = d.data();
+        return data.storeId === storeId && estEnAlerte(data.quantity || 0, {
+          seuilMagasin: data.minQuantity,
+          seuilProduit: thresh[data.productId],
+        });
+      }).length;
+      setLowStockCount(low);
+    });
+
+    return () => { unsubCred(); unsubInv(); };
+  }, [tenant?.id, currentStore?.id]);
+
+  const getBadge = (key?: string, val?: number): number => {
+    if (key === 'lowStock') return lowStockCount;
+    if (key === 'overdueCredits') return overdueCount;
+    return val || 0;
+  };
+
+  const userRole = user?.role || 'CASHIER';
+  // SUPER_ADMIN (rôle éditeur) voit tout : sans cette exception, se promouvoir
+  // ferait DISPARAÎTRE le tableau de bord, le POS et le reste, puisqu'aucune
+  // entrée ne mentionne ce rôle dans sa liste. C'est cohérent avec
+  // ROLE_PERMISSIONS, où SUPER_ADMIN a toutes les permissions.
+  // Un compte éditeur n'appartient à aucun tenant : les pages métier
+  // (POS, stock, ventes…) n'auraient aucune donnée à afficher et
+  // planteraient sur un tenantId absent. On ne lui montre donc que ce qui
+  // le concerne : la console clients.
+  const isPublisher = userRole === 'SUPER_ADMIN';
+  const allowed = (item: { roles?: string[] }) =>
+    isPublisher
+      ? item.roles?.includes('SUPER_ADMIN') ?? false
+      : !item.roles || item.roles.includes(userRole);
+
+  const filteredNav = NAV_ITEMS.filter(allowed);
+  const filteredAdmin = ADMIN_ITEMS.filter(allowed);
+
+  const collapsed = sidebarCollapsed;
+  const pathname = usePathname();
+
+  // Ferme le tiroir mobile après un changement de page — sans ça, taper sur
+  // un lien laisserait le tiroir ouvert par-dessus la page suivante.
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname]);
+
+  const bodyProps = { collapsed, filteredNav, filteredAdmin, getBadge, user, handleLogout };
+
+  return (
+    <>
+      {/* Desktop : barre latérale fixe, jamais affichée sous md (768px) —
+          sans cette exclusion, elle occupait jusqu'à 256px sur un écran de
+          375px de large, ne laissant presque rien pour le contenu. */}
+      <aside className={cn(
+        'hidden md:flex fixed left-0 top-0 z-40 h-screen bg-white border-r border-gray-100 transition-all duration-300 flex-col shadow-sm',
+        collapsed ? 'w-16' : 'w-64'
+      )}>
+        <SidebarBody {...bodyProps} />
+      </aside>
+
+      {/* Mobile : même contenu, dans un tiroir déclenché par le bouton
+          menu du header (jamais réduit — "collapsed" n'a pas de sens dans
+          un tiroir qui se ferme entièrement). */}
+      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+        <SheetContent side="left" className="w-72 p-0 flex flex-col md:hidden">
+          <SheetTitle className="sr-only">Menu de navigation</SheetTitle>
+          <SidebarBody {...bodyProps} collapsed={false} />
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }

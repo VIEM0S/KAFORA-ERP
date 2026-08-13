@@ -158,7 +158,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
     <div className="min-h-screen bg-gray-50">
       <Sidebar />
-      <div className={cn('transition-all duration-300', sidebarCollapsed ? 'ml-16' : 'ml-64')}>
+      <div className={cn('transition-all duration-300', sidebarCollapsed ? 'md:ml-16' : 'md:ml-64')}>
         <Header />
         <main className="p-4 lg:p-6">
           {/* Point d'intégration UNIQUE pour les erreurs de chargement.

@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, Search, Settings, Store, X, ChevronDown, CheckCircle2, PanelLeft } from 'lucide-react';
+import { Bell, Search, Settings, Store, X, ChevronDown, CheckCircle2, PanelLeft, Menu } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils/helpers';
@@ -16,7 +16,7 @@ import { estEnAlerte } from '@/lib/inventory/alert-threshold';
 
 export function Header() {
   const { user, tenant, currentStore, stores, setCurrentStore } = useAuthStore();
-  const { toggleSidebar } = useUIStore();
+  const { toggleSidebar, setSidebarOpen } = useUIStore();
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [storeDropdownOpen, setStoreDropdownOpen] = useState(false);
@@ -81,10 +81,19 @@ export function Header() {
 
       {/* Gauche — toggle sidebar + sélecteur magasin */}
       <div className="flex items-center gap-3">
+        {/* Mobile : ouvre le tiroir de navigation (voir components/layout/sidebar-nav.tsx).
+            Desktop : réduit/agrandit la barre fixe — deux boutons distincts
+            car "réduire" n'a pas de sens pour un tiroir qui se ferme entièrement. */}
+        <button
+          onClick={() => setSidebarOpen(true)}
+          title="Ouvrir le menu"
+          className="md:hidden p-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors flex-shrink-0">
+          <Menu className="h-5 w-5" />
+        </button>
         <button
           onClick={toggleSidebar}
           title="Réduire/agrandir la sidebar (Ctrl+B)"
-          className="p-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors flex-shrink-0">
+          className="hidden md:block p-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors flex-shrink-0">
           <PanelLeft className="h-5 w-5" />
         </button>
         {stores.length > 0 && (
