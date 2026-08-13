@@ -28,6 +28,7 @@ export function Header() {
   // n'avaient d'indicateur visible sans aller cliquer sur /notifications.
   useEffect(() => {
     const tenantId = tenant?.id;
+    const storeId = currentStore?.id;
     if (!tenantId) return;
     let low = 0;
     let overdue = 0;
@@ -38,23 +39,29 @@ export function Header() {
       query(collection(db, tenantCol(tenantId, 'credits')), where('status', '==', 'OVERDUE')),
       snap => { overdue = snap.size; update(); }
     );
-    const unsubI = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'inventory')), where('storeId', '==', currentStore?.id || '')),
-      async snap => {
-      const { getDocs } = await import('firebase/firestore');
-      const prodSnap = await getDocs(collection(db, tenantCol(tenantId, 'products')));
-      const thresh: Record<string, number> = {};
-      prodSnap.docs.forEach(d => { thresh[d.id] = d.data().alertThreshold ?? 10; });
-      low = snap.docs.filter(d => {
-        const data = d.data();
-        // Seuil du magasin s'il existe, sinon celui du produit.
-        return data.storeId === currentStore?.id && estEnAlerte(data.quantity || 0, {
-          seuilMagasin: data.minQuantity,
-          seuilProduit: thresh[data.productId],
-        });
-      }).length;
-      update();
-    });
+    // Sans magasin sélectionné (juste après connexion, le temps que
+    // currentStore se résolve), on ne pose pas cette écoute : interroger
+    // storeId == '' déclenchait un refus Firestore transitoire à chaque
+    // chargement de page — voir même garde dans sidebar-nav.tsx.
+    const unsubI = storeId
+      ? onSnapshot(
+          query(collection(db, tenantCol(tenantId, 'inventory')), where('storeId', '==', storeId)),
+          async snap => {
+          const { getDocs } = await import('firebase/firestore');
+          const prodSnap = await getDocs(collection(db, tenantCol(tenantId, 'products')));
+          const thresh: Record<string, number> = {};
+          prodSnap.docs.forEach(d => { thresh[d.id] = d.data().alertThreshold ?? 10; });
+          low = snap.docs.filter(d => {
+            const data = d.data();
+            // Seuil du magasin s'il existe, sinon celui du produit.
+            return data.storeId === storeId && estEnAlerte(data.quantity || 0, {
+              seuilMagasin: data.minQuantity,
+              seuilProduit: thresh[data.productId],
+            });
+          }).length;
+          update();
+        })
+      : undefined;
     const unsubA = onSnapshot(
       query(collection(db, tenantCol(tenantId, 'alerts')), where('isResolved', '==', false)),
       snap => {
@@ -71,7 +78,7 @@ export function Header() {
       },
       () => { /* index manquant ou permission — ne bloque pas le reste du badge */ }
     );
-    return () => { unsubC(); unsubI(); unsubA(); };
+    return () => { unsubC(); unsubI?.(); unsubA(); };
   }, [tenant?.id, currentStore?.id, user?.role, user?.id]);
 
   const initials = `${user?.firstName?.charAt(0) || ''}${user?.lastName?.charAt(0) || ''}`;
