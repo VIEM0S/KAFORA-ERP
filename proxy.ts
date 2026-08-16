@@ -16,6 +16,11 @@ const PUBLIC_PATHS = [
   '/mentions-legales',
   '/cgv',
   '/confidentialite',
+  // Générées par app/robots.ts et app/sitemap.ts — sans cette entrée, un
+  // crawler recevait une redirection vers /login au lieu du vrai contenu
+  // (constaté en local : /robots.txt → /login?redirect=%2Frobots.txt).
+  '/robots.txt',
+  '/sitemap.xml',
 ];
 
 // Préfixes publics (assets, etc.)
