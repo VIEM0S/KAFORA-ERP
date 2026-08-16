@@ -4,7 +4,7 @@ import {
   initializeFirestore,
   getFirestore,
   persistentLocalCache,
-  persistentSingleTabManager,
+  persistentMultipleTabManager,
 } from 'firebase/firestore';
 import { getDatabase } from 'firebase/database';
 
@@ -29,13 +29,18 @@ export const auth = getAuth(app);
 // données lues en IndexedDB et met en file les écritures pour les rejouer
 // au retour du réseau. `initializeFirestore` doit être appelé une seule fois
 // et avant tout autre usage de Firestore — donc uniquement côté navigateur.
-// `persistentSingleTabManager` : un seul onglet gère le cache à la fois
-// (suffisant pour une caisse, évite la complexité multi-onglets).
+// `persistentMultipleTabManager` : le cache IndexedDB est partagé entre
+// onglets (ex. Analytics ouvert à côté du POS). Avec le gestionnaire
+// single-tab utilisé avant, un second onglet perdait silencieusement la
+// persistance (repli sur cache mémoire, sans erreur visible) — inutile ici,
+// les écritures métier sensibles (encaissement...) passent de toute façon
+// par les routes API (Admin SDK), jamais par une écriture Firestore directe
+// depuis le client.
 export const db = (() => {
   if (typeof window === 'undefined') return getFirestore(app);
   try {
     return initializeFirestore(app, {
-      localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
     });
   } catch {
     // Déjà initialisé (ex: hot-reload Next.js en dev) — récupérer l'instance existante.
