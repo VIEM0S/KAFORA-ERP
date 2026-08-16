@@ -153,6 +153,26 @@
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background-color: rgb(var(--secondary-400));
   }
+
+  /* Ombre de scroll horizontal, CSS pur (pas de JS ni de scroll-listener) —
+     signale qu'un tableau a du contenu caché hors de l'écran (fréquent sur
+     mobile, où les tableaux de l'app débordent souvent). Technique classique
+     à deux dégradés superposés : les deux premiers masquent l'ombre tant que
+     le début/la fin du contenu est visible (ils bougent AVEC le scroll, donc
+     "local"), les deux derniers dessinent l'ombre elle-même et restent fixes
+     par rapport au conteneur ("scroll"). */
+  .table-scroll-shadow {
+    background:
+      linear-gradient(to right, hsl(var(--card)) 30%, transparent),
+      linear-gradient(to left, hsl(var(--card)) 30%, transparent) 100% 0,
+      linear-gradient(to right, rgba(0, 0, 0, 0.12), transparent),
+      linear-gradient(to left, rgba(0, 0, 0, 0.12), transparent) 100% 0;
+    background-repeat: no-repeat;
+    background-color: hsl(var(--card));
+    background-size: 40px 100%, 40px 100%, 14px 100%, 14px 100%;
+    background-position: 0 0, 100% 0, 0 0, 100% 0;
+    background-attachment: local, local, scroll, scroll;
+  }
 }
 
 /* Animations */
