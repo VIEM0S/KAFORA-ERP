@@ -142,7 +142,40 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     return () => window.removeEventListener('keydown', handleKey);
   }, [toggleSidebar]);
 
+  // Filet de sécurité : useAuth() résout toujours isLoading via son
+  // try/catch/finally, SAUF si le callback onAuthStateChanged de Firebase
+  // Auth ne se déclenche jamais du tout (SDK qui ne s'initialise pas,
+  // premier chargement entièrement hors-ligne...). Rare, mais sans ce
+  // timeout un utilisateur dans ce cas reste face à un spinner qui ne
+  // s'arrêtera jamais, sans aucun moyen de comprendre ce qui se passe.
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
+  useEffect(() => {
+    if (!isLoading) { setLoadingTimedOut(false); return; }
+    const timer = setTimeout(() => setLoadingTimedOut(true), 15000);
+    return () => clearTimeout(timer);
+  }, [isLoading]);
+
   if (isLoading) {
+    if (loadingTimedOut) {
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+          <div className="flex flex-col items-center gap-4 text-center max-w-sm">
+            <p className="text-sm font-medium text-gray-800">
+              Le chargement prend plus de temps que prévu.
+            </p>
+            <p className="text-xs text-gray-500">
+              Vérifiez votre connexion, puis réessayez.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 rounded-xl bg-primary-600 text-white text-sm font-medium hover:bg-primary-700"
+            >
+              Réessayer
+            </button>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
