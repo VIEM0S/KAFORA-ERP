@@ -4,6 +4,23 @@ import { useEffect } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
+// Un utilisateur resté ouvert pendant qu'un nouveau déploiement remplace les
+// fichiers de chunks JS peut cliquer sur une page dont le chunk n'existe plus
+// côté serveur. `reset()` (React) rejoue le même rendu, donc le même import
+// cassé, et échoue à l'identique en boucle — seul un VRAI rechargement de
+// page va chercher la nouvelle carte de chunks à jour. Un flag sessionStorage
+// évite de boucler indéfiniment si le rechargement ne résout pas le problème
+// (ex. panne serveur persistante, plutôt qu'un simple chunk périmé).
+function isChunkLoadError(error: Error): boolean {
+  const msg = error.message || '';
+  return (
+    error.name === 'ChunkLoadError' ||
+    /Loading chunk [\d]+ failed/i.test(msg) ||
+    /Failed to fetch dynamically imported module/i.test(msg) ||
+    /Importing a module script failed/i.test(msg)
+  );
+}
+
 export default function Error({
   error,
   reset,
@@ -15,6 +32,14 @@ export default function Error({
     // Log console uniquement pour l'instant — un vrai suivi d'erreurs
     // (Sentry ou équivalent) pourrait être branché ici plus tard.
     console.error('Erreur applicative :', error);
+
+    if (isChunkLoadError(error)) {
+      const key = 'chunk-error-reloaded';
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, '1');
+        window.location.reload();
+      }
+    }
   }, [error]);
 
   return (
