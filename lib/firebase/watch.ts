@@ -36,8 +36,19 @@ function labelOf(ref: unknown): string {
 
     // Les objets Query n'exposent pas `path` publiquement ; on tente la
     // structure interne, sans jamais laisser une erreur remonter d'ici.
-    const segments = (ref as { _query?: { path?: { segments?: string[] } } })
-      ._query?.path?.segments;
+    //
+    // Fix : une requête collectionGroup() (ex. cost_summary, credit_payments)
+    // a toujours `_query.path.segments` VIDE — ce champ ne s'applique qu'aux
+    // requêtes sur UNE collection à un chemin fixe. Le nom de la collection
+    // interrogée vit alors dans `_query.collectionGroup`, jamais consulté
+    // auparavant : toute erreur sur ce type de requête retombait donc sur le
+    // générique "Données", masquant quelle écoute avait réellement échoué
+    // (et pouvant en écraser silencieusement une autre sous la même clé).
+    // Vérifié sur la structure réelle du SDK installé (firebase 12.17.1).
+    const q = (ref as { _query?: { collectionGroup?: string; path?: { segments?: string[] } } })._query;
+    if (q?.collectionGroup) return lastSegment(q.collectionGroup);
+
+    const segments = q?.path?.segments;
     if (Array.isArray(segments) && segments.length > 0) {
       return lastSegment(segments.join('/'));
     }
