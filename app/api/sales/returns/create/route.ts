@@ -137,7 +137,19 @@ export async function POST(request: NextRequest) {
     let creditReduction = 0;
     let cashRefund = refundAmount;
 
+    // Rempli à l'intérieur de la transaction, lu après (comme dans
+    // sales/cancel et purchase-orders/receive) : les mouvements de stock
+    // s'écrivent hors transaction, mais ont besoin des quantités avant/après
+    // lues à l'intérieur — jamais d'une valeur capturée avant, potentiellement
+    // obsolète. Réinitialisé à chaque (re)exécution du callback pour éviter
+    // un doublon en cas de retry Firestore.
+    let movementsToWrite: Array<{
+      productId: string; productName: string; quantity: number;
+      previousQuantity: number; newQuantity: number;
+    }> = [];
+
     await adminDb.runTransaction(async (tx) => {
+      movementsToWrite = [];
       // ── Lectures ────────────────────────────────────────────────────────
       const freshQtys: Record<string, number> = {};
       for (const l of returnLines) {
@@ -176,9 +188,15 @@ export async function POST(request: NextRequest) {
         });
         const inv = invRefs[l.productId];
         if (inv) {
+          const previousQuantity = freshQtys[l.productId] || 0;
+          const newQuantity = previousQuantity + l.quantity;
           tx.update(inv.ref, {
-            quantity: (freshQtys[l.productId] || 0) + l.quantity,
+            quantity: newQuantity,
             updatedAt: FieldValue.serverTimestamp(),
+          });
+          movementsToWrite.push({
+            productId: l.productId, productName: l.productName,
+            quantity: l.quantity, previousQuantity, newQuantity,
           });
         }
       }
@@ -244,12 +262,12 @@ export async function POST(request: NextRequest) {
 
     // ── Mouvements de stock + alerte (hors transaction) ──────────────────────
     const writes: Promise<unknown>[] = [];
-    for (const l of returnLines) {
-      if (!l.restocked) continue;
+    for (const m of movementsToWrite) {
       writes.push(
         adminDb.collection(`tenants/${tenantId}/inventory_movements`).add({
-          tenantId, productId: l.productId, productName: l.productName, storeId: sale.storeId,
-          type: 'IN', quantity: l.quantity,
+          tenantId, productId: m.productId, productName: m.productName, storeId: sale.storeId,
+          type: 'IN', quantity: m.quantity,
+          previousQuantity: m.previousQuantity, newQuantity: m.newQuantity,
           reason: `Retour client — vente ${sale.reference || saleId}`,
           saleReturnId: returnRef.id,
           createdBy: callerUid,
