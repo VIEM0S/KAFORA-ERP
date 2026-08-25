@@ -29,6 +29,17 @@ const CREDIT_STATUS: Record<string, { label: string; color: string }> = {
   OVERDUE:        { label: 'En retard', color: 'bg-red-100 text-red-700' },
 };
 
+// Mêmes libellés que app/(dashboard)/quotes/page.tsx (STATUS_CONFIG) — sans
+// quoi cet onglet affichait le statut brut ("CONVERTED", "ACCEPTED"...) au
+// lieu du libellé français utilisé partout ailleurs dans l'app.
+const QUOTE_STATUS: Record<string, { label: string; color: string }> = {
+  PENDING:   { label: 'En attente', color: 'bg-amber-100 text-amber-700' },
+  ACCEPTED:  { label: 'Accepté',    color: 'bg-blue-100 text-blue-700' },
+  CONVERTED: { label: 'Converti',   color: 'bg-green-100 text-green-700' },
+  REFUSED:   { label: 'Refusé',     color: 'bg-red-100 text-red-700' },
+  EXPIRED:   { label: 'Expiré',     color: 'bg-gray-100 text-gray-500' },
+};
+
 export default function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -277,14 +288,17 @@ export default function CustomerDetailPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {quotes.map(q => (
-                      <TableRow key={q.id}>
-                        <TableCell className="text-sm text-gray-500">{formatDate(q.createdAt)}</TableCell>
-                        <TableCell className="text-right font-bold">{formatCurrency(q.total)}</TableCell>
-                        <TableCell className="text-sm">{formatDate(q.dateValidite)}</TableCell>
-                        <TableCell><span className="text-xs px-2 py-1 rounded-full font-medium bg-gray-100 text-gray-600">{q.status}</span></TableCell>
-                      </TableRow>
-                    ))}
+                    {quotes.map(q => {
+                      const cfg = QUOTE_STATUS[q.status] ?? QUOTE_STATUS.PENDING;
+                      return (
+                        <TableRow key={q.id}>
+                          <TableCell className="text-sm text-gray-500">{formatDate(q.createdAt)}</TableCell>
+                          <TableCell className="text-right font-bold">{formatCurrency(q.total)}</TableCell>
+                          <TableCell className="text-sm">{formatDate(q.dateValidite)}</TableCell>
+                          <TableCell><span className={`text-xs px-2 py-1 rounded-full font-medium ${cfg.color}`}>{cfg.label}</span></TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               )}
