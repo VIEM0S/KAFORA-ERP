@@ -101,6 +101,10 @@ export class FakeDocRef {
     this.db.store.set(this.path, resolveWrite(existing, data));
   }
 
+  async delete() {
+    this.db.store.delete(this.path);
+  }
+
   /** @internal utilisé par FakeTransaction._commit() pour appliquer une écriture en file d'attente */
   _applyNow(data: Record<string, unknown>) {
     const existing = this.db.read(this.path) || {};
