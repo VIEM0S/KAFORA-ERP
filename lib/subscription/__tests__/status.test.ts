@@ -128,8 +128,8 @@ describe('daysUntilFullBlock', () => {
   });
 
   it('abonnement actif loin de l\'échéance : compte échéance + tolérance', () => {
-    // Échéance dans 10 jours + 7 jours de tolérance = 17 jours avant blocage complet.
-    expect(daysUntilFullBlock({ status: 'ACTIVE', currentPeriodEnd: inDays(10) }, NOW)).toBe(17);
+    // Échéance dans 10 jours + 3 jours de tolérance = 13 jours avant blocage complet.
+    expect(daysUntilFullBlock({ status: 'ACTIVE', currentPeriodEnd: inDays(10) }, NOW)).toBe(13);
   });
 
   it('en pleine tolérance : ne descend jamais sous 0', () => {

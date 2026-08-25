@@ -50,8 +50,8 @@ function DataErrorBanner() {
  * `daysUntilFullBlock`/`getSubscriptionState` (lib/subscription/status.ts)
  * existaient déjà et pilotent le blocage réel des écritures — mais rien ne
  * les affichait jamais côté client. Un commerçant en période de tolérance
- * (GRACE) n'avait donc aucun signal qu'il lui restait 7 jours avant blocage
- * complet, sinon découvrir le blocage le jour où il arrivait.
+ * (GRACE) n'avait donc aucun signal qu'il lui restait GRACE_PERIOD_DAYS jours
+ * avant blocage complet, sinon découvrir le blocage le jour où il arrivait.
  */
 function SubscriptionBanner() {
   const subscription = useAuthStore(s => s.tenant?.subscription);

@@ -7,7 +7,7 @@ import { LandingLayout } from '@/components/landing/landing-layout';
  *
  * Les clauses de fonctionnement décrivent EXACTEMENT ce que fait le logiciel
  * aujourd'hui : essai de 14 jours, lecture seule à l'échéance, tolérance de
- * 7 jours au point de vente, suspension motivée et journalisée, non-accès de
+ * 3 jours au point de vente, suspension motivée et journalisée, non-accès de
  * l'éditeur aux données commerciales. Si le produit change, ce document doit
  * changer avec lui — promettre autre chose que ce que fait le code est la
  * meilleure façon de perdre un litige.
@@ -115,7 +115,7 @@ export default function CGVPage() {
             </p>
             <p className="mt-2">
               L&apos;encaissement au point de vente reste possible pendant{' '}
-              <strong>7 jours</strong> après l&apos;échéance, afin qu&apos;aucun commerce ne
+              <strong>3 jours</strong> après l&apos;échéance, afin qu&apos;aucun commerce ne
               se trouve dans l&apos;impossibilité de vendre sans préavis. Passé ce
               délai, il est suspendu jusqu&apos;au règlement.
             </p>

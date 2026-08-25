@@ -8,8 +8,8 @@
  *
  * Règle produit retenue :
  *   - jusqu'à l'échéance ................ tout fonctionne (ACTIVE)
- *   - échéance dépassée, < 7 jours ...... lecture seule SAUF le POS (GRACE)
- *   - au-delà de 7 jours ................ lecture seule totale (EXPIRED)
+ *   - échéance dépassée, < 3 jours ...... lecture seule SAUF le POS (GRACE)
+ *   - au-delà de 3 jours ................ lecture seule totale (EXPIRED)
  *
  * On ne coupe jamais complètement l'accès : le commerçant doit toujours
  * pouvoir consulter son stock, ses ventes passées et ses créances clients,
@@ -18,7 +18,7 @@
  */
 
 /** Nombre de jours pendant lesquels la caisse continue de fonctionner. */
-export const GRACE_PERIOD_DAYS = 7;
+export const GRACE_PERIOD_DAYS = 3;
 
 export type SubscriptionState = 'ACTIVE' | 'GRACE' | 'EXPIRED';
 
