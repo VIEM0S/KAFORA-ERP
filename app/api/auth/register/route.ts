@@ -129,8 +129,8 @@ export async function POST(request: NextRequest) {
       // comparer une chaîne ISO à l'heure courante, il leur faut un vrai
       // Timestamp. Passé cette date, les écritures directes depuis le
       // navigateur (produits, clients, stock…) sont refusées et le compte
-      // bascule en lecture seule. Le POS, lui, reste toléré 7 jours de plus
-      // via checkSubscriptionAllows() côté API (voir lib/subscription/status).
+      // bascule en lecture seule. Le POS, lui, reste toléré GRACE_PERIOD_DAYS
+      // jours de plus via checkSubscriptionAllows() côté API (voir lib/subscription/status).
       writeBlockedAt: Timestamp.fromDate(new Date(trialEnd)),
       limits,
       createdAt: now,
