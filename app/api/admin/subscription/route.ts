@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase/admin';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { cookies } from 'next/headers';
-import { SUBSCRIPTION_PLANS, PlanId } from '@/lib/constants';
+import { SUBSCRIPTION_PLANS, PlanId, REFERRAL_REFERRER_BONUS_DAYS } from '@/lib/constants';
 
 /**
  * Console éditeur : enregistre un paiement et prolonge un abonnement.
@@ -103,6 +103,48 @@ export async function POST(request: NextRequest) {
       recordedBy: decoded.uid,
       createdAt: FieldValue.serverTimestamp(),
     });
+
+    // Récompense de parrainage : uniquement sur un paiement réel (amount > 0),
+    // jamais sur une prolongation gracieuse — sinon un compte fictif suffirait
+    // à déclencher la récompense sans le moindre revenu. Le statut PENDING du
+    // document de parrainage garantit qu'elle n'est accordée qu'une seule fois.
+    if (amount > 0) {
+      const tenantSnap = await adminDb.doc(`tenants/${tenantId}`).get();
+      const referrerTenantId = tenantSnap.data()?.referredByTenantId as string | undefined;
+
+      if (referrerTenantId) {
+        const referralQuery = await adminDb
+          .collection(`tenants/${referrerTenantId}/referrals`)
+          .where('referredTenantId', '==', tenantId)
+          .where('status', '==', 'PENDING')
+          .limit(1)
+          .get();
+
+        if (!referralQuery.empty) {
+          const referrerSubRef = adminDb.doc(`tenants/${referrerTenantId}/subscriptions/${referrerTenantId}`);
+          const referrerSubSnap = await referrerSubRef.get();
+
+          if (referrerSubSnap.exists) {
+            const referrerSub = referrerSubSnap.data() as { currentPeriodEnd?: string };
+            const referrerCurrentEnd = referrerSub.currentPeriodEnd ? new Date(referrerSub.currentPeriodEnd) : null;
+            const referrerBase = referrerCurrentEnd && referrerCurrentEnd > now ? referrerCurrentEnd : now;
+            const referrerNewEnd = new Date(
+              referrerBase.getTime() + REFERRAL_REFERRER_BONUS_DAYS * 24 * 60 * 60 * 1000
+            );
+
+            batch.update(referrerSubRef, {
+              currentPeriodEnd: referrerNewEnd.toISOString(),
+              writeBlockedAt: Timestamp.fromDate(referrerNewEnd),
+              updatedAt: now.toISOString(),
+            });
+            batch.update(referralQuery.docs[0].ref, {
+              status: 'REWARDED',
+              rewardedAt: FieldValue.serverTimestamp(),
+            });
+          }
+        }
+      }
+    }
 
     await batch.commit();
 

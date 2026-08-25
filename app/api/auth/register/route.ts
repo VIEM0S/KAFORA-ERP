@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase/admin';
 import { checkRateLimit, getClientIp } from '@/lib/api/rate-limit';
-import { Timestamp } from 'firebase-admin/firestore';
-import { SUBSCRIPTION_PLANS, PlanId } from '@/lib/constants';
+import { Timestamp, FieldValue } from 'firebase-admin/firestore';
+import { SUBSCRIPTION_PLANS, PlanId, REFERRAL_REFEREE_BONUS_DAYS } from '@/lib/constants';
+import { generateReferralCode } from '@/lib/utils/helpers';
 
 function slugify(str: string): string {
   return str
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { company, store, user, plan, acceptedTerms, termsVersion } = await request.json();
+    const { company, store, user, plan, acceptedTerms, termsVersion, referralCode } = await request.json();
 
     // Validation minimale
     if (!company?.name || !company?.email || !user?.email || !user?.password || !store?.name) {
@@ -56,6 +57,22 @@ export async function POST(request: NextRequest) {
         { error: 'Vous devez accepter les conditions générales pour créer un compte.' },
         { status: 400 }
       );
+    }
+
+    // Parrainage : résolution AVANT création du compte, en lecture seule — un
+    // code invalide ou absent ne doit jamais bloquer une inscription légitime,
+    // il fait juste perdre le bonus d'essai. (Comparaison en majuscules : le
+    // code est généré en majuscules, mais un lien copié/collé peut varier.)
+    let referrerTenantId: string | null = null;
+    if (typeof referralCode === 'string' && referralCode.trim()) {
+      const referrerSnap = await adminDb
+        .collection('tenants')
+        .where('referralCode', '==', referralCode.trim().toUpperCase())
+        .limit(1)
+        .get();
+      if (!referrerSnap.empty) {
+        referrerTenantId = referrerSnap.docs[0].id;
+      }
     }
 
     // 1. Créer le compte Firebase Auth
@@ -113,10 +130,19 @@ export async function POST(request: NextRequest) {
         acceptedByEmail: user.email,
         ip: getClientIp(request),
       },
+      // Code de parrainage propre à CE tenant (à partager), distinct du code
+      // éventuellement saisi ci-dessus pour rejoindre le parrain de quelqu'un
+      // d'autre.
+      referralCode: generateReferralCode(company.name),
+      referredByTenantId: referrerTenantId,
     });
 
-    // Abonnement (période d'essai 14 jours)
-    const trialEnd = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+    // Abonnement (période d'essai 14 jours, +REFERRAL_REFEREE_BONUS_DAYS si
+    // inscrit via un lien de parrainage valide — appliqué immédiatement, pas
+    // besoin d'attendre un paiement puisqu'un essai prolongé ne coûte pas de
+    // revenu perdu).
+    const trialDays = 14 + (referrerTenantId ? REFERRAL_REFEREE_BONUS_DAYS : 0);
+    const trialEnd = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString();
     const subRef = adminDb.collection(`tenants/${tenantId}/subscriptions`).doc(tenantId);
     batch.set(subRef, {
       tenantId,
@@ -172,6 +198,22 @@ export async function POST(request: NextRequest) {
       createdAt: now,
       updatedAt: now,
     });
+
+    // Trace de parrainage : vit sous le tenant DU PARRAIN, pour qu'il puisse
+    // consulter la liste de ses filleuls (règle de sécurité : belongsToTenant).
+    // La récompense du parrain (elle) n'est accordée qu'au premier paiement
+    // réel du filleul — voir app/api/admin/subscription/route.ts.
+    if (referrerTenantId) {
+      const referralRef = adminDb.collection(`tenants/${referrerTenantId}/referrals`).doc();
+      batch.set(referralRef, {
+        referrerTenantId,
+        referredTenantId: tenantId,
+        referredCompanyName: company.name,
+        status: 'PENDING',
+        createdAt: FieldValue.serverTimestamp(),
+        rewardedAt: null,
+      });
+    }
 
     await batch.commit();
 

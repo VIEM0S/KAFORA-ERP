@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -53,6 +53,15 @@ export default function SetupPage() {
   });
   const [plan, setPlan] = useState('BUSINESS');
 
+  // Code de parrainage éventuel, porté par le lien partagé (?ref=CODE). Lu
+  // depuis `window.location` plutôt que useSearchParams() pour éviter
+  // d'imposer une limite <Suspense> à toute la page pour un besoin ponctuel.
+  const [referralCode, setReferralCode] = useState('');
+  useEffect(() => {
+    const ref = new URLSearchParams(window.location.search).get('ref');
+    if (ref) setReferralCode(ref);
+  }, []);
+
   // Acceptation explicite des conditions. Sans cette case, des CGV même
   // parfaitement rédigées ne sont opposables à personne : il faut pouvoir
   // démontrer que le client les a acceptées, à une date donnée, dans une
@@ -91,6 +100,7 @@ export default function SetupPage() {
           // côté serveur avec le compte.
           acceptedTerms: true,
           termsVersion: TERMS_VERSION,
+          referralCode: referralCode || undefined,
         }),
       });
       const data = await res.json();

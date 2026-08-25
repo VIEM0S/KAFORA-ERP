@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
   Building2, Globe, Phone, Mail, FileText,
-  RefreshCw, CheckCircle2, AlertCircle, Lock, Eye, EyeOff, User
+  RefreshCw, CheckCircle2, AlertCircle, Lock, Eye, EyeOff, User, Gift, Copy, Check
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -12,9 +12,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuthStore } from '@/hooks/store';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc, serverTimestamp, collection } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { auth } from '@/lib/firebase/client';
+import { onSnapshot } from '@/lib/firebase/watch';
 import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { SUBSCRIPTION_PLANS, type PlanId } from '@/lib/constants';
 import { getSubscriptionState, daysUntilFullBlock } from '@/lib/subscription/status';
@@ -69,6 +70,29 @@ export default function SettingsPage() {
   });
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMsg, setProfileMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // ─── Parrainage ─────────────────────────────────────────────────────────────
+  const [referralStats, setReferralStats] = useState<{ total: number; rewarded: number }>({ total: 0, rewarded: 0 });
+  const [codeCopied, setCodeCopied] = useState(false);
+  // `window` n'existe pas côté serveur : calculé après montage pour éviter un
+  // décalage d'hydratation entre le rendu serveur et le rendu client.
+  const [origin, setOrigin] = useState('');
+  useEffect(() => { setOrigin(window.location.origin); }, []);
+
+  useEffect(() => {
+    if (!tenantId) return;
+    const unsub = onSnapshot(
+      collection(db, `tenants/${tenantId}/referrals`),
+      (snap) => {
+        const docs = snap.docs ?? [];
+        setReferralStats({
+          total: docs.length,
+          rewarded: docs.filter((d) => d.data().status === 'REWARDED').length,
+        });
+      }
+    );
+    return () => unsub();
+  }, [tenantId]);
 
   useEffect(() => {
     if (tenant) {
@@ -385,6 +409,44 @@ export default function SettingsPage() {
             </Card>
           );
         })()}
+
+        {/* Parrainage */}
+        {tenant?.referralCode && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Gift className="h-5 w-5 text-pink-600" />Parrainage</CardTitle>
+              <CardDescription>
+                Partagez votre lien : 15 jours offerts sur votre abonnement dès le premier paiement
+                de la personne que vous parrainez, et 7 jours d&apos;essai en plus pour elle.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label>Votre lien de parrainage</Label>
+                <div className="flex gap-2 mt-1">
+                  <Input readOnly value={origin ? `${origin}/register?ref=${tenant.referralCode}` : tenant.referralCode} />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={async () => {
+                      const link = `${origin}/register?ref=${tenant.referralCode}`;
+                      await navigator.clipboard.writeText(link);
+                      setCodeCopied(true);
+                      setTimeout(() => setCodeCopied(false), 2000);
+                    }}
+                  >
+                    {codeCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    {codeCopied ? 'Copié' : 'Copier'}
+                  </Button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div><p className="text-gray-500">Filleuls inscrits</p><p className="font-bold text-lg text-pink-700">{referralStats.total}</p></div>
+                <div><p className="text-gray-500">Récompenses obtenues</p><p className="font-bold text-lg text-pink-700">{referralStats.rewarded}</p></div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </DashboardLayout>
   );

@@ -213,6 +213,19 @@ export const SUBSCRIPTION_PLANS = {
 
 export type PlanId = keyof typeof SUBSCRIPTION_PLANS;
 
+/**
+ * Parrainage : jours offerts au premier paiement réel du filleul (pas à
+ * l'inscription, pour éviter qu'un faux compte génère une récompense sans
+ * jamais payer) — voir app/api/admin/subscription/route.ts.
+ */
+export const REFERRAL_REFERRER_BONUS_DAYS = 15;
+/**
+ * Jours offerts au filleul, appliqués immédiatement à l'inscription : un
+ * essai prolongé ne coûte pas de revenu perdu, donc pas besoin d'attendre
+ * un paiement pour ce côté-ci — voir app/api/auth/register/route.ts.
+ */
+export const REFERRAL_REFEREE_BONUS_DAYS = 7;
+
 export const PAYMENT_METHODS = [
   { value: 'CASH', label: 'Espèces', icon: 'Banknote' },
   { value: 'MOBILE_MONEY', label: 'Mobile Money', icon: 'Smartphone' },

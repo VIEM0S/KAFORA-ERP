@@ -74,6 +74,16 @@ export class FakeFirestore {
     return result;
     // Si callback throw, on ne passe jamais ici : aucune écriture n'est appliquée (rollback implicite).
   }
+
+  /**
+   * batch() n'a pas les garanties transactionnelles de runTransaction() (pas
+   * de lecture isolée), mais les routes testées ne font que des écritures
+   * groupées — la seule chose à simuler est que RIEN n'est appliqué avant
+   * commit(), comme le vrai SDK.
+   */
+  batch(): FakeBatch {
+    return new FakeBatch(this);
+  }
 }
 
 export class FakeDocRef {
@@ -255,6 +265,41 @@ export class FakeTransaction {
   _commit() {
     for (const w of this.pendingWrites) {
       w.ref._applyNow(w.data);
+    }
+  }
+}
+
+type FakeBatchOp =
+  | { kind: 'set'; ref: FakeDocRef; data: Record<string, unknown>; merge: boolean }
+  | { kind: 'update'; ref: FakeDocRef; data: Record<string, unknown> }
+  | { kind: 'delete'; ref: FakeDocRef };
+
+export class FakeBatch {
+  private ops: FakeBatchOp[] = [];
+  constructor(private db: FakeFirestore) {}
+
+  // set() SANS merge REMPLACE tout le document, comme le vrai SDK — à ne pas
+  // confondre avec update(), qui ne modifie que les champs fournis.
+  set(ref: FakeDocRef, data: Record<string, unknown>, opts?: { merge?: boolean }) {
+    this.ops.push({ kind: 'set', ref, data, merge: opts?.merge === true });
+    return this;
+  }
+
+  update(ref: FakeDocRef, data: Record<string, unknown>) {
+    this.ops.push({ kind: 'update', ref, data });
+    return this;
+  }
+
+  delete(ref: FakeDocRef) {
+    this.ops.push({ kind: 'delete', ref });
+    return this;
+  }
+
+  async commit() {
+    for (const op of this.ops) {
+      if (op.kind === 'delete') { await op.ref.delete(); continue; }
+      if (op.kind === 'update') { await op.ref.update(op.data); continue; }
+      await op.ref.set(op.data, { merge: op.merge });
     }
   }
 }

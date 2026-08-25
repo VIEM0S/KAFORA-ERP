@@ -50,6 +50,8 @@ export interface Tenant {
   updatedAt: Date;
   subscription?: Subscription;
   transferSettings?: TransferSettings;
+  referralCode?: string | null;
+  referredByTenantId?: string | null;
 }
 
 /**

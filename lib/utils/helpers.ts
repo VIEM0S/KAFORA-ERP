@@ -102,6 +102,15 @@ export function slugify(str: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+export function generateReferralCode(companyName: string): string {
+  const base = slugify(companyName).replace(/-/g, '').slice(0, 10).toUpperCase() || 'KAFORA';
+  // 6 caractères aléatoires : ~2 milliards de combinaisons par préfixe, largement
+  // suffisant pour éviter une collision sans avoir besoin de vérifier l'unicité
+  // en base à la création.
+  const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+  return `${base}-${random}`;
+}
+
 export function generateReference(prefix: string): string {
   const year = new Date().getFullYear();
   const random = Math.random().toString(36).substring(2, 6).toUpperCase();

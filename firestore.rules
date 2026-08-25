@@ -47,8 +47,8 @@ service cloud.firestore {
     // Un compte dont l'abonnement a expiré passe en LECTURE SEULE : il consulte
     // toujours son stock, ses ventes et ses créances, mais ne peut plus créer
     // ni modifier de données depuis le navigateur. (L'encaissement au POS reste
-    // toléré 7 jours de plus — il passe par l'API, contrôlé côté serveur dans
-    // lib/api/subscription-guard.ts, pas ici.)
+    // toléré GRACE_PERIOD_DAYS jours de plus — il passe par l'API, contrôlé
+    // côté serveur dans lib/api/subscription-guard.ts, pas ici.)
     //
     // On compare request.time à `writeBlockedAt`, un vrai Timestamp : les
     // règles Firestore ne savent pas interpréter les dates stockées en chaîne
@@ -238,6 +238,15 @@ service cloud.firestore {
 
       // ─── Subscriptions ─────────────────────────────────────────────────────
       match /subscriptions/{subId} {
+        allow read: if belongsToTenant(tenantId);
+        allow write: if false; // Uniquement via Admin SDK
+      }
+
+      // ─── Parrainage ──────────────────────────────────────────────────────────
+      // Créé et récompensé uniquement côté serveur (inscription + enregistrement
+      // de paiement) : un tenant ne doit jamais pouvoir s'auto-attribuer une
+      // récompense en écrivant directement ce document.
+      match /referrals/{referralId} {
         allow read: if belongsToTenant(tenantId);
         allow write: if false; // Uniquement via Admin SDK
       }
