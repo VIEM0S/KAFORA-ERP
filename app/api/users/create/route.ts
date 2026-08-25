@@ -23,6 +23,12 @@ export async function POST(request: NextRequest) {
     if (!email || !password || !firstName || !lastName || !role || !tenantId) {
       return NextResponse.json({ error: 'Champs manquants' }, { status: 400 });
     }
+    // Seul un contrôle client (create-user-dialog.tsx) existait — un appel
+    // direct à l'API pouvait créer un compte avec un mot de passe d'un seul
+    // caractère, Firebase Auth se rabattant sur son propre plancher (6).
+    if (password.length < 8) {
+      return NextResponse.json({ error: 'Mot de passe : 8 caractères minimum' }, { status: 400 });
+    }
     // Isolation multi-tenant : un ADMIN/OWNER ne peut créer un utilisateur que
     // dans son propre tenant, jamais dans un tenant tiers (cf. update/delete/toggle-status).
     if (tenantId !== callerTenantId) {

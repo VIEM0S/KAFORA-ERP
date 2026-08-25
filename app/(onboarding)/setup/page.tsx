@@ -62,7 +62,9 @@ export default function SetupPage() {
   const isStepValid = () => {
     if (step === 0) return !!(company.name && company.email);
     if (step === 1) return !!(store.name);
-    if (step === 2) return !!(user.firstName && user.lastName && user.email && user.password && user.password === user.confirmPassword);
+    // Le champ affiche "8 caractères minimum" (voir plus bas) : ce contrôle
+    // ne le vérifiait jamais, n'importe quel mot de passe non vide passait.
+    if (step === 2) return !!(user.firstName && user.lastName && user.email && user.password.length >= 8 && user.password === user.confirmPassword);
     // Dernière étape : impossible de créer le compte sans accepter les
     // conditions. Case NON pré-cochée — un consentement pré-coché n'en est
     // pas un, et se retourne contre celui qui s'en prévaut.
@@ -267,6 +269,9 @@ export default function SetupPage() {
                 <div className="space-y-2">
                   <Label>Mot de passe *</Label>
                   <Input id="password" name="password" type="password" autoComplete="new-password" value={user.password} onChange={e => setUser({...user, password: e.target.value})} placeholder="8 caractères minimum" />
+                  {user.password && user.password.length < 8 && (
+                    <p className="text-xs text-red-500">8 caractères minimum</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>Confirmer le mot de passe *</Label>

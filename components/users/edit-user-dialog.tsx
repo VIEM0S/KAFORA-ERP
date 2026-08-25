@@ -73,7 +73,7 @@ export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogP
     if (!tenantId) return;
     if (!editForm.firstName.trim() || !editForm.lastName.trim()) { setEditError('Prénom et nom obligatoires'); return; }
     if (!editForm.email.trim()) { setEditError('Email obligatoire'); return; }
-    if (editForm.newPassword && editForm.newPassword.length < 6) { setEditError('Nouveau mot de passe : 6 caractères minimum'); return; }
+    if (editForm.newPassword && editForm.newPassword.length < 8) { setEditError('Nouveau mot de passe : 8 caractères minimum'); return; }
     if (editForm.role !== 'ADMIN' && editForm.storeIds.length === 0) {
       setEditError('Sélectionnez au moins un magasin pour cet utilisateur'); return;
     }

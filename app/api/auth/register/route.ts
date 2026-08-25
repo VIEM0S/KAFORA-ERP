@@ -39,6 +39,13 @@ export async function POST(request: NextRequest) {
     if (!company?.name || !company?.email || !user?.email || !user?.password || !store?.name) {
       return NextResponse.json({ error: 'Champs obligatoires manquants' }, { status: 400 });
     }
+    // Le formulaire affiche "8 caractères minimum" mais rien ne le vérifiait
+    // jamais, ni côté client ni ici : Firebase Auth se rabattait sur son
+    // propre plancher (6 caractères). Ce compte est le Propriétaire — celui
+    // qui a le plus de droits sur toute l'entreprise.
+    if (user.password.length < 8) {
+      return NextResponse.json({ error: 'Mot de passe : 8 caractères minimum' }, { status: 400 });
+    }
 
     // Acceptation des conditions : contrôlée CÔTÉ SERVEUR, pas seulement par
     // la case du formulaire. Sans ce contrôle, un appel direct à l'API

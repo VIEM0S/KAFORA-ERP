@@ -68,8 +68,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Seul le Propriétaire peut modifier un compte Administrateur' }, { status: 403 });
       }
     }
-    if (newPassword && newPassword.length < 6) {
-      return NextResponse.json({ error: 'Mot de passe : 6 caractères minimum' }, { status: 400 });
+    if (newPassword && newPassword.length < 8) {
+      return NextResponse.json({ error: 'Mot de passe : 8 caractères minimum' }, { status: 400 });
     }
 
     // 1. Mettre à jour Firebase Auth (email, mot de passe, nom affiché)

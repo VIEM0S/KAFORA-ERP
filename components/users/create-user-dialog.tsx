@@ -52,7 +52,7 @@ export function CreateUserDialog({ tenantId, open, onOpenChange, onCreated }: Cr
     if (!tenantId) return;
     if (!form.firstName.trim() || !form.lastName.trim()) { setFormError('Prénom et nom obligatoires'); return; }
     if (!form.email.trim()) { setFormError('Email obligatoire'); return; }
-    if (form.password.length < 6) { setFormError('Mot de passe : 6 caractères minimum'); return; }
+    if (form.password.length < 8) { setFormError('Mot de passe : 8 caractères minimum'); return; }
     if (form.password !== form.confirmPassword) { setFormError('Les mots de passe ne correspondent pas'); return; }
     if (form.role !== 'ADMIN' && form.storeIds.length === 0) {
       setFormError('Sélectionnez au moins un magasin pour cet utilisateur'); return;
@@ -160,7 +160,7 @@ export function CreateUserDialog({ tenantId, open, onOpenChange, onCreated }: Cr
             <Label htmlFor="cu-password">Mot de passe *</Label>
             <div className="relative">
               <Input id="cu-password" type={showPassword ? 'text' : 'password'} value={form.password}
-                onChange={e => f('password', e.target.value)} placeholder="6 caractères min." className="pr-10" />
+                onChange={e => f('password', e.target.value)} placeholder="8 caractères min." className="pr-10" />
               <button type="button" onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
