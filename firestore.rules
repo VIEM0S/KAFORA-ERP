@@ -112,10 +112,22 @@ service cloud.firestore {
     //
     // Lecture seule, cloisonnée par tenant ET par magasin : un règlement
     // révèle l'activité d'une boutique.
+    //
+    // Fix : `.tenantId` en accès direct fait planter l'évaluation
+    // ("Property tenantId is undefined on object") dès que Firestore essaie
+    // de prouver la sécurité de la requête pour un document hypothétique sans
+    // ce champ — et donc refuse toute la requête collectionGroup, même sur de
+    // vraies données qui l'ont bien. `.get(champ, défaut)` évite ce crash.
+    // Constaté en direct ET reproduit à l'émulateur : la caisse (rapprochement
+    // des espèces) échouait en permission-denied dès que son écoute ne
+    // filtrait pas déjà tenantId côté requête (voir cash-register/page.tsx,
+    // désormais corrigé pour filtrer tenantId aussi — Firestore doit pouvoir
+    // rapprocher le filtre de la requête et la condition de la règle pour
+    // prouver que la liste est sûre).
     match /{path=**}/credit_payments/{payId} {
       allow read: if isAuth()
-                  && resource.data.tenantId == tenantId()
-                  && (allStores() || (resource.data.storeId in request.auth.token.storeIds));
+                  && resource.data.get('tenantId', null) == tenantId()
+                  && (allStores() || (resource.data.get('storeId', null) in request.auth.token.storeIds));
       allow write: if false;
     }
 
@@ -468,6 +480,24 @@ service cloud.firestore {
         allow create: if belongsToTenant(tenantId);
         allow update, delete: if false;
       }
+    }
+
+    // ─── Collection-group queries ───────────────────────────────────────────
+    //
+    // Un match imbriqué à profondeur fixe (ex. tenants/{t}/sales/{s}/cost_summary/{d})
+    // ne suffit pas pour qu'une requête collectionGroup() côté client passe la
+    // vérification de sécurité — même trou déjà corrigé plus haut pour
+    // credit_payments (voir commentaire ligne ~108). Constaté en direct : la
+    // marge mensuelle du tableau de bord (cost_summary) échouait en
+    // permission-denied pour un Owner, alors que get() sur un document précis
+    // passait. Reproduit et confirmé à l'émulateur : il faut un match
+    // {path=**} au niveau racine, adossé à une donnée du document
+    // (resource.data.tenantId) plutôt qu'à un segment de chemin (indisponible
+    // à ce niveau). Ne peut qu'accorder un accès déjà couvert par la règle
+    // imbriquée ci-dessus (mêmes conditions) — jamais l'élargir.
+    match /{path=**}/cost_summary/{docId} {
+      allow read: if isAuth() && resource.data.get('tenantId', null) == tenantId() && isManager();
+      allow write: if false;
     }
 
     // Refuser tout le reste

@@ -120,8 +120,15 @@ export default function CashRegisterPage() {
       ? new Date(session.openedAt)
       : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
 
+    // tenantId doit être filtré ICI, pas seulement vérifié dans la règle de
+    // sécurité : sans lui dans la requête, Firestore ne peut pas prouver que
+    // la liste est sûre (aucun lien statique entre le filtre de la requête et
+    // resource.data.tenantId dans la règle) et refuse toute la requête —
+    // constaté en direct, "Ventes espèces" restait à 0 quels que soient les
+    // règlements de dette encaissés pendant la session.
     const q = query(
       collectionGroup(db, 'credit_payments'),
+      where('tenantId', '==', tenantId),
       where('storeId', '==', storeId),
       where('createdAt', '>=', sinceStart)
     );
