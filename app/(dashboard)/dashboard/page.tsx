@@ -43,7 +43,12 @@ function useDashboardData(tenantId: string | undefined, storeId: string | undefi
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [credits, setCredits] = useState<Credit[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [monthlyCostTotal, setMonthlyCostTotal] = useState<number | null>(null);
+  // undefined = pas encore résolu (encore en train de charger) ; 'error' =
+  // l'écoute a échoué ; number = valeur résolue (0 inclus, un vrai résultat
+  // vide). Les trois états étaient auparavant confondus sous `null`, ce qui
+  // affichait "Marge : chargement..." indéfiniment même en cas d'échec réel
+  // — un utilisateur ne pouvait pas distinguer une attente d'une panne.
+  const [monthlyCostTotal, setMonthlyCostTotal] = useState<number | 'error' | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -73,7 +78,12 @@ function useDashboardData(tenantId: string | undefined, storeId: string | undefi
     );
 
     return () => { unsubS(); unsubP(); unsubI(); unsubC(); unsubCat(); };
-  }, [tenantId]);
+    // storeId est indispensable ici : la requête inventory le filtre
+    // directement (ligne ci-dessus). Sans lui dans les deps, changer de
+    // magasin gardait l'écoute sur l'ancien storeId indéfiniment — stock,
+    // ruptures et valeur de stock restaient ceux du magasin précédent tant
+    // que la page n'était pas rechargée en dur.
+  }, [tenantId, storeId]);
 
   // Coût/marge réel — réservé aux Managers+ (voir firestore.rules cost_summary).
   // Un Caissier n'a pas les droits de lecture sur cette collection : on ne
@@ -81,7 +91,7 @@ function useDashboardData(tenantId: string | undefined, storeId: string | undefi
   // permission inutile et pour qu'aucune donnée de coût n'atteigne jamais
   // son navigateur.
   useEffect(() => {
-    if (!tenantId || !isManagerPlus) { setMonthlyCostTotal(null); return; }
+    if (!tenantId || !isManagerPlus) return;
     const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     const unsub = onSnapshot(
       query(
@@ -93,7 +103,10 @@ function useDashboardData(tenantId: string | undefined, storeId: string | undefi
         const total = snap.docs.reduce((s, d) => s + (d.data().costTotal || 0), 0);
         setMonthlyCostTotal(total);
       },
-      () => setMonthlyCostTotal(null)
+      err => {
+        console.error('Échec du calcul de marge mensuelle (cost_summary):', err);
+        setMonthlyCostTotal('error');
+      }
     );
     return () => unsub();
   }, [tenantId, isManagerPlus]);
@@ -160,9 +173,11 @@ export default function DashboardPage() {
   const todayChange = yesterdayRevenue > 0 ? ((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100 : 0;
 
   // Marge mensuelle — calculée côté serveur (cost_summary), réservée aux Managers+
-  const monthlyProfit = isManagerPlus && monthlyCostTotal !== null
-    ? monthlyRevenue - monthlyCostTotal
-    : null;
+  const monthlyProfit =
+    isManagerPlus && typeof monthlyCostTotal === 'number'
+      ? monthlyRevenue - monthlyCostTotal
+      : null;
+  const monthlyProfitFailed = isManagerPlus && monthlyCostTotal === 'error';
 
   // Stock
   const getStock = (pId: string) => inventory.find(i => i.productId === pId && i.storeId === storeId)?.quantity ?? 0;
@@ -245,9 +260,11 @@ export default function DashboardPage() {
                   <p className="text-sm text-gray-500">CA du mois</p>
                   <p className="text-2xl font-bold text-gray-900">{formatCurrency(monthlyRevenue)}</p>
                   {isManagerPlus && (
-                    <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                    <p className={`text-xs mt-1 flex items-center gap-1 ${monthlyProfitFailed ? 'text-red-600' : 'text-green-600'}`}>
                       <TrendingUp className="h-3 w-3" />
-                      {monthlyProfit !== null ? `Marge : ${formatCurrency(monthlyProfit)}` : 'Marge : chargement...'}
+                      {monthlyProfit !== null
+                        ? `Marge : ${formatCurrency(monthlyProfit)}`
+                        : monthlyProfitFailed ? 'Marge : indisponible' : 'Marge : chargement...'}
                     </p>
                   )}
                 </div>
@@ -379,6 +396,8 @@ export default function DashboardPage() {
                             </p>
                             <Badge variant="outline" className="text-xs">{pmLabels[pm] || pm}</Badge>
                             {sale.status === 'CANCELLED' && <Badge variant="destructive" className="text-xs">Annulée</Badge>}
+                            {sale.status === 'REFUNDED' && <Badge className="text-xs bg-orange-100 text-orange-700 hover:bg-orange-100">Remboursée</Badge>}
+                            {sale.status === 'PARTIALLY_REFUNDED' && <Badge className="text-xs bg-amber-100 text-amber-700 hover:bg-amber-100">Remb. partiel</Badge>}
                           </div>
                           <p className="text-sm text-gray-500 truncate">{sale.customerName || 'Client comptoir'}</p>
                         </div>
