@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
       ? adminDb.doc(`tenants/${tenantId}/customers/${sale.customerId}`)
       : null;
 
-    let movementsToWrite: Array<{ productId: string; qty: number; previousQuantity: number; newQuantity: number }> = [];
+    let movementsToWrite: Array<{ productId: string; productName: string; qty: number; previousQuantity: number; newQuantity: number }> = [];
 
     await adminDb.runTransaction(async (tx) => {
       // Réinitialisé à chaque (re)exécution du callback : Firestore peut
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
         const previousQuantity = freshQtys[item.productId] || 0;
         const newQuantity = previousQuantity + item.quantity;
         tx.update(ref, { quantity: newQuantity, updatedAt: FieldValue.serverTimestamp() });
-        movementsToWrite.push({ productId: item.productId, qty: item.quantity, previousQuantity, newQuantity });
+        movementsToWrite.push({ productId: item.productId, productName: item.productName, qty: item.quantity, previousQuantity, newQuantity });
       }
 
       // ── Crédit : on solde et on libère le plafond ────────────────────────
@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
     // ── Mouvements de stock (hors transaction, comme checkout/receive/returns) ─
     await Promise.all(movementsToWrite.map(m =>
       adminDb.collection(`tenants/${tenantId}/inventory_movements`).add({
-        tenantId, productId: m.productId, storeId: sale.storeId,
+        tenantId, productId: m.productId, productName: m.productName, storeId: sale.storeId,
         type: 'IN', quantity: m.qty,
         previousQuantity: m.previousQuantity, newQuantity: m.newQuantity,
         reason: `Annulation vente #${saleId.slice(0, 8).toUpperCase()} — ${motif.trim()}`,

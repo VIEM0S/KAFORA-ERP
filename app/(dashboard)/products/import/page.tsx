@@ -205,7 +205,7 @@ export default function ProductImportPage() {
           });
           const movRef = doc(collection(db, tenantCol(tenantId, 'inventory_movements')));
           batch.set(movRef, {
-            tenantId, productId: productRef.id, storeId: selectedStoreId,
+            tenantId, productId: productRef.id, productName: r.name, storeId: selectedStoreId,
             type: 'IN', quantity: r.initialStock,
             previousQuantity: 0, newQuantity: r.initialStock,
             reason: 'Import en masse — stock initial', createdAt: serverTimestamp(),

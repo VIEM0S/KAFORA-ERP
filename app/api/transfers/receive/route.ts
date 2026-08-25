@@ -104,6 +104,7 @@ export async function POST(request: NextRequest) {
           tx.set(adminDb.collection(`tenants/${tenantId}/inventory_movements`).doc(), {
             tenantId,
             productId: line.productId,
+            productName: line.productName,
             storeId: t.toStoreId,
             type: 'TRANSFER_IN',
             quantity: line.quantity,
@@ -121,6 +122,7 @@ export async function POST(request: NextRequest) {
         tx.set(adminDb.collection(`tenants/${tenantId}/inventory_movements`).doc(), {
           tenantId,
           productId: line.productId,
+          productName: line.productName,
           storeId: t.toStoreId,
           type: 'TRANSFER_IN',
           quantity: line.quantity,

@@ -105,7 +105,7 @@ export default function InventoryPage() {
         });
       }
       await addDoc(collection(db, tenantCol(tenantId, 'inventory_movements')), {
-        tenantId, productId: adjProduct.id, storeId,
+        tenantId, productId: adjProduct.id, productName: adjProduct.name, storeId,
         type: adjType === 'add' ? 'IN' : adjType === 'remove' ? 'OUT' : 'ADJUSTMENT',
         quantity: adjType === 'set' ? newQty - currentQty : (adjType === 'remove' ? -qty : qty),
         previousQuantity: currentQty, newQuantity: newQty,

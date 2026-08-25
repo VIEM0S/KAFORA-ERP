@@ -364,7 +364,7 @@ export async function POST(request: NextRequest) {
       if (inv) {
         batchWrites.push(
           adminDb.collection(`tenants/${tenantId}/inventory_movements`).add({
-            tenantId, productId: l.product.id, storeId,
+            tenantId, productId: l.product.id, productName: l.product.name, storeId,
             type: 'SALE', quantity: -l.quantity,
             previousQuantity: inv.qty,
             newQuantity: inv.qty - l.quantity,

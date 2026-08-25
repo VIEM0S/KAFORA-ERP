@@ -248,7 +248,7 @@ export async function POST(request: NextRequest) {
       if (!l.restocked) continue;
       writes.push(
         adminDb.collection(`tenants/${tenantId}/inventory_movements`).add({
-          tenantId, productId: l.productId, storeId: sale.storeId,
+          tenantId, productId: l.productId, productName: l.productName, storeId: sale.storeId,
           type: 'IN', quantity: l.quantity,
           reason: `Retour client — vente ${sale.reference || saleId}`,
           saleReturnId: returnRef.id,

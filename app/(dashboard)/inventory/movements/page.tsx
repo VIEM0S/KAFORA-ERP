@@ -196,7 +196,11 @@ export default function MovementsPage() {
                   return (
                     <TableRow key={m.id} className="hover:bg-gray-50">
                       <TableCell className="text-sm text-gray-500 whitespace-nowrap">{formatDateTime(m.createdAt)}</TableCell>
-                      <TableCell className="font-medium text-sm">{products[m.productId] || m.productId}</TableCell>
+                      {/* Nom courant du produit s'il existe encore, sinon le nom
+                          conservé sur le mouvement au moment de l'écriture (tous les
+                          écrivains ne le renseignent pas), sinon — jamais l'ID
+                          Firestore brut, illisible pour un commerçant. */}
+                      <TableCell className="font-medium text-sm">{products[m.productId] || m.productName || 'Produit supprimé'}</TableCell>
                       <TableCell className="text-center">
                         <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium ${cfg.color}`}>
                           <Icon className="h-3 w-3" />{cfg.label}

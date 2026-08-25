@@ -211,7 +211,7 @@ export async function POST(request: NextRequest) {
     // ── Mouvements de stock (hors transaction, comme dans checkout) ─────────
     await Promise.all(movementsToWrite.map(m =>
       adminDb.collection(`tenants/${tenantId}/inventory_movements`).add({
-        tenantId, productId: m.productId, storeId,
+        tenantId, productId: m.productId, productName: m.productName, storeId,
         type: 'IN', quantity: m.qty,
         previousQuantity: m.previousQuantity,
         newQuantity: m.newQuantity,
