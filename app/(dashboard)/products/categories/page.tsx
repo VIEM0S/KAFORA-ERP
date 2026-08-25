@@ -93,6 +93,16 @@ export default function CategoriesPage() {
   const handleSave = async () => {
     if (!tenantId) return;
     if (!form.name.trim()) { setFormError('Le nom est obligatoire'); return; }
+    // Comparaison par slug (insensible casse ET accents), pas par nom brut —
+    // sinon "Electronique" et "Électronique" passaient pour deux catégories
+    // différentes alors qu'elles produisent le même slug (constaté via
+    // l'import en masse, qui avait le même trou avant ce fix).
+    const newSlug = slugify(form.name);
+    const conflict = categories.find(c => c.id !== editing?.id && slugify(c.name) === newSlug);
+    if (conflict) {
+      setFormError(`Une catégorie similaire existe déjà : « ${conflict.name} »`);
+      return;
+    }
     setIsSaving(true); setFormError(null);
     const payload = {
       tenantId,

@@ -145,13 +145,17 @@ export default function ProductImportPage() {
     const toImport = dedupedRows.filter(r => !existingSkus.has(r.sku));
     const skippedExisting = dedupedRows.filter(r => existingSkus.has(r.sku));
 
-    // ── 2. Créer les catégories manquantes (par nom, insensible à la casse) ──
+    // ── 2. Créer les catégories manquantes (par nom, insensible à la casse
+    //      ET aux accents — même normalisation que le slug juste en dessous,
+    //      sinon "Electronique" importé sans accent se retrouvait comme une
+    //      catégorie distincte d'une "Électronique" déjà existante, les deux
+    //      partageant pourtant le même slug "electronique") ──
     const catSnap = await getDocs(collection(db, tenantCol(tenantId, 'categories')));
-    const existingCatByName = new Map(catSnap.docs.map(d => [String(d.data().name || '').toLowerCase().trim(), d.id]));
+    const existingCatByName = new Map(catSnap.docs.map(d => [slugify(String(d.data().name || '')), d.id]));
     const neededCatNames = Array.from(new Set(
       toImport.map(r => r.categoryName?.trim()).filter((n): n is string => !!n)
     ));
-    const newCatNames = neededCatNames.filter(n => !existingCatByName.has(n.toLowerCase()));
+    const newCatNames = neededCatNames.filter(n => !existingCatByName.has(slugify(n)));
 
     for (const name of newCatNames) {
       const ref = doc(collection(db, tenantCol(tenantId, 'categories')));
@@ -161,7 +165,7 @@ export default function ProductImportPage() {
         isActive: true, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
       });
       await batch.commit();
-      existingCatByName.set(name.toLowerCase(), ref.id);
+      existingCatByName.set(slugify(name), ref.id);
     }
 
     // ── 3. Écrire les produits (+ stock initial) par lots ────────────────────
@@ -171,7 +175,7 @@ export default function ProductImportPage() {
       const batch = writeBatch(db);
       for (const r of chunk) {
         const productRef = doc(collection(db, tenantCol(tenantId, 'products')));
-        const categoryId = r.categoryName ? (existingCatByName.get(r.categoryName.toLowerCase().trim()) || null) : null;
+        const categoryId = r.categoryName ? (existingCatByName.get(slugify(r.categoryName)) || null) : null;
         batch.set(productRef, {
           tenantId, sku: r.sku, barcode: r.barcode, name: r.name,
           // Indispensable pour la recherche POS (voir product-form-dialog)
