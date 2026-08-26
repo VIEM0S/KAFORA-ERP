@@ -1379,6 +1379,32 @@ export type Database = {
           },
         ]
       }
+      sale_counters: {
+        Row: {
+          fiscal_year: number
+          tenant_id: string
+          value: number
+        }
+        Insert: {
+          fiscal_year: number
+          tenant_id: string
+          value?: number
+        }
+        Update: {
+          fiscal_year?: number
+          tenant_id?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sale_counters_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sale_items: {
         Row: {
           category_id: string | null
@@ -2370,6 +2396,33 @@ export type Database = {
       is_owner: { Args: never; Returns: boolean }
       is_owner_or_admin: { Args: never; Returns: boolean }
       is_regional_manager: { Args: never; Returns: boolean }
+      pos_checkout: {
+        Args: {
+          p_acompte: number
+          p_amount_received: number
+          p_cashier_id: string
+          p_change: number
+          p_customer_id: string
+          p_customer_name: string
+          p_customer_phone: string
+          p_discount_amount: number
+          p_discount_percent: number
+          p_item_count: number
+          p_lines: Json
+          p_offline_sync_id: string
+          p_payment_method: Database["public"]["Enums"]["payment_method"]
+          p_quote_id: string
+          p_requires_credit_check: boolean
+          p_solde_credit: number
+          p_store_id: string
+          p_subtotal: number
+          p_tax_total: number
+          p_tenant_id: string
+          p_total: number
+          p_user_name: string
+        }
+        Returns: Json
+      }
       register_tenant: {
         Args: {
           p_limits: Json

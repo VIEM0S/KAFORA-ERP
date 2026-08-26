@@ -1,4 +1,4 @@
-import { adminDb } from '@/lib/firebase/admin';
+import { createServiceRoleClient } from '@/lib/supabase/server';
 import {
   getSubscriptionState,
   canUsePos,
@@ -9,22 +9,30 @@ import {
 
 /**
  * Lit l'abonnement d'un tenant et calcule son état.
- *
- * Le document a un ID déterministe (= tenantId, cf. app/api/auth/register),
- * donc une lecture directe suffit — pas de requête à filtrer.
  */
 export async function getTenantSubscriptionState(tenantId: string): Promise<SubscriptionState> {
   try {
-    const snap = await adminDb.doc(`tenants/${tenantId}/subscriptions/${tenantId}`).get();
-    if (!snap.exists) {
+    const supabase = createServiceRoleClient();
+    const { data: sub } = await supabase
+      .from('subscriptions')
+      .select('status, trial_ends_at, current_period_end')
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+
+    if (!sub) {
       // Ancien tenant créé avant la mise en place des abonnements, ou
-      // document supprimé : on laisse passer (cf. politique "fail open"
+      // ligne supprimée : on laisse passer (cf. politique "fail open"
       // documentée dans lib/subscription/status.ts).
       return 'ACTIVE';
     }
-    return getSubscriptionState(snap.data() as SubscriptionLike);
+    const subLike: SubscriptionLike = {
+      status: sub.status,
+      trialEndsAt: sub.trial_ends_at,
+      currentPeriodEnd: sub.current_period_end,
+    };
+    return getSubscriptionState(subLike);
   } catch {
-    // Firestore indisponible : ne jamais bloquer une caisse pour cette raison.
+    // Base indisponible : ne jamais bloquer une caisse pour cette raison.
     return 'ACTIVE';
   }
 }
