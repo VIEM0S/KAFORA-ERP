@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
 
 // Routes publiques (pas besoin d'auth)
 const PUBLIC_PATHS = [
   '/',
   '/login',
   '/forgot-password',
+  '/reset-password',
   '/setup',
   '/api/auth/login',
   '/api/auth/logout',
@@ -37,43 +39,40 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Vérifier le cookie de session Firebase
-  const sessionCookie = request.cookies.get('__session')?.value;
+  let response = NextResponse.next({ request });
 
-  if (!sessionCookie) {
-    // Pas de session → redirect login
+  // getUser() fait une VRAIE vérification cryptographique auprès du serveur
+  // Supabase Auth à chaque requête — contrairement à l'ancien décodage local
+  // du cookie (qui ne vérifiait que l'expiration, en renvoyant la
+  // vérification complète à chaque route API). C'est une amélioration
+  // réelle, pas seulement un portage : la vérification se fait maintenant
+  // une seule fois, correctement, avant même d'atteindre la route.
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+          response = NextResponse.next({ request });
+          cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+        },
+      },
+    }
+  );
+
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('redirect', pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  // Vérification légère du cookie (format JWT valide)
-  // La vérification cryptographique complète se fait dans chaque API route
-  // via adminAuth.verifySessionCookie() — le middleware vérifie juste la présence
-  try {
-    // Décoder sans vérifier la signature (juste vérifier l'expiration côté client)
-    const parts = sessionCookie.split('.');
-    if (parts.length !== 3) throw new Error('Invalid cookie format');
-
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
-    const now = Math.floor(Date.now() / 1000);
-
-    if (payload.exp && payload.exp < now) {
-      // Cookie expiré
-      const loginUrl = new URL('/login', request.url);
-      loginUrl.searchParams.set('redirect', pathname);
-      const response = NextResponse.redirect(loginUrl);
-      response.cookies.delete('__session');
-      return response;
-    }
-
-    return NextResponse.next();
-  } catch {
-    const loginUrl = new URL('/login', request.url);
-    const response = NextResponse.redirect(loginUrl);
-    response.cookies.delete('__session');
-    return response;
-  }
+  return response;
 }
 
 export const config = {

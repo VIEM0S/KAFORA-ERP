@@ -4,11 +4,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Eye, EyeOff, Loader2, Store, AlertCircle, ArrowLeft } from 'lucide-react';
-import {
-  signInWithEmailAndPassword,
-  AuthError,
-} from 'firebase/auth';
-import { auth } from '@/lib/firebase/client';
+import { AuthError } from '@supabase/supabase-js';
+import { supabase } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,20 +13,17 @@ import { useAuthStore } from '@/hooks/store';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
-function getFirebaseErrorMessage(error: AuthError): string {
+function getSupabaseErrorMessage(error: AuthError): string {
   switch (error.code) {
-    case 'auth/user-not-found':
-    case 'auth/wrong-password':
-    case 'auth/invalid-credential':
+    case 'invalid_credentials':
       return 'Identifiants invalides';
-    case 'auth/user-disabled':
+    case 'user_banned':
       return 'Compte désactivé. Contactez votre administrateur.';
-    case 'auth/too-many-requests':
+    case 'over_request_rate_limit':
+    case 'too_many_requests':
       return 'Trop de tentatives. Compte temporairement bloqué. Réessayez plus tard.';
-    case 'auth/network-request-failed':
-      return 'Erreur réseau. Vérifiez votre connexion internet.';
-    case 'auth/invalid-email':
-      return 'Adresse email invalide';
+    case 'email_not_confirmed':
+      return 'Email non confirmé. Contactez votre administrateur.';
     default:
       return 'Une erreur est survenue. Veuillez réessayer.';
   }
@@ -50,32 +44,24 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      // 1. Connexion Firebase Auth côté client
-      const credential = await signInWithEmailAndPassword(auth, email, password);
+      // 1. Connexion Supabase Auth côté client — établit déjà la session
+      // (cookies) automatiquement, contrairement à Firebase qui exigeait un
+      // aller-retour explicite (jeton → route serveur → cookie).
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) throw signInError;
 
-      // 2. Récupérer l'ID token pour l'envoyer au serveur
-      const idToken = await credential.user.getIdToken();
-
-      // 3. Créer la session côté serveur (cookie HttpOnly)
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken }),
-      });
-
+      // 2. Résoudre le profil (tenant, magasins, abonnement) côté serveur —
+      // la session est envoyée automatiquement via les cookies.
+      const response = await fetch('/api/auth/login', { method: 'POST' });
       let data = await response.json().catch(() => null);
 
       // Droits modifiés depuis la dernière connexion (changement de rôle ou
-      // d'affectation magasin) : le cookie reçu a été fabriqué à partir d'un
-      // jeton périmé. On rafraîchit le jeton et on rejoue UNE fois, sinon
+      // d'affectation magasin) : la session utilisée porte encore les
+      // anciennes valeurs. On la rafraîchit et on rejoue UNE fois, sinon
       // l'utilisateur se connecte avec ses anciens droits sans le savoir.
       if (response.ok && data?.claimsUpdated) {
-        const freshToken = await credential.user.getIdToken(true);
-        const retry = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ idToken: freshToken }),
-        });
+        await supabase.auth.refreshSession();
+        const retry = await fetch('/api/auth/login', { method: 'POST' });
         if (retry.ok) data = await retry.json();
       }
 
@@ -89,7 +75,7 @@ export default function LoginPage() {
         throw new Error('Réponse du serveur invalide. Réessayez dans un instant.');
       }
 
-      // 4. Hydrater le store Zustand (données de profil uniquement)
+      // 3. Hydrater le store Zustand (données de profil uniquement)
       setUser(data.user);
       setTenant(data.tenant);
       setStores(data.stores);
@@ -106,8 +92,8 @@ export default function LoginPage() {
         role === 'SUPER_ADMIN' ? '/admin' : role === 'CASHIER' ? '/pos' : '/dashboard'
       );
     } catch (err) {
-      if ((err as AuthError).code) {
-        setError(getFirebaseErrorMessage(err as AuthError));
+      if (err instanceof AuthError) {
+        setError(getSupabaseErrorMessage(err));
       } else {
         setError(err instanceof Error ? err.message : 'Une erreur est survenue');
       }

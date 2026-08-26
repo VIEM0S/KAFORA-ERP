@@ -2322,10 +2322,49 @@ export type Database = {
       belongs_to_tenant: { Args: { tid: string }; Returns: boolean }
       can_access_store: { Args: { sid: string }; Returns: boolean }
       can_write: { Args: { tid: string }; Returns: boolean }
+      check_rate_limit: {
+        Args: {
+          p_key: string
+          p_max_attempts: number
+          p_window_seconds: number
+        }
+        Returns: Json
+      }
       is_manager: { Args: never; Returns: boolean }
       is_owner: { Args: never; Returns: boolean }
       is_owner_or_admin: { Args: never; Returns: boolean }
       is_regional_manager: { Args: never; Returns: boolean }
+      register_tenant: {
+        Args: {
+          p_limits: Json
+          p_own_referral_code: string
+          p_owner_email: string
+          p_owner_first_name: string
+          p_owner_last_name: string
+          p_owner_phone: string
+          p_owner_user_id: string
+          p_plan: Database["public"]["Enums"]["subscription_plan"]
+          p_referred_by_tenant_id: string
+          p_store_address: string
+          p_store_city: string
+          p_store_code: string
+          p_store_name: string
+          p_store_phone: string
+          p_tenant_address: string
+          p_tenant_city: string
+          p_tenant_country: string
+          p_tenant_currency: string
+          p_tenant_email: string
+          p_tenant_name: string
+          p_tenant_nif: string
+          p_tenant_phone: string
+          p_tenant_rccm: string
+          p_tenant_slug: string
+          p_terms_acceptance: Json
+          p_trial_end: string
+        }
+        Returns: Json
+      }
       subscription_active: { Args: { tid: string }; Returns: boolean }
     }
     Enums: {

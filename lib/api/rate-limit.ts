@@ -1,19 +1,10 @@
-import { adminDb } from '@/lib/firebase/admin';
-import { FieldValue } from 'firebase-admin/firestore';
+import { createServiceRoleClient } from '@/lib/supabase/server';
 
-// Rate-limiting simple par fenêtre glissante grossière, basé sur Firestore
-// (pas de Redis disponible sur l'infra actuelle — largement suffisant pour
-// le volume de trafic actuel sur des routes publiques sensibles comme
-// /api/auth/login et /api/auth/forgot-password).
-//
-// Stocké dans une collection racine `_rate_limits`, hors de tout tenant
-// (login/forgot-password sont appelés AVANT qu'un tenant ne soit connu).
-// Cette collection n'a aucune règle Firestore dédiée : elle tombe donc sous
-// le "allow read, write: if false" global, ce qui est voulu — seul l'Admin
-// SDK (ce fichier) doit pouvoir y écrire.
-//
-// Fenêtre fixe (pas glissante au sens strict) : simple, suffisant pour
-// bloquer un bruteforce basique sans dépendance supplémentaire.
+// Rate-limiting simple par fenêtre glissante grossière, basé sur une RPC
+// PostgreSQL (`check_rate_limit`, voir supabase/migrations) — remplace la
+// version basée sur une transaction Firestore. Même algorithme (fenêtre
+// fixe, verrou de ligne pour l'atomicité), même contrat d'appel : rien
+// ne change côté appelant (register/login/forgot-password).
 
 interface RateLimitResult {
   allowed: boolean;
@@ -26,35 +17,22 @@ export async function checkRateLimit(
   maxAttempts: number,
   windowSeconds: number
 ): Promise<RateLimitResult> {
-  const ref = adminDb.collection('_rate_limits').doc(key);
-  const nowMs = Date.now();
-
-  const result = await adminDb.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    const data = snap.exists ? snap.data()! : null;
-    const windowStartMs = data?.windowStartMs as number | undefined;
-    const isExpired = !windowStartMs || nowMs - windowStartMs > windowSeconds * 1000;
-
-    if (isExpired) {
-      tx.set(ref, {
-        windowStartMs: nowMs,
-        count: 1,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-      return { allowed: true, remaining: maxAttempts - 1, retryAfterSeconds: 0 };
-    }
-
-    const currentCount = (data?.count as number) || 0;
-    if (currentCount >= maxAttempts) {
-      const retryAfterSeconds = Math.max(1, Math.ceil((windowStartMs! + windowSeconds * 1000 - nowMs) / 1000));
-      return { allowed: false, remaining: 0, retryAfterSeconds };
-    }
-
-    tx.update(ref, { count: FieldValue.increment(1), updatedAt: FieldValue.serverTimestamp() });
-    return { allowed: true, remaining: maxAttempts - currentCount - 1, retryAfterSeconds: 0 };
+  const supabase = createServiceRoleClient();
+  const { data, error } = await supabase.rpc('check_rate_limit', {
+    p_key: key,
+    p_max_attempts: maxAttempts,
+    p_window_seconds: windowSeconds,
   });
 
-  return result;
+  if (error) {
+    // Ne jamais bloquer une route publique à cause d'une panne de la RPC de
+    // rate-limiting elle-même — même philosophie permissive qu'ailleurs dans
+    // le projet (voir lib/subscription/status.ts).
+    console.error('checkRateLimit RPC error:', error);
+    return { allowed: true, remaining: maxAttempts, retryAfterSeconds: 0 };
+  }
+
+  return data as unknown as RateLimitResult;
 }
 
 // Extrait une IP raisonnable depuis les en-têtes standards (Netlify/proxy).

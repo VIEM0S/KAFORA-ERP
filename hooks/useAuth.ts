@@ -2,28 +2,28 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from '@/lib/firebase/client';
+import { supabase } from '@/lib/supabase/client';
 import { useAuthStore } from './store';
 
 /**
- * useAuth — initialise et synchronise la session Firebase Auth avec le store Zustand.
+ * useAuth — initialise et synchronise la session Supabase Auth avec le store Zustand.
  *
  * À monter dans le layout dashboard uniquement.
- * Redirige vers /login si Firebase Auth n'a pas de session active.
+ * Redirige vers /login si Supabase Auth n'a pas de session active.
  */
 export function useAuth() {
   const { setUser, setTenant, setStores, setCurrentStore, setLoading, logout } = useAuthStore();
   const router = useRouter();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (!firebaseUser) {
-        // Plus de session Firebase côté client → on vide le store et on redirige
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!session?.user) {
+        // Plus de session Supabase côté client → on vide le store et on redirige
         logout();
         router.push('/login');
         return;
       }
+      const supaUser = session.user;
 
       // Le profil persisté (localStorage Zustand) sert uniquement à afficher
       // quelque chose immédiatement, sans écran de chargement. On le
@@ -37,7 +37,7 @@ export function useAuth() {
       // divergentes, et un utilisateur qui ne comprend pas pourquoi ses
       // actions sont refusées.
       const storeUser = useAuthStore.getState().user;
-      const hasCache = storeUser?.id === firebaseUser.uid;
+      const hasCache = storeUser?.id === supaUser.id;
       if (hasCache) {
         setLoading(false); // on affiche le cache immédiatement
       }
@@ -58,14 +58,11 @@ export function useAuth() {
         return;
       }
 
-      // Re-fetch du profil depuis l'API.
+      // Re-fetch du profil depuis l'API. Contrairement à Firebase, la session
+      // Supabase est déjà portée par des cookies envoyés automatiquement avec
+      // la requête — pas besoin de récupérer/transmettre un jeton à la main.
       try {
-        const idToken = await firebaseUser.getIdToken();
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ idToken }),
-        });
+        const res = await fetch('/api/auth/login', { method: 'POST' });
 
         if (!res.ok) {
           // On ne déconnecte QUE si le serveur rejette l'identité (401/403).
@@ -88,18 +85,14 @@ export function useAuth() {
         sessionStorage.setItem('auth-refreshed-at', String(Date.now()));
         let data = await res.json();
 
-        // Les droits ont changé côté serveur : le cookie tout juste reçu a
-        // été fabriqué à partir d'un jeton périmé. On force le rafraîchissement
-        // du jeton et on rejoue UNE fois, pour que la session porte enfin les
-        // bons droits — sans cela, l'utilisateur verrait le bon menu mais se
-        // ferait refuser par les routes API.
+        // Les droits ont changé côté serveur : la session tout juste utilisée
+        // portait encore les ANCIENNES valeurs d'app_metadata. On force le
+        // rafraîchissement de la session et on rejoue UNE fois, pour que le
+        // jeton porte enfin les bons droits — sans cela, l'utilisateur
+        // verrait le bon menu mais se ferait refuser par les routes API.
         if (data?.claimsUpdated) {
-          const freshToken = await firebaseUser.getIdToken(true);
-          const retry = await fetch('/api/auth/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ idToken: freshToken }),
-          });
+          await supabase.auth.refreshSession();
+          const retry = await fetch('/api/auth/login', { method: 'POST' });
           if (retry.ok) data = await retry.json();
         }
 
@@ -126,12 +119,12 @@ export function useAuth() {
       }
     });
 
-    return () => unsubscribe();
+    return () => subscription.unsubscribe();
   }, []);
 }
 
 /**
- * useLogout — déconnexion propre (Firebase Auth + cookie serveur + store)
+ * useLogout — déconnexion propre (Supabase Auth + cookies serveur + store)
  */
 export function useLogout() {
   const { logout } = useAuthStore();
@@ -140,7 +133,7 @@ export function useLogout() {
   return async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
-      await auth.signOut();
+      await supabase.auth.signOut();
     } catch (err) {
       console.error('Logout error:', err);
     } finally {
