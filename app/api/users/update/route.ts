@@ -1,20 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/lib/firebase/admin';
-import { writeAuditLog } from '@/lib/firebase/audit-log';
+import { createServiceRoleClient } from '@/lib/supabase/server';
+import { getSessionClaims } from '@/lib/api/session';
+import { writeAuditLog } from '@/lib/supabase/audit-log';
 import { isSubsetOf, REGIONAL_MANAGER_ASSIGNABLE_ROLES } from '@/lib/api/regional-scope';
-import { cookies } from 'next/headers';
+import type { Database } from '@/lib/supabase/database.types';
+
+type UserUpdate = Database['public']['Tables']['users']['Update'];
 
 export async function POST(request: NextRequest) {
   try {
-    // Vérifier session
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get('__session')?.value;
-    if (!sessionCookie) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
-
-    const decoded = await adminAuth.verifySessionCookie(sessionCookie, true);
-    const callerRole = decoded.role as string;
-    const callerTenantId = decoded.tenantId as string;
-    const callerStoreIds = decoded.storeIds as string[] | null | undefined;
+    const session = await getSessionClaims();
+    if (!session) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    const { uid: callerUid, role: callerRole, tenantId: callerTenantId, storeIds: callerStoreIds } = session;
     if (!['OWNER', 'ADMIN', 'REGIONAL_MANAGER'].includes(callerRole)) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
     }
@@ -27,44 +24,42 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
     }
 
-    const userRef = adminDb.doc(`tenants/${tenantId}/users/${uid}`);
-    const userSnap = await userRef.get();
-    if (!userSnap.exists) {
+    const supabase = createServiceRoleClient();
+    const { data: existing } = await supabase
+      .from('users')
+      .select('role, store_ids')
+      .eq('id', uid)
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+    if (!existing) {
       return NextResponse.json({ error: 'Utilisateur introuvable' }, { status: 404 });
     }
-    const existing = userSnap.data() as { role?: string; storeIds?: string[] | null };
 
     // On ne modifie jamais le compte OWNER via cette route
-    if (existing?.role === 'OWNER') {
+    if (existing.role === 'OWNER') {
       return NextResponse.json({ error: "Impossible de modifier le Propriétaire" }, { status: 403 });
     }
     if (role && !['ADMIN', 'REGIONAL_MANAGER', 'MANAGER', 'CASHIER'].includes(role)) {
       return NextResponse.json({ error: 'Rôle invalide' }, { status: 400 });
     }
     // Un responsable régional ne touche que du personnel de terrain déjà
-    // affecté à SES magasins, et ne peut ni le promouvoir au-delà de
-    // Manager, ni le réaffecter hors de sa région.
+    // affecté à SES magasins.
     if (callerRole === 'REGIONAL_MANAGER') {
-      if (!REGIONAL_MANAGER_ASSIGNABLE_ROLES.includes((existing?.role || '') as 'MANAGER' | 'CASHIER')) {
+      if (!REGIONAL_MANAGER_ASSIGNABLE_ROLES.includes((existing.role || '') as 'MANAGER' | 'CASHIER')) {
         return NextResponse.json({ error: 'Ce compte ne relève pas de votre gestion' }, { status: 403 });
       }
       if (role && !REGIONAL_MANAGER_ASSIGNABLE_ROLES.includes(role)) {
         return NextResponse.json({ error: 'Vous ne pouvez attribuer que le rôle Responsable ou Caissier' }, { status: 403 });
       }
-      if (!isSubsetOf(existing?.storeIds, callerStoreIds)) {
+      if (!isSubsetOf(existing.store_ids, callerStoreIds)) {
         return NextResponse.json({ error: 'Ce compte ne relève pas de votre gestion' }, { status: 403 });
       }
     }
-    // Fix (demande explicite) : même logique qu'à la création — un Admin ne
-    // doit pas pouvoir promouvoir quelqu'un (ni lui-même en théorie, déjà
-    // bloqué ailleurs) au rang d'Admin, ni modifier un compte Admin existant
-    // (y compris son propre rôle, déjà interdit par ailleurs). Seul le
-    // Propriétaire accorde ou retire le niveau Admin.
     if (callerRole !== 'OWNER') {
       if (role === 'ADMIN') {
         return NextResponse.json({ error: 'Seul le Propriétaire peut promouvoir un compte au rang d\'Administrateur' }, { status: 403 });
       }
-      if (existing?.role === 'ADMIN') {
+      if (existing.role === 'ADMIN') {
         return NextResponse.json({ error: 'Seul le Propriétaire peut modifier un compte Administrateur' }, { status: 403 });
       }
     }
@@ -72,11 +67,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Mot de passe : 8 caractères minimum' }, { status: 400 });
     }
 
-    // 1. Mettre à jour Firebase Auth (email, mot de passe, nom affiché)
     // ─── Affectation aux magasins ────────────────────────────────────────────
-    // Rôle final après cette mise à jour (le rôle peut changer ici même).
-    const finalRole = role || existing?.role;
-    let claimStoreIds: string[] | null = existing?.storeIds ?? null;
+    const finalRole = role || existing.role;
+    let claimStoreIds: string[] | null = existing.store_ids ?? null;
 
     if (storeIds !== undefined) {
       if (finalRole === 'ADMIN') {
@@ -88,75 +81,72 @@ export async function POST(request: NextRequest) {
             { status: 400 }
           );
         }
-        const unique = [...new Set(storeIds.filter((v: unknown) => typeof v === 'string' && v))];
-        const checks = await Promise.all(
-          unique.map(id => adminDb.doc(`tenants/${tenantId}/stores/${id}`).get())
-        );
-        if (checks.some(snap => !snap.exists)) {
+        const unique = [...new Set(storeIds.filter((v: unknown) => typeof v === 'string' && v))] as string[];
+        const { data: foundStores } = await supabase
+          .from('stores')
+          .select('id')
+          .eq('tenant_id', tenantId)
+          .in('id', unique);
+        if ((foundStores?.length ?? 0) !== unique.length) {
           return NextResponse.json({ error: 'Magasin inconnu' }, { status: 400 });
         }
-        claimStoreIds = unique as string[];
+        claimStoreIds = unique;
       }
     } else if (finalRole === 'ADMIN') {
-      // Promotion vers ADMIN sans préciser les magasins : accès global.
       claimStoreIds = null;
     }
-    // Même logique qu'à la création : un responsable régional ne peut pas
-    // réaffecter un compte vers un magasin hors de sa propre région.
     if (callerRole === 'REGIONAL_MANAGER' && !isSubsetOf(claimStoreIds, callerStoreIds)) {
-      return NextResponse.json({ error: "Vous ne pouvez affecter que vos propres magasins" }, { status: 403 });
+      return NextResponse.json({ error: 'Vous ne pouvez affecter que vos propres magasins' }, { status: 403 });
     }
 
-    const authUpdate: { email?: string; password?: string; displayName?: string } = {};
+    // 1. Mettre à jour Supabase Auth (email, mot de passe)
+    const authUpdate: { email?: string; password?: string } = {};
     if (email) authUpdate.email = email;
     if (newPassword) authUpdate.password = newPassword;
-    if (firstName || lastName) {
-      authUpdate.displayName = `${firstName ?? ''} ${lastName ?? ''}`.trim();
-    }
     if (Object.keys(authUpdate).length > 0) {
-      try {
-        await adminAuth.updateUser(uid, authUpdate);
-      } catch (e: unknown) {
-        const code = (e as { code?: string }).code;
-        if (code === 'auth/email-already-exists') {
+      const { error: authError } = await supabase.auth.admin.updateUserById(uid, authUpdate);
+      if (authError) {
+        if (authError.code === 'email_exists') {
           return NextResponse.json({ error: 'Cet email est déjà utilisé' }, { status: 409 });
         }
-        throw e;
+        throw authError;
       }
     }
 
-    // 2. Reposer les custom claims si le rôle OU l'affectation magasin change.
+    // 2. Reposer app_metadata si le rôle OU l'affectation magasin change.
     //    Sans le second cas, retirer un magasin à un caissier resterait sans
-    //    effet sur son token — donc sans effet réel sur ses accès.
-    const roleChanged = Boolean(role && role !== existing?.role);
+    //    effet sur son token — donc sans effet réel sur ses accès (RLS).
+    const roleChanged = Boolean(role && role !== existing.role);
     const storesChanged =
-      JSON.stringify(claimStoreIds) !== JSON.stringify(existing?.storeIds ?? null);
+      JSON.stringify(claimStoreIds) !== JSON.stringify(existing.store_ids ?? null);
     if (roleChanged || storesChanged) {
-      await adminAuth.setCustomUserClaims(uid, {
-        tenantId, role: finalRole, storeIds: claimStoreIds,
+      await supabase.auth.admin.updateUserById(uid, {
+        app_metadata: { tenant_id: tenantId, role: finalRole, store_ids: claimStoreIds },
       });
     }
     if (roleChanged) {
       await writeAuditLog({
-        tenantId, userId: decoded.uid, action: 'ROLE_CHANGED',
+        tenantId, userId: callerUid, action: 'ROLE_CHANGED',
         entity: 'users', entityId: uid,
-        details: `${existing?.role || '?'} → ${role}`,
+        details: `${existing.role || '?'} → ${role}`,
       });
     }
 
-    // 3. Mettre à jour le profil Firestore
-    const firestoreUpdate: Record<string, unknown> = { updatedAt: new Date().toISOString() };
-    if (firstName) firestoreUpdate.firstName = firstName;
-    if (lastName) firestoreUpdate.lastName = lastName;
-    if (email) firestoreUpdate.email = email;
-    if (phone !== undefined) firestoreUpdate.phone = phone || null;
-    if (role) firestoreUpdate.role = role;
-    if (workingHours !== undefined) firestoreUpdate.workingHours = workingHours;
-    // Le profil doit refléter les claims : c'est lui que relit la route de
-    // connexion pour resynchroniser le token à chaque session.
-    if (storesChanged) firestoreUpdate.storeIds = claimStoreIds;
+    // 3. Mettre à jour le profil
+    const profileUpdate: UserUpdate = {};
+    if (firstName) profileUpdate.first_name = firstName;
+    if (lastName) profileUpdate.last_name = lastName;
+    if (email) profileUpdate.email = email;
+    if (phone !== undefined) profileUpdate.phone = phone || null;
+    if (role) profileUpdate.role = role;
+    if (workingHours !== undefined) profileUpdate.working_hours = workingHours;
+    // Le profil doit refléter app_metadata : c'est lui que relit la route de
+    // connexion pour resynchroniser la session à chaque connexion.
+    if (storesChanged) profileUpdate.store_ids = claimStoreIds;
 
-    await userRef.update(firestoreUpdate);
+    if (Object.keys(profileUpdate).length > 0) {
+      await supabase.from('users').update(profileUpdate).eq('id', uid);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

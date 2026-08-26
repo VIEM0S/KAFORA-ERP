@@ -26,6 +26,8 @@ export type Database = {
           resolved_at: string | null
           resolved_by: string | null
           severity: Database["public"]["Enums"]["alert_severity"]
+          target_role: Database["public"]["Enums"]["user_role"] | null
+          target_user_id: string | null
           tenant_id: string
           title: string
           type: Database["public"]["Enums"]["alert_type"]
@@ -41,6 +43,8 @@ export type Database = {
           resolved_at?: string | null
           resolved_by?: string | null
           severity?: Database["public"]["Enums"]["alert_severity"]
+          target_role?: Database["public"]["Enums"]["user_role"] | null
+          target_user_id?: string | null
           tenant_id: string
           title: string
           type: Database["public"]["Enums"]["alert_type"]
@@ -56,6 +60,8 @@ export type Database = {
           resolved_at?: string | null
           resolved_by?: string | null
           severity?: Database["public"]["Enums"]["alert_severity"]
+          target_role?: Database["public"]["Enums"]["user_role"] | null
+          target_user_id?: string | null
           tenant_id?: string
           title?: string
           type?: Database["public"]["Enums"]["alert_type"]
@@ -2197,36 +2203,54 @@ export type Database = {
       }
       user_deletion_requests: {
         Row: {
+          completed_at: string | null
           created_at: string
           id: string
           justification: string | null
-          requested_by: string
+          requested_by: string | null
+          requested_by_name: string | null
+          resolution_note: string | null
           resolved_at: string | null
           resolved_by: string | null
+          resolved_by_name: string | null
           status: Database["public"]["Enums"]["deletion_request_status"]
           target_user_id: string
+          target_user_name: string | null
+          target_user_role: Database["public"]["Enums"]["user_role"] | null
           tenant_id: string
         }
         Insert: {
+          completed_at?: string | null
           created_at?: string
           id?: string
           justification?: string | null
-          requested_by: string
+          requested_by?: string | null
+          requested_by_name?: string | null
+          resolution_note?: string | null
           resolved_at?: string | null
           resolved_by?: string | null
+          resolved_by_name?: string | null
           status?: Database["public"]["Enums"]["deletion_request_status"]
           target_user_id: string
+          target_user_name?: string | null
+          target_user_role?: Database["public"]["Enums"]["user_role"] | null
           tenant_id: string
         }
         Update: {
+          completed_at?: string | null
           created_at?: string
           id?: string
           justification?: string | null
-          requested_by?: string
+          requested_by?: string | null
+          requested_by_name?: string | null
+          resolution_note?: string | null
           resolved_at?: string | null
           resolved_by?: string | null
+          resolved_by_name?: string | null
           status?: Database["public"]["Enums"]["deletion_request_status"]
           target_user_id?: string
+          target_user_name?: string | null
+          target_user_role?: Database["public"]["Enums"]["user_role"] | null
           tenant_id?: string
         }
         Relationships: [
@@ -2250,6 +2274,8 @@ export type Database = {
         Row: {
           avatar: string | null
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
           email: string
           email_verified: boolean
           first_name: string
@@ -2259,6 +2285,8 @@ export type Database = {
           last_name: string
           mfa_enabled: boolean
           phone: string | null
+          restored_at: string | null
+          restored_by: string | null
           role: Database["public"]["Enums"]["user_role"]
           store_ids: string[] | null
           tenant_id: string | null
@@ -2268,6 +2296,8 @@ export type Database = {
         Insert: {
           avatar?: string | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           email: string
           email_verified?: boolean
           first_name?: string
@@ -2277,6 +2307,8 @@ export type Database = {
           last_name?: string
           mfa_enabled?: boolean
           phone?: string | null
+          restored_at?: string | null
+          restored_by?: string | null
           role: Database["public"]["Enums"]["user_role"]
           store_ids?: string[] | null
           tenant_id?: string | null
@@ -2286,6 +2318,8 @@ export type Database = {
         Update: {
           avatar?: string | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           email?: string
           email_verified?: boolean
           first_name?: string
@@ -2295,6 +2329,8 @@ export type Database = {
           last_name?: string
           mfa_enabled?: boolean
           phone?: string | null
+          restored_at?: string | null
+          restored_by?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           store_ids?: string[] | null
           tenant_id?: string | null
@@ -2389,7 +2425,12 @@ export type Database = {
         | "CANCELLED"
         | "WRITTEN_OFF"
       customer_type: "INDIVIDUAL" | "BUSINESS" | "WALK_IN"
-      deletion_request_status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED"
+      deletion_request_status:
+        | "PENDING"
+        | "APPROVED"
+        | "REJECTED"
+        | "CANCELLED"
+        | "COMPLETED"
       inventory_movement_type:
         | "SALE"
         | "PURCHASE"
@@ -2601,7 +2642,13 @@ export const Constants = {
         "WRITTEN_OFF",
       ],
       customer_type: ["INDIVIDUAL", "BUSINESS", "WALK_IN"],
-      deletion_request_status: ["PENDING", "APPROVED", "REJECTED", "CANCELLED"],
+      deletion_request_status: [
+        "PENDING",
+        "APPROVED",
+        "REJECTED",
+        "CANCELLED",
+        "COMPLETED",
+      ],
       inventory_movement_type: [
         "SALE",
         "PURCHASE",

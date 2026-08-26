@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/lib/firebase/admin';
-import { cookies } from 'next/headers';
+import { createServiceRoleClient } from '@/lib/supabase/server';
+import { getSessionClaims } from '@/lib/api/session';
 
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get('__session')?.value;
-    if (!sessionCookie) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
-
-    const decoded = await adminAuth.verifySessionCookie(sessionCookie, true);
-    const callerRole = decoded.role as string;
-    const callerTenantId = decoded.tenantId as string;
-    if (!['OWNER', 'ADMIN'].includes(callerRole)) {
+    const session = await getSessionClaims();
+    if (!session) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    if (!['OWNER', 'ADMIN'].includes(session.role)) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
     }
 
@@ -19,31 +14,38 @@ export async function POST(request: NextRequest) {
     if (!tenantId || !uid || typeof isActive !== 'boolean') {
       return NextResponse.json({ error: 'Champs manquants' }, { status: 400 });
     }
-    if (tenantId !== callerTenantId) {
+    if (tenantId !== session.tenantId) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
     }
-    if (uid === decoded.uid) {
+    if (uid === session.uid) {
       return NextResponse.json({ error: 'Impossible de modifier votre propre statut' }, { status: 400 });
     }
 
-    const userRef = adminDb.doc(`tenants/${tenantId}/users/${uid}`);
-    const userSnap = await userRef.get();
-    if (!userSnap.exists) {
+    const supabase = createServiceRoleClient();
+    const { data: existing } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', uid)
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+    if (!existing) {
       return NextResponse.json({ error: 'Utilisateur introuvable' }, { status: 404 });
     }
-    const existing = userSnap.data() as { role?: string };
-    if (existing?.role === 'OWNER') {
+    if (existing.role === 'OWNER') {
       return NextResponse.json({ error: 'Impossible de modifier le Propriétaire' }, { status: 403 });
     }
 
-    await userRef.update({ isActive, updatedAt: new Date().toISOString() });
+    await supabase.from('users').update({ is_active: isActive }).eq('id', uid);
 
-    // Coupure d'accès immédiate : si on désactive, on révoque les tokens
-    // Firebase de la personne. Sans ça, elle garde un accès complet à
-    // Firestore tant que sa session (jusqu'à 7 jours) n'a pas expiré.
-    if (!isActive) {
-      await adminAuth.revokeRefreshTokens(uid);
-    }
+    // Contrairement à /api/users/delete (qui bannit réellement le compte
+    // Supabase Auth), cette bascule ne touche que le profil applicatif — la
+    // session existante reste valide jusqu'à sa prochaine resynchronisation
+    // périodique (hooks/useAuth.ts, ~5 min), qui rejette alors la connexion
+    // via le contrôle is_active de /api/auth/login (403 → déconnexion
+    // côté client). Même caractéristique de délai qu'avec Firebase, où
+    // revokeRefreshTokens forçait un nouveau sign-in qui échouait ensuite
+    // sur ce même contrôle applicatif, l'auth Firebase elle-même restant
+    // valide.
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -1,60 +1,61 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/lib/firebase/admin';
-import { writeAuditLog } from '@/lib/firebase/audit-log';
-import { cookies } from 'next/headers';
-import { FieldValue } from 'firebase-admin/firestore';
+import { createServiceRoleClient } from '@/lib/supabase/server';
+import { getSessionClaims } from '@/lib/api/session';
+import { writeAuditLog } from '@/lib/supabase/audit-log';
 
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get('__session')?.value;
-    if (!sessionCookie) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
-
-    const decoded = await adminAuth.verifySessionCookie(sessionCookie, true);
-    const tenantId = decoded.tenantId as string;
+    const session = await getSessionClaims();
+    if (!session) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    const tenantId = session.tenantId as string;
 
     const { requestId } = await request.json();
     if (!requestId) return NextResponse.json({ error: 'Champ manquant' }, { status: 400 });
 
-    const reqRef = adminDb.doc(`tenants/${tenantId}/user_deletion_requests/${requestId}`);
-    const reqSnap = await reqRef.get();
-    if (!reqSnap.exists) return NextResponse.json({ error: 'Demande introuvable' }, { status: 404 });
-    const reqData = reqSnap.data()!;
+    const supabase = createServiceRoleClient();
+    const { data: reqData } = await supabase
+      .from('user_deletion_requests')
+      .select('*')
+      .eq('id', requestId)
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+    if (!reqData) return NextResponse.json({ error: 'Demande introuvable' }, { status: 404 });
 
-    // Fix (demande explicite) : seul l'Admin qui a fait la demande peut la
-    // retirer lui-même — utile en cas de réconciliation avant même que le
-    // Propriétaire n'ait eu le temps de répondre. Possible tant que ce n'est
-    // pas déjà finalisé (le compte n'a pas encore été touché).
-    if (reqData.requestedBy !== decoded.uid) {
+    // Seul l'Admin qui a fait la demande peut la retirer lui-même — possible
+    // tant que ce n'est pas déjà finalisé (le compte n'a pas encore été touché).
+    if (reqData.requested_by !== session.uid) {
       return NextResponse.json({ error: 'Cette demande ne vous appartient pas' }, { status: 403 });
     }
     if (!['PENDING', 'APPROVED'].includes(reqData.status)) {
-      return NextResponse.json({ error: 'Cette demande n\'est plus dans un état permettant l\'annulation' }, { status: 400 });
+      return NextResponse.json({ error: "Cette demande n'est plus dans un état permettant l'annulation" }, { status: 400 });
     }
 
-    await reqRef.update({
-      status: 'REJECTED',
-      resolvedBy: decoded.uid,
-      resolvedByName: decoded.name || decoded.email || decoded.uid,
-      resolvedAt: FieldValue.serverTimestamp(),
-      resolutionNote: 'Retirée par l\'Admin demandeur.',
-    });
+    await supabase
+      .from('user_deletion_requests')
+      .update({
+        status: 'REJECTED',
+        resolved_by: session.uid,
+        resolved_at: new Date().toISOString(),
+        resolution_note: "Retirée par l'Admin demandeur.",
+      })
+      .eq('id', requestId);
 
     // Le Propriétaire est informé que la demande n'a plus lieu d'être suivie.
-    await adminDb.collection(`tenants/${tenantId}/alerts`).add({
-      tenantId, type: 'USER_DELETION_RESOLVED', severity: 'LOW',
+    await supabase.from('alerts').insert({
+      tenant_id: tenantId,
+      type: 'USER_DELETION_RESOLVED',
+      severity: 'LOW',
       title: 'Demande de suppression retirée',
-      message: `${decoded.name || decoded.email} a retiré sa demande concernant ${reqData.targetUserName}.`,
-      reference: 'users', referenceId: reqData.targetUserId,
-      targetRole: 'OWNER',
-      isRead: false, isResolved: false, resolvedBy: null, resolvedAt: null,
-      createdAt: FieldValue.serverTimestamp(),
+      message: `Un administrateur a retiré sa demande concernant ${reqData.target_user_name}.`,
+      reference: 'users',
+      reference_id: reqData.target_user_id,
+      target_role: 'OWNER',
     });
 
     await writeAuditLog({
-      tenantId, userId: decoded.uid, action: 'DELETION_REQUEST_REJECTED',
-      entity: 'users', entityId: reqData.targetUserId,
-      details: `${reqData.targetUserName} — retirée par le demandeur lui-même`,
+      tenantId, userId: session.uid, action: 'DELETION_REQUEST_REJECTED',
+      entity: 'users', entityId: reqData.target_user_id,
+      details: `${reqData.target_user_name} — retirée par le demandeur lui-même`,
     });
 
     return NextResponse.json({ success: true });
