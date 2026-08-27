@@ -23,17 +23,12 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { useAuthStore } from '@/hooks/store';
-import {
-  collection, doc, getDocs, writeBatch, serverTimestamp,
-} from 'firebase/firestore';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
-import { checkPlanLimitClient } from '@/lib/firebase/plan-limits-client';
+import { supabase } from '@/lib/supabase/client';
+import { checkPlanLimitClient } from '@/lib/supabase/plan-limits-client';
 import {
   parseProductFile, parsePastedText, buildTemplateWorkbook, type ParsedProductRow,
 } from '@/lib/utils/product-import';
 import { formatCurrency } from '@/lib/utils/helpers';
-import { skuKey } from '@/lib/products/sku';
 
 function slugify(str: string) {
   return str.toLowerCase().normalize('NFD')
@@ -42,9 +37,9 @@ function slugify(str: string) {
     .replace(/^-+|-+$/g, '');
 }
 
-// Firestore limite un writeBatch à 500 opérations. Chaque ligne produit peut
-// écrire jusqu'à 3 documents (produit + inventaire + mouvement de stock) donc
-// on reste large sous la limite par lot.
+// Pas de limite Postgres comparable au writeBatch(500) de Firestore — ce
+// découpage reste par prudence (taille de requête raisonnable), pas par
+// nécessité technique.
 const ROWS_PER_BATCH = 150;
 
 type ImportStep = 'input' | 'preview' | 'importing' | 'done';
@@ -139,90 +134,103 @@ export default function ProductImportPage() {
     setStep('importing');
     setImportProgress({ done: 0, total: dedupedRows.length });
 
-    // ── 1. Détecter les SKU déjà existants dans le catalogue (on ne les écrase pas) ──
-    const existingSkuSnap = await getDocs(collection(db, tenantCol(tenantId, 'products')));
-    const existingSkus = new Set(existingSkuSnap.docs.map(d => String(d.data().sku || '').toUpperCase()));
-    const toImport = dedupedRows.filter(r => !existingSkus.has(r.sku));
-    const skippedExisting = dedupedRows.filter(r => existingSkus.has(r.sku));
+    try {
+      // ── 1. Détecter les SKU déjà existants dans le catalogue (on ne les écrase pas) ──
+      const { data: existingProducts } = await supabase.from('products').select('sku').eq('tenant_id', tenantId);
+      const existingSkus = new Set((existingProducts ?? []).map(p => String(p.sku || '').toUpperCase()));
+      const toImport = dedupedRows.filter(r => !existingSkus.has(r.sku));
+      const skippedExisting = dedupedRows.filter(r => existingSkus.has(r.sku));
 
-    // ── 2. Créer les catégories manquantes (par nom, insensible à la casse
-    //      ET aux accents — même normalisation que le slug juste en dessous,
-    //      sinon "Electronique" importé sans accent se retrouvait comme une
-    //      catégorie distincte d'une "Électronique" déjà existante, les deux
-    //      partageant pourtant le même slug "electronique") ──
-    const catSnap = await getDocs(collection(db, tenantCol(tenantId, 'categories')));
-    const existingCatByName = new Map(catSnap.docs.map(d => [slugify(String(d.data().name || '')), d.id]));
-    const neededCatNames = Array.from(new Set(
-      toImport.map(r => r.categoryName?.trim()).filter((n): n is string => !!n)
-    ));
-    const newCatNames = neededCatNames.filter(n => !existingCatByName.has(slugify(n)));
+      // ── 2. Créer les catégories manquantes (par nom, insensible à la casse
+      //      ET aux accents — même normalisation que le slug juste en dessous,
+      //      sinon "Electronique" importé sans accent se retrouvait comme une
+      //      catégorie distincte d'une "Électronique" déjà existante, les deux
+      //      partageant pourtant le même slug "electronique") ──
+      const { data: existingCats } = await supabase.from('categories').select('id, name').eq('tenant_id', tenantId);
+      const existingCatByName = new Map((existingCats ?? []).map(c => [slugify(c.name || ''), c.id]));
+      const neededCatNames = Array.from(new Set(
+        toImport.map(r => r.categoryName?.trim()).filter((n): n is string => !!n)
+      ));
+      const newCatNames = neededCatNames.filter(n => !existingCatByName.has(slugify(n)));
 
-    for (const name of newCatNames) {
-      const ref = doc(collection(db, tenantCol(tenantId, 'categories')));
-      const batch = writeBatch(db);
-      batch.set(ref, {
-        tenantId, name, slug: slugify(name), description: null, parentId: null,
-        isActive: true, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-      });
-      await batch.commit();
-      existingCatByName.set(slugify(name), ref.id);
-    }
-
-    // ── 3. Écrire les produits (+ stock initial) par lots ────────────────────
-    let doneCount = 0;
-    for (let i = 0; i < toImport.length; i += ROWS_PER_BATCH) {
-      const chunk = toImport.slice(i, i + ROWS_PER_BATCH);
-      const batch = writeBatch(db);
-      for (const r of chunk) {
-        const productRef = doc(collection(db, tenantCol(tenantId, 'products')));
-        const categoryId = r.categoryName ? (existingCatByName.get(slugify(r.categoryName)) || null) : null;
-        batch.set(productRef, {
-          tenantId, sku: r.sku, barcode: r.barcode, name: r.name,
-          // Indispensable pour la recherche POS (voir product-form-dialog)
-          nameLower: (r.name || '').toLowerCase(), description: null,
-          categoryId, unit: r.unit,
-          purchasePrice: r.purchasePrice, sellingPrice: r.sellingPrice, taxRate: r.taxRate,
-          trackInventory: true, alertThreshold: r.alertThreshold, isActive: true,
-          createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-        });
-        // Réservation du SKU dans le même lot : un fichier contenant une
-        // référence déjà utilisée fait échouer ce lot au lieu de créer un
-        // doublon silencieux — le pire cas pour un import, car il ne se
-        // découvre qu'au moment où un scan tombe sur le mauvais article.
-        if (r.sku && r.sku.trim()) {
-          batch.set(doc(db, tenantCol(tenantId, 'product_skus'), skuKey(r.sku)), {
-            sku: r.sku.trim(),
-            productId: productRef.id,
-            createdAt: serverTimestamp(),
-          });
-        }
-        if (r.initialStock > 0) {
-          const invRef = doc(collection(db, tenantCol(tenantId, 'inventory')));
-          batch.set(invRef, {
-            tenantId, productId: productRef.id, storeId: selectedStoreId,
-            quantity: r.initialStock, minQuantity: r.alertThreshold,
-            createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-          });
-          const movRef = doc(collection(db, tenantCol(tenantId, 'inventory_movements')));
-          batch.set(movRef, {
-            tenantId, productId: productRef.id, productName: r.name, storeId: selectedStoreId,
-            type: 'IN', quantity: r.initialStock,
-            previousQuantity: 0, newQuantity: r.initialStock,
-            reason: 'Import en masse — stock initial', createdAt: serverTimestamp(),
-          });
-        }
+      if (newCatNames.length > 0) {
+        const { data: createdCats, error: catError } = await supabase.from('categories').insert(
+          newCatNames.map(name => ({
+            tenant_id: tenantId, name, slug: slugify(name), description: null,
+            parent_id: null, is_active: true,
+          }))
+        ).select('id, name');
+        if (catError) throw catError;
+        (createdCats ?? []).forEach(c => existingCatByName.set(slugify(c.name), c.id));
       }
-      await batch.commit();
-      doneCount += chunk.length;
-      setImportProgress({ done: doneCount, total: toImport.length });
-    }
 
-    setResult({
-      created: toImport.length,
-      skipped: skippedExisting,
-      categoriesCreated: newCatNames,
-    });
-    setStep('done');
+      // ── 3. Écrire les produits (+ stock initial) par lots ────────────────────
+      // Plus de réservation de SKU séparée : la contrainte unique Postgres
+      // (uq_products_tenant_sku) fait échouer l'insert d'un SKU déjà pris au
+      // lieu de créer un doublon silencieux — même garantie que l'ancienne
+      // réservation Firestore, sans document dédié.
+      let doneCount = 0;
+      for (let i = 0; i < toImport.length; i += ROWS_PER_BATCH) {
+        const chunk = toImport.slice(i, i + ROWS_PER_BATCH);
+        const { data: insertedProducts, error: prodError } = await supabase.from('products').insert(
+          chunk.map(r => ({
+            tenant_id: tenantId, sku: r.sku, barcode: r.barcode, name: r.name,
+            description: null,
+            category_id: r.categoryName ? (existingCatByName.get(slugify(r.categoryName)) || null) : null,
+            unit: r.unit, purchase_price: r.purchasePrice, selling_price: r.sellingPrice,
+            tax_rate: r.taxRate, track_inventory: true, alert_threshold: r.alertThreshold,
+            is_active: true,
+          }))
+        ).select('id, sku');
+        if (prodError) throw prodError;
+
+        const skuToId = new Map((insertedProducts ?? []).map(p => [p.sku, p.id]));
+        const invRows: { tenant_id: string; product_id: string; store_id: string; quantity: number; min_quantity: number }[] = [];
+        const movRows: { tenant_id: string; product_id: string; product_name: string; store_id: string; type: 'INITIAL'; quantity: number; previous_quantity: number; new_quantity: number; reason: string }[] = [];
+        chunk.forEach(r => {
+          if (r.initialStock > 0) {
+            const productId = skuToId.get(r.sku);
+            if (!productId) return;
+            invRows.push({
+              tenant_id: tenantId, product_id: productId, store_id: selectedStoreId,
+              quantity: r.initialStock, min_quantity: r.alertThreshold,
+            });
+            movRows.push({
+              tenant_id: tenantId, product_id: productId, product_name: r.name, store_id: selectedStoreId,
+              type: 'INITIAL', quantity: r.initialStock,
+              previous_quantity: 0, new_quantity: r.initialStock,
+              reason: 'Import en masse — stock initial',
+            });
+          }
+        });
+        if (invRows.length > 0) {
+          const { error } = await supabase.from('inventory').insert(invRows);
+          if (error) throw error;
+        }
+        if (movRows.length > 0) {
+          const { error } = await supabase.from('inventory_movements').insert(movRows);
+          if (error) throw error;
+        }
+
+        doneCount += chunk.length;
+        setImportProgress({ done: doneCount, total: toImport.length });
+      }
+
+      setResult({
+        created: toImport.length,
+        skipped: skippedExisting,
+        categoriesCreated: newCatNames,
+      });
+      setStep('done');
+    } catch (e) {
+      // L'original n'avait aucune gestion d'erreur ici — un échec en cours
+      // d'import laissait l'écran bloqué sur "Import en cours..." sans
+      // explication. On revient à l'aperçu avec un message plutôt que de
+      // laisser l'utilisateur devant un indicateur qui ne bougera plus.
+      console.error(e);
+      setQuotaError(e instanceof Error ? e.message : "Erreur pendant l'import. Réessayez.");
+      setStep('preview');
+    }
   };
 
   const storeName = stores?.find(s => s.id === selectedStoreId)?.name;

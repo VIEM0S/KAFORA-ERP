@@ -7,9 +7,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { formatCurrency } from '@/lib/utils/helpers';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
+import { supabase } from '@/lib/supabase/client';
 import type { Product, Category } from '@/lib/types';
 
 interface ProductsTableProps {
@@ -37,10 +35,7 @@ export function ProductsTable({
 
   const toggleStatus = async (p: Product) => {
     if (!tenantId) return;
-    await updateDoc(doc(db, tenantCol(tenantId, 'products'), p.id), {
-      isActive: !p.isActive,
-      updatedAt: serverTimestamp(),
-    });
+    await supabase.from('products').update({ is_active: !p.isActive }).eq('id', p.id);
   };
 
   return (

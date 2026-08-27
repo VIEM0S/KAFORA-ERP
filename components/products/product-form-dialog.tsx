@@ -8,11 +8,8 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { formatCurrency } from '@/lib/utils/helpers';
-import { collection, doc, updateDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
-import { skuKey, hasSku } from '@/lib/products/sku';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
-import { checkPlanLimitClient } from '@/lib/firebase/plan-limits-client';
+import { supabase } from '@/lib/supabase/client';
+import { checkPlanLimitClient } from '@/lib/supabase/plan-limits-client';
 import type { Product, Category } from '@/lib/types';
 
 const UNITS = [
@@ -118,78 +115,46 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
     }
 
     const payload = {
-      tenantId,
+      tenant_id: tenantId,
       sku: form.sku.trim().toUpperCase(),
       barcode: form.barcode.trim() || null,
       name: form.name.trim(),
-      // Champ dénormalisé en minuscules : Firestore est sensible à la casse
-      // et ne sait pas faire de recherche insensible. C'est ce champ que le
-      // POS interroge en préfixe pour que « sucre » trouve « Sucre ».
-      nameLower: form.name.trim().toLowerCase(),
+      // name_lower est une colonne GÉNÉRÉE côté Postgres — plus besoin de la
+      // calculer côté client comme l'exigeait Firestore.
       description: form.description.trim() || null,
-      categoryId: form.categoryId || null,
+      category_id: form.categoryId || null,
       unit: form.unit,
       // null (et non 0) quand le prix n'est pas renseigné : c'est ce qui
       // permet aux rapports de distinguer « gratuit » de « inconnu ».
-      purchasePrice: form.purchasePrice.trim() === '' ? null : Number(form.purchasePrice),
-      sellingPrice: Number(form.sellingPrice),
-      taxRate: Number(form.taxRate) || 0,
-      alertThreshold: Number(form.alertThreshold) || 10,
-      isActive: form.isActive,
-      trackInventory: form.trackInventory,
-      imageData: null,
-      updatedAt: serverTimestamp(),
+      purchase_price: form.purchasePrice.trim() === '' ? null : Number(form.purchasePrice),
+      selling_price: Number(form.sellingPrice),
+      tax_rate: Number(form.taxRate) || 0,
+      alert_threshold: Number(form.alertThreshold) || 10,
+      is_active: form.isActive,
+      track_inventory: form.trackInventory,
+      image_data: null,
     };
 
     try {
-      // Produit + réservation du SKU dans un MÊME lot : si le SKU est déjà
-      // pris, la règle Firestore refuse la réservation et l'ensemble du lot
-      // est annulé. Le produit n'est donc jamais créé en doublon, même si
-      // deux personnes enregistrent le même SKU au même instant.
-      const batch = writeBatch(db);
-      const skusCol = tenantCol(tenantId, 'product_skus');
-      const newSku = form.sku.trim();
+      // Réservation du SKU (collection product_skus dédiée en Firestore,
+      // pour contourner l'absence de contrainte unique native) remplacée par
+      // une contrainte unique Postgres directement sur products — voir
+      // uq_products_tenant_sku, supabase/migrations. Un SKU déjà pris est
+      // simplement refusé par la base (23505), plus besoin de gérer une
+      // réservation séparée à la main.
+      const { error } = editingProduct
+        ? await supabase.from('products').update(payload).eq('id', editingProduct.id)
+        : await supabase.from('products').insert(payload);
+      if (error) throw error;
 
-      if (editingProduct) {
-        const productRef = doc(db, tenantCol(tenantId, 'products'), editingProduct.id);
-        batch.update(productRef, payload);
-
-        // SKU modifié : on libère l'ancienne réservation et on prend la
-        // nouvelle. Sans la libération, l'ancien SKU resterait bloqué à vie.
-        const oldSku = editingProduct.sku?.trim() || '';
-        if (skuKey(oldSku) !== skuKey(newSku)) {
-          if (hasSku(oldSku)) {
-            batch.delete(doc(db, skusCol, skuKey(oldSku)));
-          }
-          if (hasSku(newSku)) {
-            batch.set(doc(db, skusCol, skuKey(newSku)), {
-              sku: newSku,
-              productId: editingProduct.id,
-              createdAt: serverTimestamp(),
-            });
-          }
-        }
-      } else {
-        const productRef = doc(collection(db, tenantCol(tenantId, 'products')));
-        batch.set(productRef, { ...payload, createdAt: serverTimestamp() });
-        if (hasSku(newSku)) {
-          batch.set(doc(db, skusCol, skuKey(newSku)), {
-            sku: newSku,
-            productId: productRef.id,
-            createdAt: serverTimestamp(),
-          });
-        }
-      }
-
-      await batch.commit();
       onOpenChange(false);
     } catch (err) {
       // L'échec le plus probable est un SKU déjà utilisé : on le dit
       // explicitement plutôt que d'afficher une erreur générique qui
       // laisserait l'utilisateur retenter indéfiniment la même saisie.
-      const msg = err instanceof Error ? err.message : '';
+      const code = (err as { code?: string })?.code;
       setFormError(
-        msg.includes('permission') || msg.includes('PERMISSION')
+        code === '23505'
           ? `La référence « ${form.sku.trim()} » est déjà utilisée par un autre produit.`
           : 'Erreur lors de la sauvegarde. Réessayez.'
       );
