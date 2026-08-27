@@ -1,5 +1,12 @@
 /**
- * Attribue le rôle SUPER_ADMIN à un compte — accès à la console éditeur.
+ * Attribue le rôle SUPER_ADMIN à un compte tenant EXISTANT — accès à la
+ * console éditeur en plus de son rôle normal dans son entreprise.
+ *
+ * Différent de create-publisher-account.js : celui-ci crée un compte
+ * éditeur autonome, sans tenant. Celui-ci élève en place un utilisateur qui
+ * appartient déjà à un tenant (garde son tenant_id, son entreprise, ses
+ * données) — la table `super_admins` (réservée aux comptes éditeur sans
+ * tenant, voir app/api/auth/login/route.ts) n'entre pas en jeu ici.
  *
  * Ce rôle donne la visibilité sur TOUS les clients, il traverse donc
  * volontairement l'isolation multi-tenant. Il ne peut pas être attribué
@@ -8,83 +15,71 @@
  * un compte Propriétaire compromis ne peut pas se l'octroyer.
  *
  * Usage :
- *   node scripts/promote-super-admin.js <email> <chemin/serviceAccount.json>
+ *   node --env-file=.env scripts/promote-super-admin.js <email>
  *
- * Pour RETIRER le rôle, relancer avec --revoke :
- *   node scripts/promote-super-admin.js <email> <serviceAccount.json> --revoke
+ * Pour RETIRER le rôle (repasse en OWNER), relancer avec --revoke :
+ *   node --env-file=.env scripts/promote-super-admin.js <email> --revoke
  *
- * ATTENTION : conservez le fichier JSON du compte de service HORS du dépôt.
- * C'est une clé d'administration complète de votre base.
+ * Lit NEXT_PUBLIC_SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY depuis
+ * l'environnement (voir .env).
  */
 
-const { initializeApp, cert } = require('firebase-admin/app');
-const { getAuth } = require('firebase-admin/auth');
-const { getFirestore } = require('firebase-admin/firestore');
-const fs = require('fs');
+const { createClient } = require('@supabase/supabase-js');
 
-const [email, saPath, flag] = process.argv.slice(2);
+const [email, flag] = process.argv.slice(2);
 const revoke = flag === '--revoke';
 
-if (!email || !saPath) {
-  console.error(
-    'Usage : node scripts/promote-super-admin.js <email> <serviceAccount.json> [--revoke]'
-  );
-  process.exit(1);
-}
-if (!fs.existsSync(saPath)) {
-  console.error(`Fichier introuvable : ${saPath}`);
+if (!email) {
+  console.error('Usage : node --env-file=.env scripts/promote-super-admin.js <email> [--revoke]');
   process.exit(1);
 }
 
-const sa = JSON.parse(fs.readFileSync(saPath, 'utf8'));
-initializeApp({
-  credential: cert({
-    projectId: sa.project_id,
-    clientEmail: sa.client_email,
-    privateKey: sa.private_key,
-  }),
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!supabaseUrl || !serviceRoleKey) {
+  console.error('NEXT_PUBLIC_SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY doivent être définies (voir .env).');
+  process.exit(1);
+}
+const supabase = createClient(supabaseUrl, serviceRoleKey, {
+  auth: { autoRefreshToken: false, persistSession: false },
 });
 
 async function main() {
-  const auth = getAuth();
-  const db = getFirestore();
-  const user = await auth.getUserByEmail(email);
-  const existing = user.customClaims || {};
+  const { data: user, error: findError } = await supabase
+    .from('users')
+    .select('id, tenant_id, role')
+    .ilike('email', email)
+    .maybeSingle();
+  if (findError) throw findError;
+
+  if (!user) {
+    console.error(
+      `Aucun profil tenant trouvé pour ${email}.\n` +
+      "S'il s'agit d'un compte éditeur autonome (sans tenant), utilisez " +
+      'create-publisher-account.js à la place — ce script-ci ne concerne que ' +
+      'les comptes qui appartiennent déjà à un tenant.'
+    );
+    process.exit(1);
+  }
+
   const newRole = revoke ? 'OWNER' : 'SUPER_ADMIN';
 
-  await auth.setCustomUserClaims(user.uid, { ...existing, role: newRole });
-
-  // INDISPENSABLE : la route de connexion resynchronise les claims depuis le
-  // profil Firestore à chaque login. Si on ne modifiait que le jeton, le
-  // rôle serait écrasé dès la reconnexion suivante — c'est-à-dire
-  // immédiatement, puisqu'une reconnexion est justement nécessaire pour
-  // qu'un changement de rôle prenne effet.
-  const tenantId = existing.tenantId;
-  if (tenantId) {
-    const ref = db.doc(`tenants/${tenantId}/users/${user.uid}`);
-    const snap = await ref.get();
-    if (snap.exists) {
-      await ref.update({ role: newRole, updatedAt: new Date().toISOString() });
-      console.log(`Profil Firestore mis à jour (tenants/${tenantId}/users/${user.uid}).`);
-    } else {
-      console.warn(
-        `ATTENTION : profil Firestore introuvable pour ce compte.\n` +
-        `Le rôle risque d'être écrasé à la prochaine connexion.`
-      );
-    }
-  } else {
-    console.warn(
-      `ATTENTION : aucun tenantId dans les claims de ce compte.\n` +
-      `Connectez-vous une fois à l'application avant de lancer ce script.`
-    );
-  }
+  // Rien à faire côté Supabase Auth / app_metadata ici : la route de
+  // connexion (app/api/auth/login/route.ts) resynchronise app_metadata.role
+  // depuis users.role à CHAQUE connexion. Modifier seulement le jeton sans
+  // toucher la ligne `users` serait écrasé dès la reconnexion suivante —
+  // exactement le piège qu'avait cette même remarque côté Firestore.
+  const { error: updateError } = await supabase
+    .from('users')
+    .update({ role: newRole, updated_at: new Date().toISOString() })
+    .eq('id', user.id);
+  if (updateError) throw updateError;
 
   console.log(
     revoke
       ? `Rôle SUPER_ADMIN retiré à ${email} (repassé en OWNER).`
-      : `${email} est maintenant SUPER_ADMIN.`
+      : `${email} est maintenant SUPER_ADMIN (garde son tenant existant).`
   );
-
   console.log(
     "\nIMPORTANT : le rôle est porté par le jeton d'authentification.\n" +
     "L'utilisateur doit se DÉCONNECTER puis se reconnecter pour que le\n" +
@@ -93,7 +88,7 @@ async function main() {
   process.exit(0);
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error('Échec :', err.message || err);
   process.exit(1);
 });

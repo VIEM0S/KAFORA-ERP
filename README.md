@@ -1,11 +1,12 @@
 # Kafora
 
-SaaS multi-tenant de gestion commerciale (POS, stock, ventes, crédit client, multi-magasins) pour les commerces d'Afrique de l'Ouest — bâti sur Next.js 13 (App Router) + Firebase.
+SaaS multi-tenant de gestion commerciale (POS, stock, ventes, crédit client, multi-magasins) pour les commerces d'Afrique de l'Ouest — bâti sur Next.js (App Router) + Supabase (Postgres, Auth, RLS, Realtime).
 
 ## Prérequis
 
-- Node.js 18+
-- Un projet Firebase avec Authentication, Firestore, Realtime Database et Storage activés
+- Node.js 20+
+- Un projet Supabase (Postgres, Auth, Realtime)
+- Docker Desktop (optionnel — uniquement pour lancer la suite de tests RLS en local, voir plus bas)
 - (Optionnel mais recommandé) Un compte SendGrid pour l'envoi d'emails transactionnels (mot de passe oublié, notifications propriétaire)
 
 ## Installation
@@ -15,7 +16,7 @@ npm install
 cp .env.example .env.local
 ```
 
-Remplir `.env.local` avec les valeurs de ton projet Firebase (voir `.env.example` pour le détail de chaque variable et où la trouver).
+Remplir `.env.local` avec les valeurs de ton projet Supabase (voir `.env.example` pour le détail de chaque variable et où la trouver dans le Dashboard).
 
 ## Démarrage
 
@@ -24,17 +25,29 @@ npm run dev       # serveur de développement — http://localhost:3000
 npm run build     # build de production
 npm run start     # servir le build de production
 npm run typecheck # vérification TypeScript sans build complet
+npm test          # suite de tests unitaires (logique métier pure, pas de dépendance externe)
 ```
 
-## Déploiement des règles Firestore
+## Migrations Postgres
 
-Les règles de sécurité vivent dans `firestore.rules` à la racine et doivent être déployées séparément du code applicatif (Netlify/Vercel ne les déploie pas automatiquement) :
+Le schéma vit dans `supabase/migrations/` (une base par tenant serait ingérable — tout est une seule base Postgres, isolée par `tenant_id` + Row Level Security). Les migrations ne se déploient pas automatiquement avec le code applicatif (Netlify ne s'en charge pas) :
 
 ```bash
-firebase deploy --only firestore:rules
+npx supabase link --project-ref <ref-du-projet>
+npx supabase db push
 ```
 
-À faire à chaque modification de `firestore.rules`, pas seulement à l'installation initiale.
+À faire à chaque nouvelle migration, pas seulement à l'installation initiale.
+
+### Tests RLS en local
+
+Une suite dédiée (`__tests__/rls/*`) vérifie les politiques Row Level Security contre un vrai Postgres local (Supabase CLI + Docker) :
+
+```bash
+npm run db:start   # démarre Postgres local (rejoue supabase/migrations/)
+npm run test:rls   # lance la suite RLS contre cette base
+npm run db:stop
+```
 
 ## Structure du projet
 
@@ -43,23 +56,26 @@ app/
   (auth)/         Connexion, mot de passe oublié
   (onboarding)/   Création de compte + choix du forfait
   (dashboard)/    Toutes les pages internes (POS, stock, ventes, crédits, utilisateurs...)
-  api/            Routes serveur (Admin SDK) — logique métier sensible : caisse,
-                  crédit, création/suppression d'utilisateurs, ventes, etc.
+  api/            Routes serveur (client service-role Supabase) — logique métier
+                  sensible : caisse, crédit, création/suppression d'utilisateurs, ventes, etc.
 lib/
-  firebase/       Clients Firebase (browser + Admin SDK) et helpers de quotas
+  supabase/       Clients Supabase (browser + service-role), mappers snake_case→camelCase,
+                  wrapper Realtime (watch.ts)
   types/          Types TypeScript partagés
   utils/          Fonctions utilitaires (formatage, PDF, import produits...)
   constants/      Forfaits, permissions par rôle, plans — source unique de vérité
-firestore.rules  Règles de sécurité Firestore (isolation multi-tenant, rôles)
+supabase/
+  migrations/     Schéma Postgres, RLS, fonctions RPC — source de vérité du schéma
+__tests__/rls/    Tests des politiques RLS (isolation tenant/magasin/rôle), contre Postgres local
 ```
 
 ## Notes importantes
 
-- **Isolation multi-tenant** : chaque donnée est scopée par `tenantId`, vérifié via les *custom claims* du token Firebase (pas via le contenu du document, qui serait falsifiable côté client).
-- **Rôles** : `OWNER > ADMIN > MANAGER > CASHIER`, permissions détaillées dans `lib/constants/index.ts` (`ROLE_PERMISSIONS`).
+- **Isolation multi-tenant** : chaque donnée est scopée par `tenant_id` (colonne, pas nesting), vérifié côté base par Row Level Security via `app_metadata` du JWT Supabase (pas via le contenu de la ligne, qui serait falsifiable côté client) — voir `supabase/migrations/006_auth_helper_functions.sql` et `007_rls_policies.sql`.
+- **Rôles** : `OWNER > ADMIN > REGIONAL_MANAGER > MANAGER > CASHIER`, permissions détaillées dans `lib/constants/index.ts` (`ROLE_PERMISSIONS`).
 - **Suppression d'un Manager/Caissier par un Admin** : passe obligatoirement par une double vérification (justification + validation du Propriétaire) — voir `app/api/users/delete/route.ts`.
 - **Mode hors-ligne du POS** : les ventes faites sans connexion sont mises en file locale et synchronisées automatiquement au retour du réseau — voir `lib/offline-queue.ts`.
-- **Numérotation des factures** : séquentielle par tenant et par année fiscale (`FAC-2026-000001`), via un compteur atomique Firestore — nécessaire pour la conformité OHADA/SYSCOHADA (numérotation continue, sans trou).
+- **Numérotation des factures** : séquentielle par tenant et par année fiscale (`FAC-2026-000001`), via une séquence Postgres — nécessaire pour la conformité OHADA/SYSCOHADA (numérotation continue, sans trou).
 
 ## Ce qui n'est pas encore fait (connu, pas oublié)
 
