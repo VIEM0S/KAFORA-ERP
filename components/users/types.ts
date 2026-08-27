@@ -11,7 +11,7 @@ export interface UserProfile {
 
 export interface DeletionRequest {
   id: string; targetUserId: string; targetUserName: string; targetUserRole: string;
-  requestedBy: string; requestedByName: string; reason: string;
+  requestedBy: string | null; requestedByName: string; reason: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'COMPLETED';
   createdAt: unknown;
 }
