@@ -15,30 +15,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useAuthStore } from '@/hooks/store';
-import { collection, query, orderBy } from 'firebase/firestore';
-// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
-// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
-import { onSnapshot } from '@/lib/firebase/watch';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
+import { mapPurchaseOrder, mapPurchaseOrderItem, mapSupplier, mapProduct } from '@/lib/supabase/mappers';
 import { formatCurrency } from '@/lib/utils/helpers';
 import { exportToCsv, formatDateForCsv } from '@/lib/utils/export';
 import { PO_REORDER_SUGGESTION_KEY, type ReorderSuggestionLine } from '@/lib/purchase-orders/reorder-suggestion';
+import type { PurchaseOrder, PurchaseOrderStatus, Supplier, Product } from '@/lib/types';
 
-interface POItem {
-  id?: string; productId: string; productName: string; productSku: string;
-  quantityOrdered: number; quantityReceived: number; unitCost: number; total: number;
-}
-interface PurchaseOrder {
-  id: string; reference: string; supplierId: string; storeId: string;
-  status: 'DRAFT' | 'SENT' | 'PARTIALLY_RECEIVED' | 'RECEIVED' | 'CANCELLED';
-  items: POItem[]; subtotal: number; notes: string | null;
-  expectedDate: string | null; createdByName: string | null; createdAt: unknown;
-}
-interface Supplier { id: string; name: string; isActive: boolean; paymentTerms?: number | null; }
-interface Product { id: string; name: string; sku: string; purchasePrice: number; }
-
-const STATUS_LABELS: Record<PurchaseOrder['status'], { label: string; color: string; icon: typeof Clock }> = {
+const STATUS_LABELS: Record<PurchaseOrderStatus, { label: string; color: string; icon: typeof Clock }> = {
   DRAFT: { label: 'Brouillon', color: 'bg-gray-100 text-gray-600', icon: Clock },
   SENT: { label: 'Envoyé', color: 'bg-blue-100 text-blue-700', icon: Truck },
   PARTIALLY_RECEIVED: { label: 'Reçu partiellement', color: 'bg-amber-100 text-amber-700', icon: AlertCircle },
@@ -75,17 +62,30 @@ export default function PurchaseOrdersPage() {
 
   useEffect(() => {
     if (!tenantId) return;
-    const unsub1 = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'purchase_orders')), orderBy('createdAt', 'desc')),
-      snap => { setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() })) as PurchaseOrder[]); setIsLoading(false); }
+    const unsub1 = watch(
+      'purchase_orders',
+      // purchase_order_items embarqué via la relation FK.
+      () => supabase.from('purchase_orders').select('*, purchase_order_items(*)').eq('tenant_id', tenantId).order('created_at', { ascending: false }),
+      rows => {
+        setOrders(rows.map(r => mapPurchaseOrder(r, (r.purchase_order_items ?? []).map(mapPurchaseOrderItem))));
+        setIsLoading(false);
+      },
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
-    const unsub2 = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'suppliers')), orderBy('name', 'asc')),
-      snap => setSuppliers(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Supplier[])
+    const unsub2 = watch(
+      'suppliers',
+      () => supabase.from('suppliers').select('*').eq('tenant_id', tenantId).order('name', { ascending: true }),
+      rows => setSuppliers(rows.map(mapSupplier)),
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
-    const unsub3 = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'products')), orderBy('name', 'asc')),
-      snap => setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Product[])
+    const unsub3 = watch(
+      'products',
+      () => supabase.from('products').select('*').eq('tenant_id', tenantId).order('name', { ascending: true }),
+      rows => setProducts(rows.map(mapProduct)),
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
     return () => { unsub1(); unsub2(); unsub3(); };
   }, [tenantId]);
