@@ -237,6 +237,9 @@ export interface Sale {
   reference: string;
   customerId: string | null;
   customer?: Customer;
+  // Instantané pris à la création : reste lisible même si le client est
+  // supprimé ensuite (voir migration 019).
+  customerName: string | null;
   // Nullable : la vente reste consultable après suppression du magasin
   // (garantie côté UI, voir supabase/migrations/..._019_deletable_entity_fk_fixes.sql).
   storeIdFrom: string | null;
@@ -292,6 +295,10 @@ export interface Credit {
   // Nullable : le crédit reste consultable après suppression du client.
   customerId: string | null;
   customer?: Customer;
+  // Instantané pris à la création (même principe que Sale.customerName) :
+  // reste lisible même si le client est supprimé ensuite.
+  customerName: string | null;
+  customerPhone: string | null;
   saleId: string | null;
   reference: string;
   totalAmount: number;
@@ -312,19 +319,28 @@ export type CreditStatus = 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | '
 export interface CreditPayment {
   id: string;
   creditId: string;
+  storeId: string | null;
   amount: number;
   paymentMethod: PaymentMethod;
   reference: string | null;
   notes: string | null;
+  userName: string | null;
+  /** Solde restant immédiatement après ce versement — pour l'historique. */
+  remainingAfter: number | null;
   createdAt: Date;
 }
 
 export interface Quote {
   id: string;
   tenantId: string;
-  reference: string;
+  // Jamais numéroté légalement (contrairement aux ventes/BC) — généré côté
+  // client par commodité d'affichage uniquement.
+  reference: string | null;
   customerId: string | null;
   customer?: Customer;
+  // Instantané pris à la création : reste lisible même si le client est
+  // supprimé ensuite (voir migration 032).
+  customerName: string | null;
   status: QuoteStatus;
   validUntil: Date | null;
   subtotal: number;
@@ -339,7 +355,9 @@ export interface Quote {
   updatedAt: Date;
 }
 
-export type QuoteStatus = 'DRAFT' | 'PENDING' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'CONVERTED';
+// Valeurs réellement utilisées par l'app (quotes/page.tsx) — corrigé en
+// migration 031, l'enum d'origine (DRAFT/SENT/REJECTED) était aspirationnel.
+export type QuoteStatus = 'PENDING' | 'ACCEPTED' | 'CONVERTED' | 'REFUSED' | 'EXPIRED';
 
 export interface QuoteItem {
   id: string;
@@ -365,6 +383,7 @@ export interface Supplier {
   address: string | null;
   city: string | null;
   country: string | null;
+  website: string | null;
   paymentTerms: number | null;
   taxId: string | null;
   notes: string | null;

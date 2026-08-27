@@ -325,6 +325,7 @@ export type Database = {
           notes: string | null
           payment_method: Database["public"]["Enums"]["payment_method"]
           reference: string | null
+          remaining_after: number | null
           store_id: string | null
           tenant_id: string
           user_id: string | null
@@ -338,6 +339,7 @@ export type Database = {
           notes?: string | null
           payment_method: Database["public"]["Enums"]["payment_method"]
           reference?: string | null
+          remaining_after?: number | null
           store_id?: string | null
           tenant_id: string
           user_id?: string | null
@@ -351,6 +353,7 @@ export type Database = {
           notes?: string | null
           payment_method?: Database["public"]["Enums"]["payment_method"]
           reference?: string | null
+          remaining_after?: number | null
           store_id?: string | null
           tenant_id?: string
           user_id?: string | null
@@ -1216,10 +1219,11 @@ export type Database = {
           converted_sale_id: string | null
           created_at: string
           customer_id: string | null
+          customer_name: string | null
           discount_amount: number
           id: string
           notes: string | null
-          reference: string
+          reference: string | null
           status: Database["public"]["Enums"]["quote_status"]
           subtotal: number
           tax_amount: number
@@ -1233,10 +1237,11 @@ export type Database = {
           converted_sale_id?: string | null
           created_at?: string
           customer_id?: string | null
+          customer_name?: string | null
           discount_amount?: number
           id?: string
           notes?: string | null
-          reference: string
+          reference?: string | null
           status?: Database["public"]["Enums"]["quote_status"]
           subtotal?: number
           tax_amount?: number
@@ -1250,10 +1255,11 @@ export type Database = {
           converted_sale_id?: string | null
           created_at?: string
           customer_id?: string | null
+          customer_name?: string | null
           discount_amount?: number
           id?: string
           notes?: string | null
-          reference?: string
+          reference?: string | null
           status?: Database["public"]["Enums"]["quote_status"]
           subtotal?: number
           tax_amount?: number
@@ -1996,6 +2002,7 @@ export type Database = {
           tax_id: string | null
           tenant_id: string
           updated_at: string
+          website: string | null
         }
         Insert: {
           address?: string | null
@@ -2014,6 +2021,7 @@ export type Database = {
           tax_id?: string | null
           tenant_id: string
           updated_at?: string
+          website?: string | null
         }
         Update: {
           address?: string | null
@@ -2032,6 +2040,7 @@ export type Database = {
           tax_id?: string | null
           tenant_id?: string
           updated_at?: string
+          website?: string | null
         }
         Relationships: [
           {
@@ -2612,6 +2621,15 @@ export type Database = {
         }
         Returns: Json
       }
+      repay_credit: {
+        Args: {
+          p_amount: number
+          p_credit_id: string
+          p_store_id: string
+          p_user_name: string
+        }
+        Returns: Json
+      }
       set_tenant_status: {
         Args: {
           p_is_active: boolean
@@ -2682,14 +2700,7 @@ export type Database = {
         | "PARTIALLY_RECEIVED"
         | "RECEIVED"
         | "CANCELLED"
-      quote_status:
-        | "DRAFT"
-        | "PENDING"
-        | "SENT"
-        | "ACCEPTED"
-        | "REJECTED"
-        | "EXPIRED"
-        | "CONVERTED"
+      quote_status: "PENDING" | "ACCEPTED" | "CONVERTED" | "REFUSED" | "EXPIRED"
       referral_status: "PENDING" | "REWARDED"
       refund_method: "CASH" | "STORE_CREDIT" | "ORIGINAL_PAYMENT_METHOD"
       return_status: "COMPLETED" | "CANCELLED"
@@ -2904,15 +2915,7 @@ export const Constants = {
         "RECEIVED",
         "CANCELLED",
       ],
-      quote_status: [
-        "DRAFT",
-        "PENDING",
-        "SENT",
-        "ACCEPTED",
-        "REJECTED",
-        "EXPIRED",
-        "CONVERTED",
-      ],
+      quote_status: ["PENDING", "ACCEPTED", "CONVERTED", "REFUSED", "EXPIRED"],
       referral_status: ["PENDING", "REWARDED"],
       refund_method: ["CASH", "STORE_CREDIT", "ORIGINAL_PAYMENT_METHOD"],
       return_status: ["COMPLETED", "CANCELLED"],

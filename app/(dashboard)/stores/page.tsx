@@ -23,13 +23,12 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 import { useAuthStore } from '@/hooks/store';
-import { collection, query, orderBy, doc, addDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
-// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
-import { onSnapshot } from '@/lib/firebase/watch';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
-import { checkPlanLimitClient } from '@/lib/firebase/plan-limits-client';
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
+import { mapStore } from '@/lib/supabase/mappers';
+import { checkPlanLimitClient } from '@/lib/supabase/plan-limits-client';
 import type { Store } from '@/lib/types';
 import { isOwnerOrAdmin as isOwnerOrAdminRole } from '@/lib/auth/roles';
 
@@ -61,14 +60,19 @@ export default function StoresPage() {
 
   useEffect(() => {
     if (!tenantId) return;
-    const q = query(collection(db, tenantCol(tenantId, 'stores')), orderBy('createdAt', 'asc'));
-    return onSnapshot(q, snap => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Store[];
-      setLocalStores(data);
-      setIsLoading(false);
-      // Synchroniser avec le store global (pour le sélecteur de magasin dans le header)
-      setStores(data.filter(s => s.isActive));
-    });
+    return watch(
+      'stores',
+      () => supabase.from('stores').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: true }),
+      rows => {
+        const data = rows.map(mapStore);
+        setLocalStores(data);
+        setIsLoading(false);
+        // Synchroniser avec le store global (pour le sélecteur de magasin dans le header)
+        setStores(data.filter(s => s.isActive));
+      },
+      undefined,
+      `tenant_id=eq.${tenantId}`
+    );
   }, [tenantId]);
 
   const f = (field: keyof StoreForm, value: string | boolean) => setForm(p => ({ ...p, [field]: value }));
@@ -99,19 +103,17 @@ export default function StoresPage() {
     }
 
     const payload = {
-      tenantId, name: form.name.trim(),
+      tenant_id: tenantId, name: form.name.trim(),
       code: form.code.trim() || form.name.slice(0, 3).toUpperCase(),
       address: form.address.trim() || null, city: form.city.trim() || null,
       phone: form.phone.trim() || null, email: form.email.trim() || null,
-      isWarehouse: form.isWarehouse, isActive: form.isActive,
-      updatedAt: serverTimestamp(),
+      is_warehouse: form.isWarehouse, is_active: form.isActive,
     };
     try {
-      if (editing) {
-        await updateDoc(doc(db, tenantCol(tenantId, 'stores'), editing.id), payload);
-      } else {
-        await addDoc(collection(db, tenantCol(tenantId, 'stores')), { ...payload, createdAt: serverTimestamp() });
-      }
+      const { error } = editing
+        ? await supabase.from('stores').update(payload).eq('id', editing.id)
+        : await supabase.from('stores').insert(payload);
+      if (error) throw error;
       setShowDialog(false);
     } catch (e) { setFormError('Erreur lors de la sauvegarde'); console.error(e); }
     finally { setIsSaving(false); }
@@ -126,7 +128,8 @@ export default function StoresPage() {
     }
     setIsDeleting(true);
     try {
-      await deleteDoc(doc(db, tenantCol(tenantId, 'stores'), deleteTarget.id));
+      const { error } = await supabase.from('stores').delete().eq('id', deleteTarget.id);
+      if (error) throw error;
       setDeleteTarget(null);
     } catch (e) { console.error(e); } finally { setIsDeleting(false); }
   };
@@ -137,9 +140,7 @@ export default function StoresPage() {
       alert('Vous devez garder au moins un magasin actif');
       return;
     }
-    await updateDoc(doc(db, tenantCol(tenantId, 'stores'), s.id), {
-      isActive: !s.isActive, updatedAt: serverTimestamp(),
-    });
+    await supabase.from('stores').update({ is_active: !s.isActive }).eq('id', s.id);
   };
 
   const selectStore = (s: Store) => {

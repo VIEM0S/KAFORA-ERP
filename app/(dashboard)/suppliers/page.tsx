@@ -17,23 +17,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useAuthStore } from '@/hooks/store';
-import { collection, query, orderBy, doc, addDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
-// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
-import { onSnapshot } from '@/lib/firebase/watch';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
-
-interface Supplier {
-  id: string; tenantId: string; name: string; contactName?: string;
-  email?: string; phone?: string; address?: string; city?: string;
-  country?: string; website?: string; notes?: string; isActive: boolean;
-  /** Délai de paiement accordé par le fournisseur, en jours (ex. 30 = "net 30"). */
-  paymentTerms?: number | null;
-  /** Numéro d'identification fiscale du fournisseur (NIF au Mali). */
-  taxId?: string | null;
-  createdAt: unknown; updatedAt: unknown;
-}
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
+import { mapSupplier } from '@/lib/supabase/mappers';
+import type { Supplier } from '@/lib/types';
 
 interface SupplierForm {
   name: string; contactName: string; email: string; phone: string;
@@ -66,17 +55,19 @@ export default function SuppliersPage() {
 
   useEffect(() => {
     if (!tenantId) return;
-    const q = query(collection(db, tenantCol(tenantId, 'suppliers')), orderBy('name', 'asc'));
-    return onSnapshot(q, snap => {
-      setSuppliers(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Supplier[]);
-      setIsLoading(false);
-    });
+    return watch(
+      'suppliers',
+      () => supabase.from('suppliers').select('*').eq('tenant_id', tenantId).order('name', { ascending: true }),
+      rows => { setSuppliers(rows.map(mapSupplier)); setIsLoading(false); },
+      undefined,
+      `tenant_id=eq.${tenantId}`
+    );
   }, [tenantId]);
 
   const filtered = suppliers.filter(s =>
     !search ||
     s.name.toLowerCase().includes(search.toLowerCase()) ||
-    (s.contactName || '').toLowerCase().includes(search.toLowerCase()) ||
+    (s.contactPerson || '').toLowerCase().includes(search.toLowerCase()) ||
     (s.phone || '').includes(search)
   );
 
@@ -84,7 +75,7 @@ export default function SuppliersPage() {
   const openEdit = (s: Supplier) => {
     setEditing(s);
     setForm({
-      name: s.name, contactName: s.contactName || '', email: s.email || '',
+      name: s.name, contactName: s.contactPerson || '', email: s.email || '',
       phone: s.phone || '', address: s.address || '', city: s.city || 'Bamako',
       country: s.country || 'Mali', website: s.website || '',
       notes: s.notes || '', isActive: s.isActive,
@@ -111,21 +102,19 @@ export default function SuppliersPage() {
     }
     setIsSaving(true); setFormError(null);
     const payload = {
-      tenantId, name: form.name.trim(),
-      contactName: form.contactName.trim() || null,
+      tenant_id: tenantId, name: form.name.trim(),
+      contact_person: form.contactName.trim() || null,
       email: form.email.trim() || null, phone: form.phone.trim() || null,
       address: form.address.trim() || null, city: form.city.trim() || null,
       country: form.country.trim() || null, website: form.website.trim() || null,
-      notes: form.notes.trim() || null, isActive: form.isActive,
-      paymentTerms, taxId: form.taxId.trim() || null,
-      updatedAt: serverTimestamp(),
+      notes: form.notes.trim() || null, is_active: form.isActive,
+      payment_terms: paymentTerms, tax_id: form.taxId.trim() || null,
     };
     try {
-      if (editing) {
-        await updateDoc(doc(db, tenantCol(tenantId, 'suppliers'), editing.id), payload);
-      } else {
-        await addDoc(collection(db, tenantCol(tenantId, 'suppliers')), { ...payload, createdAt: serverTimestamp() });
-      }
+      const { error } = editing
+        ? await supabase.from('suppliers').update(payload).eq('id', editing.id)
+        : await supabase.from('suppliers').insert(payload);
+      if (error) throw error;
       setShowDialog(false);
     } catch (e) { setFormError('Erreur lors de la sauvegarde'); console.error(e); }
     finally { setIsSaving(false); }
@@ -134,7 +123,11 @@ export default function SuppliersPage() {
   const handleDelete = async () => {
     if (!tenantId || !deleteTarget) return;
     setIsDeleting(true);
-    try { await deleteDoc(doc(db, tenantCol(tenantId, 'suppliers'), deleteTarget.id)); setDeleteTarget(null); }
+    try {
+      const { error } = await supabase.from('suppliers').delete().eq('id', deleteTarget.id);
+      if (error) throw error;
+      setDeleteTarget(null);
+    }
     catch (e) { console.error(e); } finally { setIsDeleting(false); }
   };
 
@@ -190,7 +183,7 @@ export default function SuppliersPage() {
                         </div>
                         <div>
                           <p className="font-medium text-sm text-gray-900">{s.name}</p>
-                          {s.contactName && <p className="text-xs text-gray-400">{s.contactName}</p>}
+                          {s.contactPerson && <p className="text-xs text-gray-400">{s.contactPerson}</p>}
                         </div>
                       </div>
                     </TableCell>

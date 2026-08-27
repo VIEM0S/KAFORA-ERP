@@ -78,7 +78,7 @@ export function mapSupplier(r: Row<'suppliers'>): Supplier {
   return {
     id: r.id, tenantId: r.tenant_id, code: r.code ?? '', name: r.name,
     contactPerson: r.contact_person, email: r.email, phone: r.phone,
-    address: r.address, city: r.city, country: r.country,
+    address: r.address, city: r.city, country: r.country, website: r.website,
     paymentTerms: r.payment_terms, taxId: r.tax_id, notes: r.notes,
     isActive: r.is_active, createdAt: toDate(r.created_at), updatedAt: toDate(r.updated_at),
   };
@@ -104,6 +104,7 @@ export function mapSaleItem(r: Row<'sale_items'>): SaleItem {
 export function mapSale(r: Row<'sales'>, items: SaleItem[] = [], payments: Payment[] = []): Sale {
   return {
     id: r.id, tenantId: r.tenant_id, reference: r.reference, customerId: r.customer_id,
+    customerName: r.customer_name,
     storeIdFrom: r.store_id, cashierId: r.cashier_id ?? '', status: r.status,
     subtotal: r.subtotal, taxAmount: r.tax_amount, discountAmount: r.discount_amount,
     discountReason: r.discount_reason, total: r.total, paidAmount: r.paid_amount,
@@ -114,14 +115,17 @@ export function mapSale(r: Row<'sales'>, items: SaleItem[] = [], payments: Payme
 
 export function mapCreditPayment(r: Row<'credit_payments'>): CreditPayment {
   return {
-    id: r.id, creditId: r.credit_id, amount: r.amount, paymentMethod: r.payment_method,
-    reference: r.reference, notes: r.notes, createdAt: toDate(r.created_at),
+    id: r.id, creditId: r.credit_id, storeId: r.store_id, amount: r.amount,
+    paymentMethod: r.payment_method, reference: r.reference, notes: r.notes,
+    userName: r.user_name, remainingAfter: r.remaining_after, createdAt: toDate(r.created_at),
   };
 }
 
 export function mapCredit(r: Row<'credits'>, payments: CreditPayment[] = []): Credit {
   return {
-    id: r.id, tenantId: r.tenant_id, customerId: r.customer_id, saleId: r.sale_id,
+    id: r.id, tenantId: r.tenant_id, customerId: r.customer_id,
+    customerName: r.customer_name, customerPhone: r.customer_phone,
+    saleId: r.sale_id,
     reference: r.reference ?? '', totalAmount: r.total_amount, paidAmount: r.paid_amount,
     remainingAmount: r.remaining_amount, dueDate: toDate(r.due_date),
     status: r.status, penaltyRate: r.penalty_rate ?? 0, penaltyAmount: r.penalty_amount ?? 0,
@@ -140,6 +144,7 @@ export function mapQuoteItem(r: Row<'quote_items'>): QuoteItem {
 export function mapQuote(r: Row<'quotes'>, items: QuoteItem[] = []): Quote {
   return {
     id: r.id, tenantId: r.tenant_id, reference: r.reference, customerId: r.customer_id,
+    customerName: r.customer_name,
     status: r.status, validUntil: toDateOrNull(r.valid_until), subtotal: r.subtotal,
     taxAmount: r.tax_amount, discountAmount: r.discount_amount, total: r.total,
     notes: r.notes, terms: r.terms, items, convertedSaleId: r.converted_sale_id,

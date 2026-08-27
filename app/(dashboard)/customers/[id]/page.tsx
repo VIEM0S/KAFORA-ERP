@@ -13,14 +13,10 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
-import { doc, getDoc, collection, query, where, orderBy, limit, getDocs, onSnapshot } from 'firebase/firestore';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
-import type { Customer } from '@/lib/types';
-
-interface Sale { id: string; total: number; status: string; paymentMethod?: string; createdAt: unknown; itemCount?: number; }
-interface Credit { id: string; montantTotal: number; solde: number; dateEcheance: string; status: string; createdAt: unknown; }
-interface Quote { id: string; total: number; status: string; dateValidite: string; createdAt: unknown; }
+import { useDataErrors } from '@/hooks/use-data-errors';
+import { supabase } from '@/lib/supabase/client';
+import { mapCustomer, mapSale, mapCredit, mapQuote } from '@/lib/supabase/mappers';
+import type { Customer, Sale, Credit, Quote } from '@/lib/types';
 
 const CREDIT_STATUS: Record<string, { label: string; color: string }> = {
   PENDING:        { label: 'En cours',  color: 'bg-amber-100 text-amber-700' },
@@ -58,38 +54,49 @@ export default function CustomerDetailPage() {
     // Rediriger si id invalide (ex: /customers/new)
     if (id === 'new' || id === 'create') { router.replace('/customers'); return; }
 
+    const { reportError, clearError } = useDataErrors.getState();
+
     // Charger le client
-    getDoc(doc(db, tenantCol(tenantId, 'customers'), id)).then(snap => {
-      if (snap.exists()) setCustomer({ id: snap.id, ...snap.data() } as Customer);
+    supabase.from('customers').select('*').eq('id', id).maybeSingle().then(({ data, error }) => {
+      if (error) { reportError('Client', error); setIsLoading(false); return; }
+      clearError('Client');
+      if (data) setCustomer(mapCustomer(data));
       setIsLoading(false);
     });
 
     // Charger les ventes du client — bornées aux 100 plus récentes.
     // Sans limite, la fiche d'un client fidèle depuis plusieurs années
     // chargeait tout son historique à chaque ouverture : lent pour lui,
-    // coûteux en lectures Firestore, et sans utilité — on consulte les
-    // dernières transactions, pas celles d'il y a trois ans.
-    getDocs(query(
-      collection(db, tenantCol(tenantId, 'sales')),
-      where('customerId', '==', id),
-      orderBy('createdAt', 'desc'),
-      limit(100)
-    )).then(snap => setSales(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Sale[]));
+    // coûteux en lectures, et sans utilité — on consulte les dernières
+    // transactions, pas celles d'il y a trois ans.
+    //
+    // Fix : ces trois lectures se faisaient auparavant sans AUCUNE gestion
+    // d'erreur (ni .catch, ni écoute onSnapshot) — un refus RLS ou une
+    // coupure laissait la fiche silencieusement vide, indiscernable d'un
+    // client sans historique. Voir hooks/use-data-errors.ts.
+    supabase.from('sales').select('*').eq('customer_id', id).order('created_at', { ascending: false }).limit(100)
+      .then(({ data, error }) => {
+        if (error) { reportError('Ventes', error); return; }
+        clearError('Ventes');
+        setSales((data ?? []).map(r => mapSale(r)));
+      });
 
     // Charger les crédits du client
-    getDocs(query(
-      collection(db, tenantCol(tenantId, 'credits')),
-      where('customerId', '==', id),
-      orderBy('createdAt', 'desc')
-    )).then(snap => setCredits(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Credit[]));
+    supabase.from('credits').select('*').eq('customer_id', id).order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (error) { reportError('Crédits', error); return; }
+        clearError('Crédits');
+        setCredits((data ?? []).map(r => mapCredit(r)));
+      });
 
     // Charger les devis du client
-    getDocs(query(
-      collection(db, tenantCol(tenantId, 'quotes')),
-      where('customerId', '==', id),
-      orderBy('createdAt', 'desc')
-    )).then(snap => setQuotes(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Quote[]));
-  }, [tenantId, id]);
+    supabase.from('quotes').select('*').eq('customer_id', id).order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (error) { reportError('Devis', error); return; }
+        clearError('Devis');
+        setQuotes((data ?? []).map(r => mapQuote(r)));
+      });
+  }, [tenantId, id, router]);
 
   if (isLoading) return (
     <DashboardLayout>
@@ -110,7 +117,7 @@ export default function CustomerDetailPage() {
     : `${customer.firstName || ''} ${customer.lastName || ''}`.trim();
 
   const totalAchats = sales.filter(s => s.status === 'COMPLETED').reduce((s, v) => s + (v.total || 0), 0);
-  const soldeCredit = credits.filter(c => ['PENDING', 'PARTIALLY_PAID', 'OVERDUE'].includes(c.status)).reduce((s, c) => s + c.solde, 0);
+  const soldeCredit = credits.filter(c => ['PENDING', 'PARTIALLY_PAID', 'OVERDUE'].includes(c.status)).reduce((s, c) => s + c.remainingAmount, 0);
 
   const TABS = [
     { key: 'sales',   label: `Ventes (${sales.length})` },
@@ -256,9 +263,9 @@ export default function CustomerDetailPage() {
                       return (
                         <TableRow key={c.id}>
                           <TableCell className="text-sm text-gray-500">{formatDate(c.createdAt)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(c.montantTotal)}</TableCell>
-                          <TableCell className="text-right font-bold text-amber-600">{formatCurrency(c.solde)}</TableCell>
-                          <TableCell className="text-sm">{formatDate(c.dateEcheance)}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(c.totalAmount)}</TableCell>
+                          <TableCell className="text-right font-bold text-amber-600">{formatCurrency(c.remainingAmount)}</TableCell>
+                          <TableCell className="text-sm">{formatDate(c.dueDate)}</TableCell>
                           <TableCell><span className={`text-xs px-2 py-1 rounded-full font-medium ${cfg.color}`}>{cfg.label}</span></TableCell>
                         </TableRow>
                       );
@@ -294,7 +301,7 @@ export default function CustomerDetailPage() {
                         <TableRow key={q.id}>
                           <TableCell className="text-sm text-gray-500">{formatDate(q.createdAt)}</TableCell>
                           <TableCell className="text-right font-bold">{formatCurrency(q.total)}</TableCell>
-                          <TableCell className="text-sm">{formatDate(q.dateValidite)}</TableCell>
+                          <TableCell className="text-sm">{formatDate(q.validUntil)}</TableCell>
                           <TableCell><span className={`text-xs px-2 py-1 rounded-full font-medium ${cfg.color}`}>{cfg.label}</span></TableCell>
                         </TableRow>
                       );

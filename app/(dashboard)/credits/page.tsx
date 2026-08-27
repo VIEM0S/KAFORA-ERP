@@ -25,65 +25,31 @@ import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils/helpers'
 import { exportToCsv, formatDateForCsv } from '@/lib/utils/export';
 import { Download } from 'lucide-react';
 import { useAuthStore } from '@/hooks/store';
-import { collection, query, orderBy, doc, serverTimestamp, runTransaction } from 'firebase/firestore';
-// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
-// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
-import { onSnapshot } from '@/lib/firebase/watch';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
+import { mapCredit, mapCreditPayment } from '@/lib/supabase/mappers';
 import { ROLE_PERMISSIONS } from '@/lib/constants';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface Versement {
-  id: string;
-  creditId: string;
-  montant: number;
-  soldeAvant: number;
-  soldeApres: number;
-  userId: string;
-  userName: string;
-  createdAt: unknown;
-}
-
-interface Credit {
-  id: string;
-  tenantId: string;
-  saleId: string;
-  customerId: string;
-  customerName: string;
-  customerPhone?: string;
-  montantTotal: number;
-  acompte: number;
-  solde: number;
-  dateEcheance: string;
-  status: 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE';
-  userId: string;
-  versements?: Versement[];
-  createdAt: unknown;
-  updatedAt: unknown;
-}
+import type { Credit, CreditPayment, CreditStatus } from '@/lib/types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const STATUS_CONFIG = {
+const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Clock }> = {
   PENDING:        { label: 'En cours',      color: 'bg-amber-100 text-amber-700',  icon: Clock },
   PARTIALLY_PAID: { label: 'Partiel',       color: 'bg-blue-100 text-blue-700',    icon: TrendingDown },
   PAID:           { label: 'Soldé',         color: 'bg-green-100 text-green-700',  icon: CheckCircle2 },
   OVERDUE:        { label: 'En retard',     color: 'bg-red-100 text-red-700',      icon: AlertTriangle },
 };
 
-function isEcheanceProche(dateStr: string): boolean {
-  if (!dateStr) return false;
-  const echeance = new Date(dateStr);
-  const now = new Date();
-  const diff = echeance.getTime() - now.getTime();
+function isEcheanceProche(dueDate: Date): boolean {
+  const diff = dueDate.getTime() - Date.now();
   return diff > 0 && diff < 48 * 60 * 60 * 1000;
 }
 
-function isEnRetard(dateStr: string, status: string): boolean {
+function isEnRetard(dueDate: Date, status: string): boolean {
   if (status === 'PAID') return false;
-  return new Date(dateStr) < new Date();
+  return dueDate.getTime() < Date.now();
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -100,7 +66,7 @@ export default function CreditsPage() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('active');
   const [selected, setSelected] = useState<Credit | null>(null);
-  const [versements, setVersements] = useState<Versement[]>([]);
+  const [versements, setVersements] = useState<CreditPayment[]>([]);
 
   // Formulaire versement
   const [montantVersement, setMontantVersement] = useState('');
@@ -111,41 +77,42 @@ export default function CreditsPage() {
 
   useEffect(() => {
     if (!tenantId) return;
-    const q = query(
-      collection(db, tenantCol(tenantId, 'credits')),
-      orderBy('dateEcheance', 'asc')
+    return watch(
+      'credits',
+      () => supabase.from('credits').select('*').eq('tenant_id', tenantId).order('due_date', { ascending: true }),
+      rows => {
+        // Marquer automatiquement en retard côté client
+        const updated = rows.map(r => mapCredit(r)).map(c => ({
+          ...c,
+          status: (c.status !== 'PAID' && isEnRetard(c.dueDate, c.status)
+            ? 'OVERDUE'
+            : c.status) as CreditStatus,
+        }));
+        setCredits(updated);
+        setIsLoading(false);
+      },
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
-    return onSnapshot(q, (snap) => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Credit[];
-      // Marquer automatiquement en retard côté client
-      const updated = data.map(c => ({
-        ...c,
-        status: c.status !== 'PAID' && isEnRetard(c.dateEcheance, c.status)
-          ? 'OVERDUE' as const
-          : c.status,
-      }));
-      setCredits(updated);
-      setIsLoading(false);
-    });
   }, [tenantId]);
 
   // Charger les versements du crédit sélectionné
   useEffect(() => {
     if (!tenantId || !selected) { setVersements([]); return; }
-    const q = query(
-      collection(db, `tenants/${tenantId}/credits/${selected.id}/credit_payments`),
-      orderBy('createdAt', 'asc')
+    return watch(
+      'credit_payments',
+      () => supabase.from('credit_payments').select('*').eq('credit_id', selected.id).order('created_at', { ascending: true }),
+      rows => setVersements(rows.map(mapCreditPayment)),
+      undefined,
+      `credit_id=eq.${selected.id}`
     );
-    return onSnapshot(q, (snap) => {
-      setVersements(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Versement[]);
-    });
   }, [tenantId, selected?.id]);
 
   // ─── Filtres ────────────────────────────────────────────────────────────────
 
   const filtered = credits.filter(c => {
     const matchSearch = !search ||
-      c.customerName.toLowerCase().includes(search.toLowerCase()) ||
+      (c.customerName || '').toLowerCase().includes(search.toLowerCase()) ||
       (c.customerPhone || '').includes(search);
     const matchStatus =
       filterStatus === 'all' ||
@@ -159,17 +126,17 @@ export default function CreditsPage() {
 
   const totalEnCours = credits
     .filter(c => ['PENDING', 'PARTIALLY_PAID'].includes(c.status))
-    .reduce((s, c) => s + c.solde, 0);
+    .reduce((s, c) => s + c.remainingAmount, 0);
   const nbActifs = credits.filter(c => ['PENDING', 'PARTIALLY_PAID'].includes(c.status)).length;
   const nbEnRetard = credits.filter(c => c.status === 'OVERDUE').length;
   const echeancesProches = credits.filter(
-    c => ['PENDING', 'PARTIALLY_PAID'].includes(c.status) && isEcheanceProche(c.dateEcheance)
+    c => ['PENDING', 'PARTIALLY_PAID'].includes(c.status) && isEcheanceProche(c.dueDate)
   );
 
   // ─── Versement ──────────────────────────────────────────────────────────────
 
   const handleVersement = async () => {
-    if (!tenantId || !selected || !user) return;
+    if (!tenantId || !selected || !user || !currentStore) return;
     if (!canManageCredits) {
       setVersementError('Vous n\'avez pas la permission d\'enregistrer un versement de crédit.');
       return;
@@ -178,86 +145,32 @@ export default function CreditsPage() {
     if (!montant || montant <= 0) {
       setVersementError('Montant invalide'); return;
     }
-    if (montant > selected.solde) {
-      setVersementError(`Montant supérieur au solde restant (${formatCurrency(selected.solde)})`); return;
+    if (montant > selected.remainingAmount) {
+      setVersementError(`Montant supérieur au solde restant (${formatCurrency(selected.remainingAmount)})`); return;
     }
 
     setIsSaving(true);
     setVersementError(null);
 
-    const creditRef = doc(db, tenantCol(tenantId, 'credits'), selected.id);
-    const paymentRef = doc(collection(db, `tenants/${tenantId}/credits/${selected.id}/credit_payments`));
-
     try {
-      // Fix : les 3 écritures (versement, crédit, client) se faisaient auparavant
-      // en 3 appels séparés non-atomiques, avec un solde calculé côté client sur
-      // une valeur potentiellement périmée (`selected.solde`). Deux versements
-      // presque simultanés (double onglet, deux appareils) pouvaient s'écraser
-      // l'un l'autre. On relit tout DANS la transaction et on écrit ensemble.
-      const result = await runTransaction(db, async (tx) => {
-        const creditSnap = await tx.get(creditRef);
-        if (!creditSnap.exists()) throw new Error('Crédit introuvable');
-        const creditData = creditSnap.data() as Credit;
-
-        const soldeAvant = creditData.solde;
-        if (montant > soldeAvant) {
-          throw new Error(`Montant supérieur au solde restant (${formatCurrency(soldeAvant)})`);
-        }
-        const soldeApres = Math.max(0, soldeAvant - montant);
-        const nouveauStatut = soldeApres === 0 ? 'PAID'
-          : soldeApres < creditData.montantTotal ? 'PARTIALLY_PAID'
-          : creditData.status;
-
-        let customerRef: ReturnType<typeof doc> | null = null;
-        let currentUsed = 0;
-        if (creditData.customerId) {
-          customerRef = doc(db, tenantCol(tenantId, 'customers'), creditData.customerId);
-          const customerSnap = await tx.get(customerRef);
-          if (customerSnap.exists()) {
-            currentUsed = Number(customerSnap.data().creditUsed) || 0;
-          } else {
-            customerRef = null;
-          }
-        }
-
-        tx.set(paymentRef, {
-          creditId: selected.id,
-          montant,
-          soldeAvant,
-          soldeApres,
-          // tenantId / storeId / paymentMethod : indispensables au
-          // rapprochement de caisse. Un client qui vient régler sa dette
-          // dépose de l'argent dans un TIROIR PRÉCIS ; sans le magasin, ce
-          // versement n'apparaît nulle part à la clôture et la caisse
-          // semble excédentaire.
-          tenantId,
-          storeId: currentStore?.id || null,
-          paymentMethod: 'CASH',
-          userId: user.id,
-          userName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-          createdAt: serverTimestamp(),
-        });
-
-        tx.update(creditRef, {
-          solde: soldeApres,
-          status: nouveauStatut,
-          updatedAt: serverTimestamp(),
-        });
-
-        if (customerRef) {
-          tx.update(customerRef, {
-            creditUsed: Math.max(0, currentUsed - montant),
-            updatedAt: serverTimestamp(),
-          });
-        }
-
-        return { soldeApres, nouveauStatut };
+      // Toute l'atomicité (versement + solde crédit + créditUsed client) vit
+      // dans repay_credit() en RPC — voir supabase/migrations. Remplace la
+      // transaction client Firestore (runTransaction) : PostgREST n'offre pas
+      // d'équivalent multi-requêtes atomique depuis le navigateur.
+      const { data, error } = await supabase.rpc('repay_credit', {
+        p_credit_id: selected.id,
+        p_amount: montant,
+        p_store_id: currentStore.id,
+        p_user_name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
       });
+      if (error) throw error;
+      const result = data as unknown as { remainingAmount: number; status: CreditStatus };
 
       setMontantVersement('');
-      setSelected(prev => prev ? { ...prev, solde: result.soldeApres, status: result.nouveauStatut } : null);
+      setSelected(prev => prev ? { ...prev, remainingAmount: result.remainingAmount, status: result.status } : null);
     } catch (e) {
-      setVersementError(e instanceof Error ? e.message : 'Erreur lors de l\'enregistrement');
+      const msg = e instanceof Error ? e.message : 'Erreur lors de l\'enregistrement';
+      setVersementError(msg.replace(/^.*(?:FORBIDDEN|INVALID_AMOUNT|NOT_FOUND):\s*/, ''));
       console.error(e);
     } finally {
       setIsSaving(false);
@@ -297,11 +210,11 @@ export default function CreditsPage() {
               { key: 'id', label: 'N° créance' },
               { key: 'customerName', label: 'Client' },
               { key: 'customerPhone', label: 'Téléphone' },
-              { key: 'montantTotal', label: 'Montant total' },
-              { key: 'acompte', label: 'Acompte versé' },
-              { key: 'solde', label: 'Solde restant' },
+              { key: 'totalAmount', label: 'Montant total' },
+              { key: 'paidAmount', label: 'Total versé' },
+              { key: 'remainingAmount', label: 'Solde restant' },
               { key: 'status', label: 'Statut', format: (v) => STATUS_CONFIG[v as keyof typeof STATUS_CONFIG]?.label || String(v) },
-              { key: 'dateEcheance', label: 'Échéance', format: (v) => v ? formatDate(v as string) : '' },
+              { key: 'dueDate', label: 'Échéance', format: (v) => v ? formatDate(v as Date) : '' },
               { key: 'createdAt', label: 'Date création', format: (v) => formatDateForCsv(v) },
             ])}
           >
@@ -319,7 +232,7 @@ export default function CreditsPage() {
                 {echeancesProches.length} crédit{echeancesProches.length > 1 ? 's arrivent' : ' arrive'} à échéance dans moins de 48h
               </p>
               <p className="text-xs text-amber-700 mt-1">
-                {echeancesProches.map(c => `${c.customerName} (${formatCurrency(c.solde)})`).join(' · ')}
+                {echeancesProches.map(c => `${c.customerName || 'Client supprimé'} (${formatCurrency(c.remainingAmount)})`).join(' · ')}
               </p>
             </div>
           </div>
@@ -399,8 +312,8 @@ export default function CreditsPage() {
                 </TableHeader>
                 <TableBody>
                   {filtered.map(c => {
-                    const proche = isEcheanceProche(c.dateEcheance) && ['PENDING', 'PARTIALLY_PAID'].includes(c.status);
-                    const pct = c.montantTotal > 0 ? ((c.montantTotal - c.solde) / c.montantTotal) * 100 : 0;
+                    const proche = isEcheanceProche(c.dueDate) && ['PENDING', 'PARTIALLY_PAID'].includes(c.status);
+                    const pct = c.totalAmount > 0 ? ((c.totalAmount - c.remainingAmount) / c.totalAmount) * 100 : 0;
                     return (
                       <TableRow key={c.id}
                         className={`hover:bg-gray-50 cursor-pointer ${selected?.id === c.id ? 'bg-primary-50' : ''}`}
@@ -408,18 +321,18 @@ export default function CreditsPage() {
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">
-                              {c.customerName[0]}
+                              {(c.customerName || '?')[0]}
                             </div>
                             <div>
-                              <p className="font-medium text-sm">{c.customerName}</p>
+                              <p className="font-medium text-sm">{c.customerName || 'Client supprimé'}</p>
                               {c.customerPhone && <p className="text-xs text-gray-400">{c.customerPhone}</p>}
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="text-right text-sm">{formatCurrency(c.montantTotal)}</TableCell>
+                        <TableCell className="text-right text-sm">{formatCurrency(c.totalAmount)}</TableCell>
                         <TableCell className="text-right">
                           <p className={`font-bold text-sm ${c.status === 'PAID' ? 'text-green-600' : 'text-amber-600'}`}>
-                            {formatCurrency(c.solde)}
+                            {formatCurrency(c.remainingAmount)}
                           </p>
                           <div className="w-16 h-1 bg-gray-200 rounded-full mt-1 ml-auto">
                             <div className="h-1 bg-green-500 rounded-full" style={{ width: `${Math.min(pct, 100)}%` }} />
@@ -427,7 +340,7 @@ export default function CreditsPage() {
                         </TableCell>
                         <TableCell>
                           <span className={`text-sm ${proche ? 'text-red-600 font-medium' : 'text-gray-600'}`}>
-                            {formatDate(c.dateEcheance)}{proche && ' ⚠️'}
+                            {formatDate(c.dueDate)}{proche && ' ⚠️'}
                           </span>
                         </TableCell>
                         <TableCell><StatusBadge status={c.status} /></TableCell>
@@ -454,10 +367,10 @@ export default function CreditsPage() {
                 {/* Client */}
                 <div className="flex items-center gap-3 mb-5">
                   <div className="h-10 w-10 rounded-full bg-primary-100 flex items-center justify-center font-bold text-primary-700">
-                    {selected.customerName[0]}
+                    {(selected.customerName || '?')[0]}
                   </div>
                   <div>
-                    <p className="font-bold text-gray-900">{selected.customerName}</p>
+                    <p className="font-bold text-gray-900">{selected.customerName || 'Client supprimé'}</p>
                     {selected.customerPhone && <p className="text-sm text-gray-400">{selected.customerPhone}</p>}
                   </div>
                 </div>
@@ -466,11 +379,11 @@ export default function CreditsPage() {
                 <div className="grid grid-cols-2 gap-3 mb-4 text-sm">
                   <div className="bg-gray-50 rounded-lg p-3">
                     <p className="text-gray-500 text-xs mb-1">Montant initial</p>
-                    <p className="font-bold">{formatCurrency(selected.montantTotal)}</p>
+                    <p className="font-bold">{formatCurrency(selected.totalAmount)}</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-gray-500 text-xs mb-1">Acompte versé</p>
-                    <p className="font-bold">{formatCurrency(selected.acompte)}</p>
+                    <p className="text-gray-500 text-xs mb-1">Total versé</p>
+                    <p className="font-bold">{formatCurrency(selected.paidAmount)}</p>
                   </div>
                 </div>
 
@@ -478,21 +391,21 @@ export default function CreditsPage() {
                 <div className={`rounded-xl p-4 text-center mb-5 ${selected.status === 'PAID' ? 'bg-green-50 border border-green-200' : selected.status === 'OVERDUE' ? 'bg-red-50 border border-red-200' : 'bg-amber-50 border border-amber-200'}`}>
                   <p className="text-xs text-gray-500 mb-1">Solde restant</p>
                   <p className={`text-3xl font-bold ${selected.status === 'PAID' ? 'text-green-700' : selected.status === 'OVERDUE' ? 'text-red-700' : 'text-amber-700'}`}>
-                    {formatCurrency(selected.solde)}
+                    {formatCurrency(selected.remainingAmount)}
                   </p>
                   <div className="flex items-center justify-center gap-2 mt-2">
                     <StatusBadge status={selected.status} />
-                    <span className="text-xs text-gray-500">· Échéance : {formatDate(selected.dateEcheance)}</span>
+                    <span className="text-xs text-gray-500">· Échéance : {formatDate(selected.dueDate)}</span>
                   </div>
                   {/* Barre de progression remboursement */}
-                  {selected.montantTotal > 0 && (
+                  {selected.totalAmount > 0 && (
                     <div className="mt-3">
                       <div className="w-full h-2 bg-gray-200 rounded-full">
                         <div className="h-2 bg-green-500 rounded-full transition-all"
-                          style={{ width: `${Math.min(((selected.montantTotal - selected.solde) / selected.montantTotal) * 100, 100)}%` }} />
+                          style={{ width: `${Math.min(((selected.totalAmount - selected.remainingAmount) / selected.totalAmount) * 100, 100)}%` }} />
                       </div>
                       <p className="text-xs text-gray-500 mt-1">
-                        {Math.round(((selected.montantTotal - selected.solde) / selected.montantTotal) * 100)}% remboursé
+                        {Math.round(((selected.totalAmount - selected.remainingAmount) / selected.totalAmount) * 100)}% remboursé
                       </p>
                     </div>
                   )}
@@ -518,8 +431,8 @@ export default function CreditsPage() {
                       <>
                         <div className="flex gap-2">
                           <Input
-                            type="number" min="1" max={selected.solde}
-                            placeholder={`Max ${formatCurrency(selected.solde)}`}
+                            type="number" min="1" max={selected.remainingAmount}
+                            placeholder={`Max ${formatCurrency(selected.remainingAmount)}`}
                             value={montantVersement}
                             onChange={e => { setMontantVersement(e.target.value); setVersementError(null); }}
                             className="flex-1"
@@ -532,10 +445,10 @@ export default function CreditsPage() {
                             {isSaving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <><CheckCircle2 className="h-4 w-4 mr-1" />Valider</>}
                           </Button>
                         </div>
-                        {montantVersement && Number(montantVersement) > 0 && Number(montantVersement) <= selected.solde && (
+                        {montantVersement && Number(montantVersement) > 0 && Number(montantVersement) <= selected.remainingAmount && (
                           <p className="text-xs text-gray-500 mt-2">
-                            Solde après versement : <strong>{formatCurrency(selected.solde - Number(montantVersement))}</strong>
-                            {Number(montantVersement) >= selected.solde && ' → Crédit soldé ✅'}
+                            Solde après versement : <strong>{formatCurrency(selected.remainingAmount - Number(montantVersement))}</strong>
+                            {Number(montantVersement) >= selected.remainingAmount && ' → Crédit soldé ✅'}
                           </p>
                         )}
                       </>
@@ -553,12 +466,12 @@ export default function CreditsPage() {
                       {versements.map(v => (
                         <div key={v.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
                           <div>
-                            <p className="text-sm font-bold text-green-700">+{formatCurrency(v.montant)}</p>
+                            <p className="text-sm font-bold text-green-700">+{formatCurrency(v.amount)}</p>
                             <p className="text-xs text-gray-400">{formatDateTime(v.createdAt)} · {v.userName}</p>
                           </div>
                           <div className="text-right">
                             <p className="text-xs text-gray-500">Solde après</p>
-                            <p className="text-sm font-medium">{formatCurrency(v.soldeApres)}</p>
+                            <p className="text-sm font-medium">{v.remainingAfter !== null ? formatCurrency(v.remainingAfter) : '—'}</p>
                           </div>
                         </div>
                       ))}
