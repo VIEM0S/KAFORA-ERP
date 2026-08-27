@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { checkRateLimit, getClientIp } from '@/lib/api/rate-limit';
+import { mapUser, mapTenant, mapStore, mapSubscription } from '@/lib/supabase/mappers';
 
 /**
  * Appelée par le client juste après supabase.auth.signInWithPassword() —
@@ -140,10 +141,17 @@ export async function POST(request: NextRequest) {
       entity_id: uid,
     });
 
+    // Toujours passer par les mappers avant d'envoyer au client : le reste de
+    // l'app (hooks/store.ts, tous les écrans) attend les interfaces camelCase
+    // de lib/types/index.ts, jamais les lignes Postgres brutes en snake_case.
+    // Fix trouvé en portant settings/page.tsx — la branche SUPER_ADMIN
+    // ci-dessus le faisait déjà correctement à la main, celle-ci renvoyait
+    // les lignes brutes (user.firstName/tenant.isActive/store.isWarehouse...
+    // auraient tous été `undefined` côté client).
     return NextResponse.json({
-      user: userProfile,
-      tenant: { ...tenant, subscription: subscription ?? null },
-      stores,
+      user: mapUser(userProfile),
+      tenant: { ...mapTenant(tenant), subscription: subscription ? mapSubscription(subscription) : undefined },
+      stores: stores.map(mapStore),
       claimsUpdated,
     });
   } catch (error: unknown) {
