@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/lib/firebase/admin';
-import { FieldValue } from 'firebase-admin/firestore';
-import { cookies } from 'next/headers';
+import { createServiceRoleClient } from '@/lib/supabase/server';
+import { getSessionClaims } from '@/lib/api/session';
 
 interface OrderItemInput {
   productId: string;
@@ -11,20 +10,12 @@ interface OrderItemInput {
 
 // Crée un bon de commande fournisseur en statut DRAFT ou SENT.
 // N'impacte JAMAIS le stock — le stock n'est mis à jour qu'à la réception,
-// via /api/purchase-orders/receive (cf. la même logique que checkout : le
-// stock ne bouge que sur un endpoint serveur dédié et transactionnel).
+// via /api/purchase-orders/receive.
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get('__session')?.value;
-    if (!sessionCookie) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
-
-    const decoded = await adminAuth.verifySessionCookie(sessionCookie, true);
-    const callerRole = decoded.role as string;
-    const callerTenantId = decoded.tenantId as string;
-    const callerUid = decoded.uid as string;
-
-    if (!['OWNER', 'ADMIN', 'MANAGER'].includes(callerRole)) {
+    const session = await getSessionClaims();
+    if (!session) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    if (!['OWNER', 'ADMIN', 'MANAGER'].includes(session.role)) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
     }
 
@@ -38,67 +29,50 @@ export async function POST(request: NextRequest) {
     if (!tenantId || !storeId || !supplierId || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: 'Données manquantes ou commande vide' }, { status: 400 });
     }
-    if (tenantId !== callerTenantId) {
+    if (tenantId !== session.tenantId) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
     }
 
-    const supplierSnap = await adminDb.doc(`tenants/${tenantId}/suppliers/${supplierId}`).get();
-    if (!supplierSnap.exists) {
+    const supabase = createServiceRoleClient();
+    const { data: supplier } = await supabase.from('suppliers').select('id').eq('id', supplierId).eq('tenant_id', tenantId).maybeSingle();
+    if (!supplier) {
       return NextResponse.json({ error: 'Fournisseur introuvable' }, { status: 404 });
     }
 
     // ── Récupérer les produits réels pour figer nom/SKU au moment de la commande ──
-    const productSnaps = await Promise.all(
-      items.map(it => adminDb.doc(`tenants/${tenantId}/products/${it.productId}`).get())
-    );
-    for (let i = 0; i < productSnaps.length; i++) {
-      if (!productSnaps[i].exists) {
-        return NextResponse.json({ error: `Produit introuvable (${items[i].productId})` }, { status: 404 });
+    const productIds = items.map((it) => it.productId);
+    const { data: products } = await supabase.from('products').select('id, name, sku').eq('tenant_id', tenantId).in('id', productIds);
+    const productById = new Map((products ?? []).map((p) => [p.id, p]));
+    for (const it of items) {
+      if (!productById.has(it.productId)) {
+        return NextResponse.json({ error: `Produit introuvable (${it.productId})` }, { status: 404 });
       }
     }
 
-    const lines = items.map((it, i) => {
-      const p = productSnaps[i].data()!;
-      const quantityOrdered = Math.max(1, Math.floor(Number(it.quantityOrdered) || 0));
-      const unitCost = Math.max(0, Number(it.unitCost) || 0);
-      return {
-        productId: it.productId,
-        productName: p.name,
-        productSku: p.sku,
-        quantityOrdered,
-        quantityReceived: 0,
-        unitCost,
-        total: quantityOrdered * unitCost,
-      };
+    const { data: result, error: rpcError } = await supabase.rpc('create_purchase_order', {
+      p_tenant_id: tenantId,
+      p_supplier_id: supplierId,
+      p_store_id: storeId,
+      p_status: status === 'SENT' ? 'SENT' : 'DRAFT',
+      p_notes: (notes || null) as string,
+      p_expected_date: (expectedDate || null) as string,
+      p_created_by: session.uid,
+      p_created_by_name: (createdByName || null) as string,
+      p_items: items.map((it) => {
+        const p = productById.get(it.productId)!;
+        return {
+          product_id: it.productId,
+          product_name: p.name,
+          product_sku: p.sku,
+          quantity_ordered: it.quantityOrdered,
+          unit_cost: it.unitCost,
+        };
+      }),
     });
-    const subtotal = lines.reduce((s, l) => s + l.total, 0);
+    if (rpcError) throw rpcError;
 
-    // Référence lisible : BC-2026-0001 (numéro séquentiel simple basé sur le compteur du tenant)
-    const counterRef = adminDb.doc(`tenants/${tenantId}/_counters/purchase_orders`);
-    const reference = await adminDb.runTransaction(async (tx) => {
-      const counterSnap = await tx.get(counterRef);
-      const next = (counterSnap.exists ? counterSnap.data()!.value : 0) + 1;
-      tx.set(counterRef, { value: next }, { merge: true });
-      const year = new Date().getFullYear();
-      return `BC-${year}-${String(next).padStart(4, '0')}`;
-    });
-
-    const poRef = adminDb.collection(`tenants/${tenantId}/purchase_orders`).doc();
-    await poRef.set({
-      tenantId, reference, supplierId, storeId,
-      status: status === 'SENT' ? 'SENT' : 'DRAFT',
-      items: lines,
-      subtotal,
-      notes: notes || null,
-      expectedDate: expectedDate || null,
-      createdBy: callerUid,
-      createdByName: createdByName || null,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-      receivedAt: null,
-    });
-
-    return NextResponse.json({ success: true, id: poRef.id, reference });
+    const r = result as unknown as { id: string; reference: string };
+    return NextResponse.json({ success: true, id: r.id, reference: r.reference });
   } catch (error) {
     console.error('Create purchase order error:', error);
     return NextResponse.json({ error: 'Erreur interne' }, { status: 500 });

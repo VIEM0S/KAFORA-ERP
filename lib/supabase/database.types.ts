@@ -164,6 +164,7 @@ export type Database = {
       }
       cash_sessions: {
         Row: {
+          acompte_total: number | null
           cash_refund_total: number | null
           cash_sales_total: number | null
           closed_at: string | null
@@ -189,6 +190,7 @@ export type Database = {
           variance_reason: string | null
         }
         Insert: {
+          acompte_total?: number | null
           cash_refund_total?: number | null
           cash_sales_total?: number | null
           closed_at?: string | null
@@ -214,6 +216,7 @@ export type Database = {
           variance_reason?: string | null
         }
         Update: {
+          acompte_total?: number | null
           cash_refund_total?: number | null
           cash_sales_total?: number | null
           closed_at?: string | null
@@ -992,6 +995,29 @@ export type Database = {
             foreignKeyName: "products_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      purchase_order_counters: {
+        Row: {
+          tenant_id: string
+          value: number
+        }
+        Insert: {
+          tenant_id: string
+          value?: number
+        }
+        Update: {
+          tenant_id?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_order_counters_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
             referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
@@ -2428,6 +2454,32 @@ export type Database = {
         }
         Returns: Json
       }
+      close_cash_register: {
+        Args: {
+          p_caller_id: string
+          p_caller_name: string
+          p_counted_amount: number
+          p_notes: string
+          p_register_id: string
+          p_store_id: string
+          p_tenant_id: string
+        }
+        Returns: Json
+      }
+      create_purchase_order: {
+        Args: {
+          p_created_by: string
+          p_created_by_name: string
+          p_expected_date: string
+          p_items: Json
+          p_notes: string
+          p_status: Database["public"]["Enums"]["purchase_order_status"]
+          p_store_id: string
+          p_supplier_id: string
+          p_tenant_id: string
+        }
+        Returns: Json
+      }
       create_sale_return: {
         Args: {
           p_caller_id: string
@@ -2454,6 +2506,17 @@ export type Database = {
       is_owner: { Args: never; Returns: boolean }
       is_owner_or_admin: { Args: never; Returns: boolean }
       is_regional_manager: { Args: never; Returns: boolean }
+      open_cash_register: {
+        Args: {
+          p_caller_id: string
+          p_caller_name: string
+          p_opening_balance: number
+          p_register_id: string
+          p_store_id: string
+          p_tenant_id: string
+        }
+        Returns: Json
+      }
       pos_checkout: {
         Args: {
           p_acompte: number
@@ -2478,6 +2541,15 @@ export type Database = {
           p_tenant_id: string
           p_total: number
           p_user_name: string
+        }
+        Returns: Json
+      }
+      receive_purchase_order: {
+        Args: {
+          p_caller_id: string
+          p_lines: Json
+          p_po_id: string
+          p_tenant_id: string
         }
         Returns: Json
       }
