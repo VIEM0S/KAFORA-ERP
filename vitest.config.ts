@@ -17,6 +17,11 @@ export default defineConfig({
     // '.worktree-*' couvre aussi les worktrees crees ad hoc a la racine du
     // repo (ex. .worktree-netlify-preview), pas seulement ceux d'agents sous
     // .claude/worktrees/ — meme categorie de bug, revu une seconde fois.
-    exclude: ['**/node_modules/**', '**/.next/**', '**/.claude/worktrees/**', '**/.worktree-*/**'],
+    //
+    // __tests__/rls/** exclu ici : ces tests parlent a un vrai Postgres
+    // local (supabase start, port 54322) et echoueraient au demarrage sans
+    // lui — ils ont leur propre config (vitest.config.rls.ts) et leur
+    // propre script (`npm run test:rls`), a lancer separement.
+    exclude: ['**/node_modules/**', '**/.next/**', '**/.claude/worktrees/**', '**/.worktree-*/**', '**/__tests__/rls/**'],
   },
 });
