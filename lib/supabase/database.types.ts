@@ -1991,7 +1991,7 @@ export type Database = {
           is_active: boolean
           name: string
           notes: string | null
-          payment_terms: string | null
+          payment_terms: number | null
           phone: string | null
           tax_id: string | null
           tenant_id: string
@@ -2009,7 +2009,7 @@ export type Database = {
           is_active?: boolean
           name: string
           notes?: string | null
-          payment_terms?: string | null
+          payment_terms?: number | null
           phone?: string | null
           tax_id?: string | null
           tenant_id: string
@@ -2027,7 +2027,7 @@ export type Database = {
           is_active?: boolean
           name?: string
           notes?: string | null
-          payment_terms?: string | null
+          payment_terms?: number | null
           phone?: string | null
           tax_id?: string | null
           tenant_id?: string

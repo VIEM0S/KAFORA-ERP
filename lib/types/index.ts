@@ -98,8 +98,9 @@ export interface Transfer {
   id: string;
   tenantId: string;
   reference: string;
-  fromStoreId: string;
-  toStoreId: string;
+  // Nullables : le transfert reste consultable après suppression d'un magasin.
+  fromStoreId: string | null;
+  toStoreId: string | null;
   status: TransferStatus;
   lines: TransferLine[];
   note: string | null;
@@ -236,7 +237,9 @@ export interface Sale {
   reference: string;
   customerId: string | null;
   customer?: Customer;
-  storeIdFrom: string;
+  // Nullable : la vente reste consultable après suppression du magasin
+  // (garantie côté UI, voir supabase/migrations/..._019_deletable_entity_fk_fixes.sql).
+  storeIdFrom: string | null;
   storeFrom?: Store;
   cashierId: string;
   cashier?: User;
@@ -286,7 +289,8 @@ export interface Payment {
 export interface Credit {
   id: string;
   tenantId: string;
-  customerId: string;
+  // Nullable : le crédit reste consultable après suppression du client.
+  customerId: string | null;
   customer?: Customer;
   saleId: string | null;
   reference: string;
@@ -474,7 +478,7 @@ export interface PurchaseOrder {
   reference: string;
   supplierId: string;
   supplier?: Supplier;
-  storeId: string; // magasin/entrepôt de destination
+  storeId: string | null; // magasin/entrepôt de destination — nullable après suppression
   status: PurchaseOrderStatus;
   items: PurchaseOrderItem[];
   subtotal: number;
@@ -508,7 +512,7 @@ export interface SaleReturn {
   tenantId: string;
   saleId: string;
   saleReference: string;
-  storeId: string;
+  storeId: string | null;
   customerId: string | null;
   items: SaleReturnItem[];
   refundAmount: number;
