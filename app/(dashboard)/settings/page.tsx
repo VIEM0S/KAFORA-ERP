@@ -12,11 +12,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuthStore } from '@/hooks/store';
-import { doc, updateDoc, serverTimestamp, collection } from 'firebase/firestore';
-import { db } from '@/lib/firebase/client';
-import { auth } from '@/lib/firebase/client';
-import { onSnapshot } from '@/lib/firebase/watch';
-import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
 import { SUBSCRIPTION_PLANS, type PlanId } from '@/lib/constants';
 import { getSubscriptionState, daysUntilFullBlock } from '@/lib/subscription/status';
 
@@ -45,13 +44,13 @@ export default function SettingsPage() {
   const [company, setCompany] = useState({
     name: tenant?.name || '',
     email: tenant?.email || '',
-    phone: (tenant as unknown as Record<string, string>)?.phone || '',
-    address: (tenant as unknown as Record<string, string>)?.address || '',
-    city: (tenant as unknown as Record<string, string>)?.city || '',
-    country: (tenant as unknown as Record<string, string>)?.country || 'Mali',
-    rccm: (tenant as unknown as Record<string, string>)?.rccm || '',
-    nif: (tenant as unknown as Record<string, string>)?.nif || '',
-    currency: (tenant as unknown as Record<string, string>)?.currency || 'XOF',
+    phone: tenant?.phone || '',
+    address: tenant?.address || '',
+    city: tenant?.city || '',
+    country: tenant?.country || 'Mali',
+    rccm: tenant?.rccm || '',
+    nif: tenant?.nif || '',
+    currency: tenant?.currency || 'XOF',
   });
   const [savingCompany, setSavingCompany] = useState(false);
   const [companyMsg, setCompanyMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -81,32 +80,32 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!tenantId) return;
-    const unsub = onSnapshot(
-      collection(db, `tenants/${tenantId}/referrals`),
-      (snap) => {
-        const docs = snap.docs ?? [];
+    return watch(
+      'referrals',
+      () => supabase.from('referrals').select('status').eq('referrer_tenant_id', tenantId),
+      rows => {
         setReferralStats({
-          total: docs.length,
-          rewarded: docs.filter((d) => d.data().status === 'REWARDED').length,
+          total: rows.length,
+          rewarded: rows.filter(r => r.status === 'REWARDED').length,
         });
-      }
+      },
+      undefined,
+      `referrer_tenant_id=eq.${tenantId}`
     );
-    return () => unsub();
   }, [tenantId]);
 
   useEffect(() => {
     if (tenant) {
-      const t = tenant as unknown as Record<string, string>;
       setCompany({
         name: tenant.name || '',
         email: tenant.email || '',
-        phone: t.phone || '',
-        address: t.address || '',
-        city: t.city || '',
-        country: t.country || 'Mali',
-        rccm: t.rccm || '',
-        nif: t.nif || '',
-        currency: t.currency || 'XOF',
+        phone: tenant.phone || '',
+        address: tenant.address || '',
+        city: tenant.city || '',
+        country: tenant.country || 'Mali',
+        rccm: tenant.rccm || '',
+        nif: tenant.nif || '',
+        currency: tenant.currency || 'XOF',
       });
     }
     if (user) {
@@ -124,10 +123,12 @@ export default function SettingsPage() {
     if (!company.name.trim()) { setCompanyMsg({ type: 'error', text: 'Le nom est obligatoire' }); return; }
     setSavingCompany(true); setCompanyMsg(null);
     try {
-      await updateDoc(doc(db, 'tenants', tenantId), {
-        ...company,
-        updatedAt: serverTimestamp(),
-      });
+      const { error } = await supabase.from('tenants').update({
+        name: company.name, email: company.email, phone: company.phone,
+        address: company.address, city: company.city, country: company.country,
+        rccm: company.rccm, nif: company.nif, currency: company.currency,
+      }).eq('id', tenantId);
+      if (error) throw error;
       setTenant({ ...tenant!, ...company });
       setCompanyMsg({ type: 'success', text: 'Informations mises à jour' });
     } catch (e) {
@@ -145,15 +146,16 @@ export default function SettingsPage() {
     if (!profile.firstName.trim()) { setProfileMsg({ type: 'error', text: 'Le prénom est obligatoire' }); return; }
     setSavingProfile(true); setProfileMsg(null);
     try {
-      await updateDoc(doc(db, `tenants/${tenantId}/users`, user.id), {
-        firstName: profile.firstName.trim(),
-        lastName: profile.lastName.trim(),
+      const { error } = await supabase.from('users').update({
+        first_name: profile.firstName.trim(),
+        last_name: profile.lastName.trim(),
         phone: profile.phone.trim() || null,
-        updatedAt: serverTimestamp(),
-      });
+      }).eq('id', user.id);
+      if (error) throw error;
       setProfileMsg({ type: 'success', text: 'Profil mis à jour' });
     } catch (e) {
       setProfileMsg({ type: 'error', text: 'Erreur lors de la sauvegarde' });
+      console.error(e);
     } finally {
       setSavingProfile(false);
       setTimeout(() => setProfileMsg(null), 3000);
@@ -167,20 +169,23 @@ export default function SettingsPage() {
     if (!pwForm.current) { setPwMsg({ type: 'error', text: 'Saisissez votre mot de passe actuel' }); return; }
     setSavingPw(true); setPwMsg(null);
     try {
-      const firebaseUser = auth.currentUser;
-      if (!firebaseUser || !firebaseUser.email) throw new Error('Non connecté');
-      const credential = EmailAuthProvider.credential(firebaseUser.email, pwForm.current);
-      await reauthenticateWithCredential(firebaseUser, credential);
-      await updatePassword(firebaseUser, pwForm.next);
+      const email = user?.email;
+      if (!email) throw new Error('Non connecté');
+      // Pas d'équivalent Supabase à reauthenticateWithCredential() : on
+      // vérifie le mot de passe actuel avec un signInWithPassword — s'il est
+      // faux, il échoue avant qu'updateUser() ne change quoi que ce soit.
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password: pwForm.current });
+      if (signInError) {
+        setPwMsg({ type: 'error', text: 'Mot de passe actuel incorrect' });
+        return;
+      }
+      const { error: updateError } = await supabase.auth.updateUser({ password: pwForm.next });
+      if (updateError) throw updateError;
       setPwForm({ current: '', next: '', confirm: '' });
       setPwMsg({ type: 'success', text: 'Mot de passe modifié avec succès' });
-    } catch (e: unknown) {
-      const code = (e as { code?: string }).code;
-      if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
-        setPwMsg({ type: 'error', text: 'Mot de passe actuel incorrect' });
-      } else {
-        setPwMsg({ type: 'error', text: 'Erreur lors du changement de mot de passe' });
-      }
+    } catch (e) {
+      console.error(e);
+      setPwMsg({ type: 'error', text: 'Erreur lors du changement de mot de passe' });
     } finally {
       setSavingPw(false);
       setTimeout(() => setPwMsg(null), 4000);
