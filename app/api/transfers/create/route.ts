@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/lib/firebase/admin';
-import { FieldValue } from 'firebase-admin/firestore';
-import { cookies } from 'next/headers';
+import { createServiceRoleClient } from '@/lib/supabase/server';
+import { getSessionClaims } from '@/lib/api/session';
 import { checkSubscriptionAllows } from '@/lib/api/subscription-guard';
 import { resolveTransferSettings } from '@/lib/transfers/rules';
 import type { TransferLine, UserRole } from '@/lib/types';
@@ -15,14 +14,11 @@ import type { TransferLine, UserRole } from '@/lib/types';
  */
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get('__session')?.value;
-    if (!sessionCookie) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
-
-    const decoded = await adminAuth.verifySessionCookie(sessionCookie, true);
-    const tenantId = decoded.tenantId as string;
-    const callerRole = decoded.role as UserRole;
-    const callerStoreIds = decoded.storeIds as string[] | null | undefined;
+    const session = await getSessionClaims();
+    if (!session) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    const tenantId = session.tenantId as string;
+    const callerRole = session.role as UserRole;
+    const callerStoreIds = session.storeIds;
 
     if (callerRole === 'CASHIER') {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
@@ -46,8 +42,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    // Quantités : entiers strictement positifs. Une quantité négative
-    // inverserait le sens du transfert au moment du mouvement de stock.
     for (const l of lines) {
       if (!l.productId || !Number.isInteger(l.quantity) || l.quantity <= 0) {
         return NextResponse.json({ error: 'Quantité invalide' }, { status: 400 });
@@ -55,10 +49,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Cloisonnement : on doit avoir accès à AU MOINS UN des deux magasins.
-    // Un responsable peut demander à recevoir du stock d'une boutique qu'il
-    // ne gère pas — c'est le principe même d'une demande — mais il ne peut
-    // pas orchestrer un transfert entre deux magasins qui ne le concernent
-    // pas. (storeIds absent ou null = direction, accès à tout.)
     if (Array.isArray(callerStoreIds)) {
       const involved = callerStoreIds.includes(fromStoreId) || callerStoreIds.includes(toStoreId);
       if (!involved) {
@@ -66,52 +56,49 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Les deux magasins doivent exister dans CE tenant : sans cette
-    // vérification, un identifiant forgé pointerait vers un autre client.
-    const [fromSnap, toSnap, tenantSnap] = await Promise.all([
-      adminDb.doc(`tenants/${tenantId}/stores/${fromStoreId}`).get(),
-      adminDb.doc(`tenants/${tenantId}/stores/${toStoreId}`).get(),
-      adminDb.doc(`tenants/${tenantId}`).get(),
+    const supabase = createServiceRoleClient();
+    const [{ data: fromStore }, { data: toStore }, { data: tenant }] = await Promise.all([
+      supabase.from('stores').select('id').eq('id', fromStoreId).eq('tenant_id', tenantId).maybeSingle(),
+      supabase.from('stores').select('id').eq('id', toStoreId).eq('tenant_id', tenantId).maybeSingle(),
+      supabase.from('tenants').select('transfer_settings').eq('id', tenantId).maybeSingle(),
     ]);
-    if (!fromSnap.exists || !toSnap.exists) {
+    if (!fromStore || !toStore) {
       return NextResponse.json({ error: 'Magasin inconnu' }, { status: 400 });
     }
 
-    const settings = resolveTransferSettings(tenantSnap.data()?.transferSettings);
-
-    // Sans circuit d'approbation, la demande naît déjà validée : elle n'attend
-    // plus que l'expédition. C'est ce qui rend la fonction utilisable par un
-    // commerce d'une seule personne sans étape administrative inutile.
+    const settings = resolveTransferSettings(tenant?.transfer_settings as Parameters<typeof resolveTransferSettings>[0]);
     const status = settings.requireApproval ? 'PENDING' : 'APPROVED';
+    const now = new Date().toISOString();
 
-    const ref = adminDb.collection(`tenants/${tenantId}/transfers`).doc();
-    const now = FieldValue.serverTimestamp();
+    const { data: transfer, error: insertError } = await supabase
+      .from('transfers')
+      .insert({
+        tenant_id: tenantId,
+        reference: `TR-${Date.now().toString(36).toUpperCase()}`,
+        from_store_id: fromStoreId,
+        to_store_id: toStoreId,
+        status,
+        note: note?.trim() || null,
+        requested_by: session.uid,
+        approved_by: settings.requireApproval ? null : session.uid,
+        approved_at: settings.requireApproval ? null : now,
+      })
+      .select('id')
+      .single();
+    if (insertError) throw insertError;
 
-    await ref.set({
-      tenantId,
-      reference: `TR-${Date.now().toString(36).toUpperCase()}`,
-      fromStoreId,
-      toStoreId,
-      status,
-      lines: lines.map(l => ({
-        productId: l.productId,
-        productName: l.productName || '',
-        productSku: l.productSku || '',
+    const { error: linesError } = await supabase.from('transfer_lines').insert(
+      lines.map((l) => ({
+        transfer_id: transfer.id,
+        product_id: l.productId,
+        product_name: l.productName || '',
+        product_sku: l.productSku || '',
         quantity: l.quantity,
-      })),
-      note: note?.trim() || null,
-      requestedBy: decoded.uid,
-      approvedBy: settings.requireApproval ? null : decoded.uid,
-      shippedBy: null,
-      receivedBy: null,
-      createdAt: now,
-      approvedAt: settings.requireApproval ? null : now,
-      shippedAt: null,
-      receivedAt: null,
-      rejectionReason: null,
-    });
+      }))
+    );
+    if (linesError) throw linesError;
 
-    return NextResponse.json({ success: true, id: ref.id, status });
+    return NextResponse.json({ success: true, id: transfer.id, status });
   } catch (error) {
     console.error('Transfer create error:', error);
     return NextResponse.json({ error: 'Erreur interne' }, { status: 500 });

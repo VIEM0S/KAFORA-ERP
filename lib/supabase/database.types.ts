@@ -123,7 +123,7 @@ export type Database = {
           id: string
           is_active: boolean
           name: string
-          store_id: string
+          store_id: string | null
           tenant_id: string
           updated_at: string
         }
@@ -132,7 +132,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           name: string
-          store_id: string
+          store_id?: string | null
           tenant_id: string
           updated_at?: string
         }
@@ -141,7 +141,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           name?: string
-          store_id?: string
+          store_id?: string | null
           tenant_id?: string
           updated_at?: string
         }
@@ -184,7 +184,7 @@ export type Database = {
           sales_count: number | null
           sales_total: number | null
           status: string
-          store_id: string
+          store_id: string | null
           tenant_id: string
           variance_reason: string | null
         }
@@ -209,7 +209,7 @@ export type Database = {
           sales_count?: number | null
           sales_total?: number | null
           status?: string
-          store_id: string
+          store_id?: string | null
           tenant_id: string
           variance_reason?: string | null
         }
@@ -234,7 +234,7 @@ export type Database = {
           sales_count?: number | null
           sales_total?: number | null
           status?: string
-          store_id?: string
+          store_id?: string | null
           tenant_id?: string
           variance_reason?: string | null
         }
@@ -379,8 +379,11 @@ export type Database = {
       }
       credits: {
         Row: {
+          cancellation_reason: string | null
           created_at: string
-          customer_id: string
+          customer_id: string | null
+          customer_name: string | null
+          customer_phone: string | null
           due_date: string | null
           id: string
           notes: string | null
@@ -396,8 +399,11 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          cancellation_reason?: string | null
           created_at?: string
-          customer_id: string
+          customer_id?: string | null
+          customer_name?: string | null
+          customer_phone?: string | null
           due_date?: string | null
           id?: string
           notes?: string | null
@@ -413,8 +419,11 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          cancellation_reason?: string | null
           created_at?: string
-          customer_id?: string
+          customer_id?: string | null
+          customer_name?: string | null
+          customer_phone?: string | null
           due_date?: string | null
           id?: string
           notes?: string | null
@@ -701,7 +710,7 @@ export type Database = {
           quantity: number
           reason: string | null
           sale_id: string | null
-          store_id: string
+          store_id: string | null
           tenant_id: string
           transfer_id: string | null
           type: Database["public"]["Enums"]["inventory_movement_type"]
@@ -718,7 +727,7 @@ export type Database = {
           quantity: number
           reason?: string | null
           sale_id?: string | null
-          store_id: string
+          store_id?: string | null
           tenant_id: string
           transfer_id?: string | null
           type: Database["public"]["Enums"]["inventory_movement_type"]
@@ -735,7 +744,7 @@ export type Database = {
           quantity?: number
           reason?: string | null
           sale_id?: string | null
-          store_id?: string
+          store_id?: string | null
           tenant_id?: string
           transfer_id?: string | null
           type?: Database["public"]["Enums"]["inventory_movement_type"]
@@ -1050,7 +1059,7 @@ export type Database = {
           received_at: string | null
           reference: string
           status: Database["public"]["Enums"]["purchase_order_status"]
-          store_id: string
+          store_id: string | null
           subtotal: number
           supplier_id: string | null
           tenant_id: string
@@ -1066,7 +1075,7 @@ export type Database = {
           received_at?: string | null
           reference: string
           status?: Database["public"]["Enums"]["purchase_order_status"]
-          store_id: string
+          store_id?: string | null
           subtotal?: number
           supplier_id?: string | null
           tenant_id: string
@@ -1082,7 +1091,7 @@ export type Database = {
           received_at?: string | null
           reference?: string
           status?: Database["public"]["Enums"]["purchase_order_status"]
-          store_id?: string
+          store_id?: string | null
           subtotal?: number
           supplier_id?: string | null
           tenant_id?: string
@@ -1328,7 +1337,7 @@ export type Database = {
           lines_without_cost: number
           margin: number
           sale_id: string
-          store_id: string
+          store_id: string | null
           tenant_id: string
         }
         Insert: {
@@ -1340,7 +1349,7 @@ export type Database = {
           lines_without_cost?: number
           margin?: number
           sale_id: string
-          store_id: string
+          store_id?: string | null
           tenant_id: string
         }
         Update: {
@@ -1352,7 +1361,7 @@ export type Database = {
           lines_without_cost?: number
           margin?: number
           sale_id?: string
-          store_id?: string
+          store_id?: string | null
           tenant_id?: string
         }
         Relationships: [
@@ -1538,7 +1547,9 @@ export type Database = {
       }
       sale_returns: {
         Row: {
+          cash_refund: number
           created_at: string
+          credit_reduction: number
           customer_id: string | null
           id: string
           processed_by: string | null
@@ -1549,11 +1560,13 @@ export type Database = {
           sale_id: string
           sale_reference: string
           status: Database["public"]["Enums"]["return_status"]
-          store_id: string
+          store_id: string | null
           tenant_id: string
         }
         Insert: {
+          cash_refund?: number
           created_at?: string
+          credit_reduction?: number
           customer_id?: string | null
           id?: string
           processed_by?: string | null
@@ -1564,11 +1577,13 @@ export type Database = {
           sale_id: string
           sale_reference: string
           status?: Database["public"]["Enums"]["return_status"]
-          store_id: string
+          store_id?: string | null
           tenant_id: string
         }
         Update: {
+          cash_refund?: number
           created_at?: string
+          credit_reduction?: number
           customer_id?: string | null
           id?: string
           processed_by?: string | null
@@ -1579,7 +1594,7 @@ export type Database = {
           sale_id?: string
           sale_reference?: string
           status?: Database["public"]["Enums"]["return_status"]
-          store_id?: string
+          store_id?: string | null
           tenant_id?: string
         }
         Relationships: [
@@ -1615,11 +1630,15 @@ export type Database = {
       }
       sales: {
         Row: {
+          cancellation_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
           cashier_id: string | null
           change_given: number
           created_at: string
           credit_conflict: boolean
           customer_id: string | null
+          customer_name: string | null
           discount_amount: number
           discount_reason: string | null
           id: string
@@ -1630,7 +1649,7 @@ export type Database = {
           reference: string
           status: Database["public"]["Enums"]["sale_status"]
           stock_conflict: boolean
-          store_id: string
+          store_id: string | null
           subtotal: number
           tax_amount: number
           tenant_id: string
@@ -1638,11 +1657,15 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
           cashier_id?: string | null
           change_given?: number
           created_at?: string
           credit_conflict?: boolean
           customer_id?: string | null
+          customer_name?: string | null
           discount_amount?: number
           discount_reason?: string | null
           id?: string
@@ -1653,7 +1676,7 @@ export type Database = {
           reference: string
           status?: Database["public"]["Enums"]["sale_status"]
           stock_conflict?: boolean
-          store_id: string
+          store_id?: string | null
           subtotal?: number
           tax_amount?: number
           tenant_id: string
@@ -1661,11 +1684,15 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
           cashier_id?: string | null
           change_given?: number
           created_at?: string
           credit_conflict?: boolean
           customer_id?: string | null
+          customer_name?: string | null
           discount_amount?: number
           discount_reason?: string | null
           id?: string
@@ -1676,7 +1703,7 @@ export type Database = {
           reference?: string
           status?: Database["public"]["Enums"]["sale_status"]
           stock_conflict?: boolean
-          store_id?: string
+          store_id?: string | null
           subtotal?: number
           tax_amount?: number
           tenant_id?: string
@@ -2153,7 +2180,7 @@ export type Database = {
           approved_at: string | null
           approved_by: string | null
           created_at: string
-          from_store_id: string
+          from_store_id: string | null
           id: string
           note: string | null
           received_at: string | null
@@ -2165,13 +2192,13 @@ export type Database = {
           shipped_by: string | null
           status: Database["public"]["Enums"]["transfer_status"]
           tenant_id: string
-          to_store_id: string
+          to_store_id: string | null
         }
         Insert: {
           approved_at?: string | null
           approved_by?: string | null
           created_at?: string
-          from_store_id: string
+          from_store_id?: string | null
           id?: string
           note?: string | null
           received_at?: string | null
@@ -2183,13 +2210,13 @@ export type Database = {
           shipped_by?: string | null
           status?: Database["public"]["Enums"]["transfer_status"]
           tenant_id: string
-          to_store_id: string
+          to_store_id?: string | null
         }
         Update: {
           approved_at?: string | null
           approved_by?: string | null
           created_at?: string
-          from_store_id?: string
+          from_store_id?: string | null
           id?: string
           note?: string | null
           received_at?: string | null
@@ -2201,7 +2228,7 @@ export type Database = {
           shipped_by?: string | null
           status?: Database["public"]["Enums"]["transfer_status"]
           tenant_id?: string
-          to_store_id?: string
+          to_store_id?: string | null
         }
         Relationships: [
           {
@@ -2384,11 +2411,42 @@ export type Database = {
       belongs_to_tenant: { Args: { tid: string }; Returns: boolean }
       can_access_store: { Args: { sid: string }; Returns: boolean }
       can_write: { Args: { tid: string }; Returns: boolean }
+      cancel_sale: {
+        Args: {
+          p_caller_id: string
+          p_motif: string
+          p_sale_id: string
+          p_tenant_id: string
+        }
+        Returns: Json
+      }
       check_rate_limit: {
         Args: {
           p_key: string
           p_max_attempts: number
           p_window_seconds: number
+        }
+        Returns: Json
+      }
+      create_sale_return: {
+        Args: {
+          p_caller_id: string
+          p_items: Json
+          p_processed_by_name: string
+          p_reason: string
+          p_refund_method: Database["public"]["Enums"]["refund_method"]
+          p_sale_id: string
+          p_tenant_id: string
+        }
+        Returns: Json
+      }
+      decide_transfer: {
+        Args: {
+          p_action: string
+          p_caller_id: string
+          p_reason: string
+          p_tenant_id: string
+          p_transfer_id: string
         }
         Returns: Json
       }
@@ -2423,6 +2481,14 @@ export type Database = {
         }
         Returns: Json
       }
+      receive_transfer: {
+        Args: {
+          p_caller_id: string
+          p_tenant_id: string
+          p_transfer_id: string
+        }
+        Returns: Json
+      }
       register_tenant: {
         Args: {
           p_limits: Json
@@ -2451,6 +2517,14 @@ export type Database = {
           p_tenant_slug: string
           p_terms_acceptance: Json
           p_trial_end: string
+        }
+        Returns: Json
+      }
+      ship_transfer: {
+        Args: {
+          p_caller_id: string
+          p_tenant_id: string
+          p_transfer_id: string
         }
         Returns: Json
       }
@@ -2492,6 +2566,7 @@ export type Database = {
         | "ADJUSTMENT"
         | "RETURN"
         | "INITIAL"
+        | "TRANSFER_CANCEL"
       notification_channel: "IN_APP" | "EMAIL" | "SMS" | "WHATSAPP" | "PUSH"
       payment_method:
         | "CASH"
@@ -2710,6 +2785,7 @@ export const Constants = {
         "ADJUSTMENT",
         "RETURN",
         "INITIAL",
+        "TRANSFER_CANCEL",
       ],
       notification_channel: ["IN_APP", "EMAIL", "SMS", "WHATSAPP", "PUSH"],
       payment_method: [

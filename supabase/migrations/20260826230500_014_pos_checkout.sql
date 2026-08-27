@@ -135,11 +135,11 @@ begin
 
   -- ── Vente ────────────────────────────────────────────────────────────────
   insert into sales (
-    id, tenant_id, reference, customer_id, store_id, cashier_id, status,
+    id, tenant_id, reference, customer_id, customer_name, store_id, cashier_id, status,
     subtotal, tax_amount, discount_amount, total, paid_amount, change_given,
     payment_method, offline_sync_id, stock_conflict, credit_conflict
   ) values (
-    v_sale_id, p_tenant_id, v_reference, p_customer_id, p_store_id, p_cashier_id, 'COMPLETED',
+    v_sale_id, p_tenant_id, v_reference, p_customer_id, p_customer_name, p_store_id, p_cashier_id, 'COMPLETED',
     p_subtotal, p_tax_total, p_discount_amount, p_total, p_amount_received, p_change,
     p_payment_method, p_offline_sync_id, coalesce(array_length(v_stock_conflicts, 1), 0) > 0, v_credit_conflict
   );
@@ -195,10 +195,10 @@ begin
   -- ── Crédit client (si vente à crédit) ───────────────────────────────────────
   if p_payment_method = 'CREDIT' and p_solde_credit > 0 and p_customer_id is not null then
     insert into credits (
-      tenant_id, customer_id, sale_id, reference, total_amount, paid_amount,
+      tenant_id, customer_id, customer_name, customer_phone, sale_id, reference, total_amount, paid_amount,
       remaining_amount, due_date, status
     ) values (
-      p_tenant_id, p_customer_id, v_sale_id, v_reference, p_total, p_acompte,
+      p_tenant_id, p_customer_id, p_customer_name, p_customer_phone, v_sale_id, v_reference, p_total, p_acompte,
       p_solde_credit, now() + interval '30 days', 'PENDING'
     ) returning id into v_credit_id;
 

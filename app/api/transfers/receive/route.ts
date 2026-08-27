@@ -1,28 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/lib/firebase/admin';
-import { FieldValue } from 'firebase-admin/firestore';
-import { cookies } from 'next/headers';
+import { createServiceRoleClient } from '@/lib/supabase/server';
+import { getSessionClaims } from '@/lib/api/session';
 import { checkSubscriptionAllows } from '@/lib/api/subscription-guard';
-import { resolveTransferSettings, canShip, canTransitionTo } from '@/lib/transfers/rules';
-import type { TransferLine, TransferStatus, UserRole } from '@/lib/types';
+import { resolveTransferSettings, canShip } from '@/lib/transfers/rules';
+import type { UserRole } from '@/lib/types';
 
 /**
- * Confirme la réception d'un transfert : le stock ENTRE au magasin destination.
- *
- * C'est la contrepartie de l'expédition. Tant que cette confirmation n'a pas
- * lieu, la marchandise reste « en transit » et n'est vendable nulle part —
- * ce qui est exactement le comportement voulu pour du stock sur la route.
+ * Confirme la réception d'un transfert : le stock ENTRE au magasin
+ * destination. Toute l'atomicité vit dans receive_transfer() en RPC.
  */
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get('__session')?.value;
-    if (!sessionCookie) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
-
-    const decoded = await adminAuth.verifySessionCookie(sessionCookie, true);
-    const tenantId = decoded.tenantId as string;
-    const callerRole = decoded.role as UserRole;
-    const callerStoreIds = decoded.storeIds as string[] | null | undefined;
+    const session = await getSessionClaims();
+    if (!session) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    const tenantId = session.tenantId as string;
+    const callerRole = session.role as UserRole;
+    const callerStoreIds = session.storeIds;
 
     const blocked = await checkSubscriptionAllows(tenantId, 'write');
     if (blocked) {
@@ -34,121 +27,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Transfert manquant' }, { status: 400 });
     }
 
-    const tenantSnap = await adminDb.doc(`tenants/${tenantId}`).get();
-    const settings = resolveTransferSettings(tenantSnap.data()?.transferSettings);
+    const supabase = createServiceRoleClient();
+    const { data: tenant } = await supabase.from('tenants').select('transfer_settings').eq('id', tenantId).maybeSingle();
+    const settings = resolveTransferSettings(tenant?.transfer_settings as Parameters<typeof resolveTransferSettings>[0]);
     if (!canShip(callerRole, settings)) {
-      return NextResponse.json(
-        { error: 'Votre rôle ne permet pas de confirmer une réception' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Votre rôle ne permet pas de confirmer une réception' }, { status: 403 });
     }
-
-    const transferRef = adminDb.doc(`tenants/${tenantId}/transfers/${transferId}`);
-    const snapBefore = await transferRef.get();
-    if (!snapBefore.exists) {
-      return NextResponse.json({ error: 'Transfert introuvable' }, { status: 404 });
-    }
-    const before = snapBefore.data() as {
-      status: TransferStatus; toStoreId: string; lines: TransferLine[];
-    };
 
     // Confirmer une réception, c'est faire entrer du stock : il faut avoir
     // accès au magasin DESTINATION.
-    if (Array.isArray(callerStoreIds) && !callerStoreIds.includes(before.toStoreId)) {
-      return NextResponse.json(
-        { error: "Vous n'avez pas accès au magasin destination" },
-        { status: 403 }
-      );
+    const { data: transfer } = await supabase.from('transfers').select('to_store_id').eq('id', transferId).eq('tenant_id', tenantId).maybeSingle();
+    if (!transfer) return NextResponse.json({ error: 'Transfert introuvable' }, { status: 404 });
+    if (Array.isArray(callerStoreIds) && !(transfer.to_store_id && callerStoreIds.includes(transfer.to_store_id))) {
+      return NextResponse.json({ error: "Vous n'avez pas accès au magasin destination" }, { status: 403 });
     }
 
-    // Requêtes hors transaction (Firestore ne les autorise pas dedans).
-    // Un produit peut n'avoir aucune ligne d'inventaire dans le magasin
-    // destination : c'est le cas normal d'un article qu'il ne vendait pas
-    // encore. On créera alors la ligne.
-    const found = await Promise.all(
-      before.lines.map(l =>
-        adminDb
-          .collection(`tenants/${tenantId}/inventory`)
-          .where('productId', '==', l.productId)
-          .where('storeId', '==', before.toStoreId)
-          .limit(1)
-          .get()
-      )
-    );
-
-    const result = await adminDb.runTransaction(async tx => {
-      // Relu dans la transaction : empêche une double réception (donc un
-      // stock crédité deux fois) si l'on clique deux fois ou si deux
-      // personnes confirment en même temps.
-      const snap = await tx.get(transferRef);
-      const t = snap.data() as { status: TransferStatus; toStoreId: string; lines: TransferLine[] };
-      if (!canTransitionTo(t.status, 'RECEIVED')) {
-        return { error: `Ce transfert ne peut pas être reçu (${t.status})`, status: 409 };
-      }
-
-      const existing = await Promise.all(
-        found.map((f, i) => (f.empty ? null : tx.get(f.docs[0].ref)))
-      );
-
-      t.lines.forEach((line, i) => {
-        if (found[i].empty) {
-          // Première entrée de ce produit dans ce magasin.
-          const newRef = adminDb.collection(`tenants/${tenantId}/inventory`).doc();
-          tx.set(newRef, {
-            tenantId,
-            productId: line.productId,
-            storeId: t.toStoreId,
-            quantity: line.quantity,
-            minQuantity: 0,
-          });
-          tx.set(adminDb.collection(`tenants/${tenantId}/inventory_movements`).doc(), {
-            tenantId,
-            productId: line.productId,
-            productName: line.productName,
-            storeId: t.toStoreId,
-            type: 'TRANSFER_IN',
-            quantity: line.quantity,
-            previousQuantity: 0,
-            newQuantity: line.quantity,
-            transferId,
-            reason: "Réception d'un transfert",
-            createdAt: FieldValue.serverTimestamp(),
-          });
-          return;
-        }
-
-        const prev = (existing[i]?.data()?.quantity as number) || 0;
-        tx.update(found[i].docs[0].ref, { quantity: prev + line.quantity });
-        tx.set(adminDb.collection(`tenants/${tenantId}/inventory_movements`).doc(), {
-          tenantId,
-          productId: line.productId,
-          productName: line.productName,
-          storeId: t.toStoreId,
-          type: 'TRANSFER_IN',
-          quantity: line.quantity,
-          previousQuantity: prev,
-          newQuantity: prev + line.quantity,
-          transferId,
-          reason: "Réception d'un transfert",
-          createdAt: FieldValue.serverTimestamp(),
-        });
-      });
-
-      tx.update(transferRef, {
-        status: 'RECEIVED',
-        receivedBy: decoded.uid,
-        receivedAt: FieldValue.serverTimestamp(),
-      });
-
-      return { success: true };
+    const { error: rpcError } = await supabase.rpc('receive_transfer', {
+      p_tenant_id: tenantId, p_transfer_id: transferId, p_caller_id: session.uid,
     });
+    if (rpcError) throw rpcError;
 
-    if ('error' in result) {
-      return NextResponse.json({ error: result.error }, { status: result.status });
-    }
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Transfer receive error:', error);
-    return NextResponse.json({ error: 'Erreur interne' }, { status: 500 });
+    const msg = error instanceof Error ? error.message : 'Erreur interne';
+    const isKnownBusinessError = msg.includes('INVALID_STATUS');
+    const isNotFound = msg.includes('NOT_FOUND');
+    const cleanMsg = msg.replace(/^.*(INVALID_STATUS|NOT_FOUND):\s*/, '');
+    return NextResponse.json(
+      { error: (isKnownBusinessError || isNotFound) ? cleanMsg : 'Erreur interne' },
+      { status: isNotFound ? 404 : isKnownBusinessError ? 409 : 500 }
+    );
   }
 }
