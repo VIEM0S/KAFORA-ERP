@@ -117,9 +117,13 @@ export function mapSale(r: Row<'sales'>, items: SaleItem[] = [], payments: Payme
     customerName: r.customer_name,
     storeIdFrom: r.store_id, cashierId: r.cashier_id ?? '', status: r.status,
     subtotal: r.subtotal, taxAmount: r.tax_amount, discountAmount: r.discount_amount,
-    discountReason: r.discount_reason, total: r.total, paidAmount: r.paid_amount,
+    discountPercent: r.discount_percent,
+    discountReason: r.discount_reason, itemCount: r.item_count, total: r.total, paidAmount: r.paid_amount,
     changeGiven: r.change_given, paymentMethod: r.payment_method, notes: r.notes,
-    items, payments, createdAt: toDate(r.created_at), updatedAt: toDate(r.updated_at),
+    items, payments,
+    cancellationReason: r.cancellation_reason, cancelledBy: r.cancelled_by,
+    cancelledAt: toDateOrNull(r.cancelled_at),
+    createdAt: toDate(r.created_at), updatedAt: toDate(r.updated_at),
   };
 }
 

@@ -1672,8 +1672,10 @@ export type Database = {
           customer_id: string | null
           customer_name: string | null
           discount_amount: number
+          discount_percent: number | null
           discount_reason: string | null
           id: string
+          item_count: number | null
           notes: string | null
           offline_sync_id: string | null
           paid_amount: number
@@ -1699,8 +1701,10 @@ export type Database = {
           customer_id?: string | null
           customer_name?: string | null
           discount_amount?: number
+          discount_percent?: number | null
           discount_reason?: string | null
           id?: string
+          item_count?: number | null
           notes?: string | null
           offline_sync_id?: string | null
           paid_amount?: number
@@ -1726,8 +1730,10 @@ export type Database = {
           customer_id?: string | null
           customer_name?: string | null
           discount_amount?: number
+          discount_percent?: number | null
           discount_reason?: string | null
           id?: string
+          item_count?: number | null
           notes?: string | null
           offline_sync_id?: string | null
           paid_amount?: number

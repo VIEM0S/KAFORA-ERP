@@ -270,7 +270,11 @@ export interface Sale {
   subtotal: number;
   taxAmount: number;
   discountAmount: number;
+  // Le % appliqué au panier entier — discountAmount seul ne permet pas de
+  // le retrouver après coup (ex. "Remise (10%)" affichée sur la facture).
+  discountPercent: number | null;
   discountReason: string | null;
+  itemCount: number | null;
   total: number;
   paidAmount: number;
   changeGiven: number;
@@ -278,6 +282,9 @@ export interface Sale {
   notes: string | null;
   items: SaleItem[];
   payments: Payment[];
+  cancellationReason: string | null;
+  cancelledBy: string | null;
+  cancelledAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
