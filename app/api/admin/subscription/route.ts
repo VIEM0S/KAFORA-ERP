@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/lib/firebase/admin';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import { cookies } from 'next/headers';
+import { createServiceRoleClient } from '@/lib/supabase/server';
+import { getSessionClaims } from '@/lib/api/session';
 import { SUBSCRIPTION_PLANS, PlanId, REFERRAL_REFERRER_BONUS_DAYS } from '@/lib/constants';
 
 /**
@@ -11,20 +10,16 @@ import { SUBSCRIPTION_PLANS, PlanId, REFERRAL_REFERRER_BONUS_DAYS } from '@/lib/
  * Mobile Money, Orange Money, Wave, virement ou espèces — constater le
  * paiement et saisir la période couverte est plus simple et plus fiable
  * qu'une intégration de paiement automatisée, tant que le nombre de clients
- * reste modeste. L'automatisation viendra quand le manuel deviendra pénible.
+ * reste modeste.
  *
- * Chaque opération est historisée dans `subscription_payments` : sans cette
- * trace, impossible de savoir plus tard qui a payé quoi, ni de justifier une
- * prolongation accordée.
+ * Toute l'atomicité (extension + récompense de parrainage) vit dans
+ * admin_extend_subscription() en RPC — voir supabase/migrations.
  */
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get('__session')?.value;
-    if (!sessionCookie) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
-
-    const decoded = await adminAuth.verifySessionCookie(sessionCookie, true);
-    if (decoded.role !== 'SUPER_ADMIN') {
+    const session = await getSessionClaims();
+    if (!session) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    if (session.role !== 'SUPER_ADMIN') {
       return NextResponse.json({ error: 'Introuvable' }, { status: 404 });
     }
 
@@ -34,18 +29,14 @@ export async function POST(request: NextRequest) {
     };
 
     if (!tenantId || !Number.isInteger(months) || (months as number) < 1 || (months as number) > 24) {
-      return NextResponse.json(
-        { error: 'Durée invalide (1 à 24 mois)' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Durée invalide (1 à 24 mois)' }, { status: 400 });
     }
     if (plan && !SUBSCRIPTION_PLANS[plan]) {
       return NextResponse.json({ error: 'Forfait inconnu' }, { status: 400 });
     }
     // Montant OBLIGATOIRE : le tableau de bord affiche des revenus, et un
     // paiement sans montant les fausserait silencieusement. Un règlement
-    // gracieux se saisit avec un montant de 0 et un motif en note — c'est
-    // explicite, et ça reste comptabilisable.
+    // gracieux se saisit avec un montant de 0 et un motif en note.
     if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0) {
       return NextResponse.json(
         { error: 'Indiquez le montant reçu (0 pour une prolongation gracieuse)' },
@@ -53,108 +44,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const subRef = adminDb.doc(`tenants/${tenantId}/subscriptions/${tenantId}`);
-    const subSnap = await subRef.get();
-    if (!subSnap.exists) {
-      return NextResponse.json({ error: 'Abonnement introuvable' }, { status: 404 });
-    }
-    const sub = subSnap.data() as { currentPeriodEnd?: string; plan?: PlanId };
+    const limitsByPlan = Object.fromEntries(
+      Object.entries(SUBSCRIPTION_PLANS).map(([id, p]) => [id, p.features])
+    );
 
-    // Point de départ : la fin de période en cours si elle est future, sinon
-    // aujourd'hui. Sans cette règle, payer en avance FERAIT PERDRE du temps
-    // au client (on repartirait de la date du jour), et payer en retard lui
-    // en offrirait indûment.
-    const now = new Date();
-    const currentEnd = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : null;
-    const base = currentEnd && currentEnd > now ? currentEnd : now;
-
-    const newEnd = new Date(base);
-    newEnd.setMonth(newEnd.getMonth() + (months as number));
-
-    const finalPlan = plan || sub.plan || 'STARTER';
-    // Le document d'abonnement stocke les quotas sous la clé `limits`, mais
-    // la constante les expose sous `features` (cf. app/api/auth/register).
-    const limits = SUBSCRIPTION_PLANS[finalPlan as PlanId]?.features ?? null;
-
-    const batch = adminDb.batch();
-
-    batch.update(subRef, {
-      plan: finalPlan,
-      status: 'ACTIVE',
-      currentPeriodStart: base.toISOString(),
-      currentPeriodEnd: newEnd.toISOString(),
-      // Horodatage lu par firestore.rules pour autoriser à nouveau les
-      // écritures : sans lui, le compte resterait en lecture seule malgré
-      // le paiement enregistré.
-      writeBlockedAt: Timestamp.fromDate(newEnd),
-      ...(limits ? { limits } : {}),
-      updatedAt: now.toISOString(),
+    const supabase = createServiceRoleClient();
+    const { data: result, error: rpcError } = await supabase.rpc('admin_extend_subscription', {
+      p_tenant_id: tenantId,
+      p_months: months as number,
+      p_plan: (plan || null) as PlanId,
+      p_amount: amount,
+      p_method: (method?.trim() || null) as string,
+      p_note: (note?.trim() || null) as string,
+      p_performed_by: session.uid,
+      p_referrer_bonus_days: REFERRAL_REFERRER_BONUS_DAYS,
+      p_limits_by_plan: limitsByPlan,
     });
+    if (rpcError) throw rpcError;
 
-    batch.set(adminDb.collection(`tenants/${tenantId}/subscription_payments`).doc(), {
-      tenantId,
-      months,
-      plan: finalPlan,
-      amount,
-      method: method?.trim() || null,
-      note: note?.trim() || null,
-      periodStart: base.toISOString(),
-      periodEnd: newEnd.toISOString(),
-      recordedBy: decoded.uid,
-      createdAt: FieldValue.serverTimestamp(),
-    });
-
-    // Récompense de parrainage : uniquement sur un paiement réel (amount > 0),
-    // jamais sur une prolongation gracieuse — sinon un compte fictif suffirait
-    // à déclencher la récompense sans le moindre revenu. Le statut PENDING du
-    // document de parrainage garantit qu'elle n'est accordée qu'une seule fois.
-    if (amount > 0) {
-      const tenantSnap = await adminDb.doc(`tenants/${tenantId}`).get();
-      const referrerTenantId = tenantSnap.data()?.referredByTenantId as string | undefined;
-
-      if (referrerTenantId) {
-        const referralQuery = await adminDb
-          .collection(`tenants/${referrerTenantId}/referrals`)
-          .where('referredTenantId', '==', tenantId)
-          .where('status', '==', 'PENDING')
-          .limit(1)
-          .get();
-
-        if (!referralQuery.empty) {
-          const referrerSubRef = adminDb.doc(`tenants/${referrerTenantId}/subscriptions/${referrerTenantId}`);
-          const referrerSubSnap = await referrerSubRef.get();
-
-          if (referrerSubSnap.exists) {
-            const referrerSub = referrerSubSnap.data() as { currentPeriodEnd?: string };
-            const referrerCurrentEnd = referrerSub.currentPeriodEnd ? new Date(referrerSub.currentPeriodEnd) : null;
-            const referrerBase = referrerCurrentEnd && referrerCurrentEnd > now ? referrerCurrentEnd : now;
-            const referrerNewEnd = new Date(
-              referrerBase.getTime() + REFERRAL_REFERRER_BONUS_DAYS * 24 * 60 * 60 * 1000
-            );
-
-            batch.update(referrerSubRef, {
-              currentPeriodEnd: referrerNewEnd.toISOString(),
-              writeBlockedAt: Timestamp.fromDate(referrerNewEnd),
-              updatedAt: now.toISOString(),
-            });
-            batch.update(referralQuery.docs[0].ref, {
-              status: 'REWARDED',
-              rewardedAt: FieldValue.serverTimestamp(),
-            });
-          }
-        }
-      }
-    }
-
-    await batch.commit();
-
-    return NextResponse.json({
-      success: true,
-      plan: finalPlan,
-      currentPeriodEnd: newEnd.toISOString(),
-    });
+    return NextResponse.json({ success: true, ...(result as object) });
   } catch (error) {
     console.error('Admin subscription error:', error);
-    return NextResponse.json({ error: 'Erreur interne' }, { status: 500 });
+    const msg = error instanceof Error ? error.message : 'Erreur interne';
+    const isNotFound = msg.includes('NOT_FOUND');
+    return NextResponse.json(
+      { error: isNotFound ? msg.replace(/^.*NOT_FOUND:\s*/, '') : 'Erreur interne' },
+      { status: isNotFound ? 404 : 500 }
+    );
   }
 }

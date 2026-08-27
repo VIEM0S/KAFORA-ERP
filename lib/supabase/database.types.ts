@@ -2100,6 +2100,8 @@ export type Database = {
           referral_code: string | null
           referred_by_tenant_id: string | null
           slug: string
+          suspended_at: string | null
+          suspension_reason: string | null
           terms_acceptance: Json | null
           timezone: string
           transfer_settings: Json | null
@@ -2122,6 +2124,8 @@ export type Database = {
           referral_code?: string | null
           referred_by_tenant_id?: string | null
           slug: string
+          suspended_at?: string | null
+          suspension_reason?: string | null
           terms_acceptance?: Json | null
           timezone?: string
           transfer_settings?: Json | null
@@ -2144,6 +2148,8 @@ export type Database = {
           referral_code?: string | null
           referred_by_tenant_id?: string | null
           slug?: string
+          suspended_at?: string | null
+          suspension_reason?: string | null
           terms_acceptance?: Json | null
           timezone?: string
           transfer_settings?: Json | null
@@ -2431,6 +2437,20 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_extend_subscription: {
+        Args: {
+          p_amount: number
+          p_limits_by_plan: Json
+          p_method: string
+          p_months: number
+          p_note: string
+          p_performed_by: string
+          p_plan: Database["public"]["Enums"]["subscription_plan"]
+          p_referrer_bonus_days: number
+          p_tenant_id: string
+        }
+        Returns: Json
+      }
       auth_role: { Args: never; Returns: string }
       auth_store_ids: { Args: never; Returns: string[] }
       auth_tenant_id: { Args: never; Returns: string }
@@ -2589,6 +2609,15 @@ export type Database = {
           p_tenant_slug: string
           p_terms_acceptance: Json
           p_trial_end: string
+        }
+        Returns: Json
+      }
+      set_tenant_status: {
+        Args: {
+          p_is_active: boolean
+          p_performed_by: string
+          p_reason: string
+          p_tenant_id: string
         }
         Returns: Json
       }

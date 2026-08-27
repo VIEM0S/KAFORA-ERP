@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/lib/firebase/admin';
-import { cookies } from 'next/headers';
+import { createServiceRoleClient } from '@/lib/supabase/server';
+import { getSessionClaims } from '@/lib/api/session';
 import { getSubscriptionState, daysUntilFullBlock } from '@/lib/subscription/status';
 import { SUBSCRIPTION_PLANS } from '@/lib/constants';
 
@@ -20,73 +20,73 @@ const PLAN_PRICES: Record<string, number> = Object.fromEntries(
  */
 export async function GET(_request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get('__session')?.value;
-    if (!sessionCookie) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
-
-    const decoded = await adminAuth.verifySessionCookie(sessionCookie, true);
-    if (decoded.role !== 'SUPER_ADMIN') {
+    const session = await getSessionClaims();
+    if (!session) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    if (session.role !== 'SUPER_ADMIN') {
       // Volontairement identique à une route inexistante : inutile de
       // signaler à un curieux qu'une console éditeur existe.
       return NextResponse.json({ error: 'Introuvable' }, { status: 404 });
     }
 
-    const tenantsSnap = await adminDb.collection('tenants').get();
+    const supabase = createServiceRoleClient();
+
+    const { data: tenants, error: tenantsError } = await supabase
+      .from('tenants')
+      .select('id, name, is_active, suspension_reason, terms_acceptance, email, phone, city, created_at');
+    if (tenantsError) throw tenantsError;
+
+    const tenantIds = (tenants ?? []).map(t => t.id);
+    const { data: subs, error: subsError } = await supabase
+      .from('subscriptions')
+      .select('tenant_id, plan, status, trial_ends_at, current_period_end')
+      .in('tenant_id', tenantIds.length > 0 ? tenantIds : ['00000000-0000-0000-0000-000000000000']);
+    if (subsError) throw subsError;
+    const subByTenant = new Map((subs ?? []).map(s => [s.tenant_id, s]));
 
     const rows = await Promise.all(
-      tenantsSnap.docs.map(async doc => {
-        const t = doc.data();
-
-        // Abonnement : document à identifiant déterministe (= tenantId).
-        const subSnap = await adminDb.doc(`tenants/${doc.id}/subscriptions/${doc.id}`).get();
-        const sub = subSnap.exists ? subSnap.data() : null;
+      (tenants ?? []).map(async t => {
+        const sub = subByTenant.get(t.id) ?? null;
 
         // Comptages par agrégation : bien moins coûteux que de lire les
-        // documents, ce qui compte quand la liste s'allonge.
+        // lignes elles-mêmes, ce qui compte quand la liste s'allonge.
         const [users, stores, sales] = await Promise.all([
-          adminDb.collection(`tenants/${doc.id}/users`).count().get().catch(() => null),
-          adminDb.collection(`tenants/${doc.id}/stores`).count().get().catch(() => null),
-          adminDb.collection(`tenants/${doc.id}/sales`).count().get().catch(() => null),
+          supabase.from('users').select('*', { count: 'exact', head: true }).eq('tenant_id', t.id),
+          supabase.from('stores').select('*', { count: 'exact', head: true }).eq('tenant_id', t.id),
+          supabase.from('sales').select('*', { count: 'exact', head: true }).eq('tenant_id', t.id),
         ]);
 
         // Dernière vente : sert d'indicateur d'activité réelle. Un client qui
         // n'encaisse plus depuis trois semaines est un client qui part —
         // c'est l'information la plus utile pour décider qui rappeler.
-        const lastSaleSnap = await adminDb
-          .collection(`tenants/${doc.id}/sales`)
-          .orderBy('createdAt', 'desc')
+        const { data: lastSale } = await supabase
+          .from('sales')
+          .select('created_at')
+          .eq('tenant_id', t.id)
+          .order('created_at', { ascending: false })
           .limit(1)
-          .get()
-          .catch(() => null);
-
-        const lastSaleAt =
-          lastSaleSnap && !lastSaleSnap.empty
-            ? lastSaleSnap.docs[0].data().createdAt?.toDate?.()?.toISOString() ?? null
-            : null;
+          .maybeSingle();
 
         return {
-          id: doc.id,
+          id: t.id,
           name: t.name || '(sans nom)',
-          isActive: t.isActive !== false,
-          suspensionReason: t.suspensionReason || null,
+          isActive: t.is_active !== false,
+          suspensionReason: t.suspension_reason || null,
           // Preuve d'acceptation des conditions : inutile de l'enregistrer
           // si on ne peut pas la consulter le jour où elle sert.
-          termsAcceptance: t.termsAcceptance
-            ? { version: t.termsAcceptance.version, acceptedAt: t.termsAcceptance.acceptedAt }
-            : null,
+          termsAcceptance: t.terms_acceptance ?? null,
           email: t.email || null,
           phone: t.phone || null,
           city: t.city || null,
-          createdAt: t.createdAt ?? null,
+          createdAt: t.created_at ?? null,
           plan: sub?.plan ?? null,
           status: sub?.status ?? null,
           state: getSubscriptionState(sub),
           daysLeft: daysUntilFullBlock(sub),
-          currentPeriodEnd: sub?.currentPeriodEnd ?? null,
-          userCount: users?.data().count ?? null,
-          storeCount: stores?.data().count ?? null,
-          saleCount: sales?.data().count ?? null,
-          lastSaleAt,
+          currentPeriodEnd: sub?.current_period_end ?? null,
+          userCount: users.count ?? null,
+          storeCount: stores.count ?? null,
+          saleCount: sales.count ?? null,
+          lastSaleAt: lastSale?.created_at ?? null,
         };
       })
     );
@@ -96,8 +96,8 @@ export async function GET(_request: NextRequest) {
     rows.sort((a, b) => (a.daysLeft ?? 9999) - (b.daysLeft ?? 9999));
 
     // ─── Agrégats plateforme ─────────────────────────────────────────────────
-    // Calculés à partir des lignes déjà chargées : aucune lecture
-    // supplémentaire, donc aucun coût Firestore ajouté.
+    // Calculés à partir des lignes déjà chargées : aucune requête
+    // supplémentaire.
     const paidStates = rows.filter(r => r.status === 'ACTIVE');
     const stats = {
       tenantCount: rows.length,
