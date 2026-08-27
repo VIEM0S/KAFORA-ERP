@@ -5,12 +5,10 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils/helpers';
 import { useAuthStore, useUIStore } from '@/hooks/store';
-import { collection, query, where } from 'firebase/firestore';
-// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
-// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
-import { onSnapshot } from '@/lib/firebase/watch';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
 import { isManagerPlus as isManagerPlusRole, isOwnerOrAdmin as isOwnerOrAdminRole } from '@/lib/auth/roles';
 import { estEnAlerte } from '@/lib/inventory/alert-threshold';
 
@@ -35,48 +33,51 @@ export function Header() {
     let realAlerts = 0;
     const update = () => setAlertCount(low + overdue + realAlerts);
 
-    const unsubC = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'credits')), where('status', '==', 'OVERDUE')),
-      snap => { overdue = snap.size; update(); }
+    const unsubC = watch(
+      'credits',
+      () => supabase.from('credits').select('id').eq('tenant_id', tenantId).eq('status', 'OVERDUE'),
+      rows => { overdue = rows.length; update(); },
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
     // Sans magasin sélectionné (juste après connexion, le temps que
     // currentStore se résolve), on ne pose pas cette écoute : interroger
-    // storeId == '' déclenchait un refus Firestore transitoire à chaque
+    // store_id == '' déclenchait un refus RLS transitoire à chaque
     // chargement de page — voir même garde dans sidebar-nav.tsx.
     const unsubI = storeId
-      ? onSnapshot(
-          query(collection(db, tenantCol(tenantId, 'inventory')), where('storeId', '==', storeId)),
-          async snap => {
-          const { getDocs } = await import('firebase/firestore');
-          const prodSnap = await getDocs(collection(db, tenantCol(tenantId, 'products')));
-          const thresh: Record<string, number> = {};
-          prodSnap.docs.forEach(d => { thresh[d.id] = d.data().alertThreshold ?? 10; });
-          low = snap.docs.filter(d => {
-            const data = d.data();
-            // Seuil du magasin s'il existe, sinon celui du produit.
-            return data.storeId === storeId && estEnAlerte(data.quantity || 0, {
-              seuilMagasin: data.minQuantity,
-              seuilProduit: thresh[data.productId],
-            });
-          }).length;
-          update();
-        })
+      ? watch(
+          'inventory',
+          () => supabase.from('inventory').select('product_id, quantity, min_quantity').eq('tenant_id', tenantId).eq('store_id', storeId),
+          async rows => {
+            const { data: prodRows } = await supabase.from('products').select('id, alert_threshold').eq('tenant_id', tenantId);
+            const thresh: Record<string, number> = {};
+            (prodRows ?? []).forEach(p => { thresh[p.id] = p.alert_threshold ?? 10; });
+            low = rows.filter(r =>
+              // Seuil du magasin s'il existe, sinon celui du produit.
+              estEnAlerte(r.quantity || 0, { seuilMagasin: r.min_quantity ?? undefined, seuilProduit: thresh[r.product_id] })
+            ).length;
+            update();
+          },
+          undefined,
+          `tenant_id=eq.${tenantId}`
+        )
       : undefined;
-    const unsubA = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'alerts')), where('isResolved', '==', false)),
-      snap => {
+    const unsubA = watch(
+      'alerts',
+      () => supabase.from('alerts').select('is_read, target_user_id, target_role').eq('tenant_id', tenantId).eq('is_resolved', false),
+      rows => {
         const userRole = user?.role;
         const userId = user?.id;
-        realAlerts = snap.docs.filter(d => {
-          const data = d.data();
-          if (data.isRead) return false;
-          if (data.targetUserId) return data.targetUserId === userId;
-          if (data.targetRole) return data.targetRole === userRole;
+        realAlerts = rows.filter(r => {
+          if (r.is_read) return false;
+          if (r.target_user_id) return r.target_user_id === userId;
+          if (r.target_role) return r.target_role === userRole;
           return isManagerPlusRole(userRole);
         }).length;
         update();
       },
-      () => { /* index manquant ou permission — ne bloque pas le reste du badge */ }
+      () => { /* refus RLS ou coupure — ne bloque pas le reste du badge */ },
+      `tenant_id=eq.${tenantId}`
     );
     return () => { unsubC(); unsubI?.(); unsubA(); };
   }, [tenant?.id, currentStore?.id, user?.role, user?.id]);
