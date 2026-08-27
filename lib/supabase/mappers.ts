@@ -241,11 +241,17 @@ export function mapSaleReturn(r: Row<'sale_returns'>, items: SaleReturnItem[] = 
 
 export function mapCashSession(r: Row<'cash_sessions'>): CashRegisterSession {
   return {
-    id: r.id, registerId: r.register_id ?? '', openedBy: r.opened_by ?? '',
-    openedAt: toDate(r.opened_at), closedAt: toDateOrNull(r.closed_at),
-    closedBy: r.closed_by, openingBalance: r.opening_balance,
-    expectedBalance: r.expected_balance ?? 0, actualBalance: r.closing_balance,
-    variance: r.difference, varianceReason: r.variance_reason,
+    id: r.id, tenantId: r.tenant_id, storeId: r.store_id, registerId: r.register_id,
+    status: r.status as CashRegisterSession['status'],
+    openedBy: r.opened_by, openedByName: r.opened_by_name, openedAt: toDate(r.opened_at),
+    openingBalance: r.opening_balance,
+    closedBy: r.closed_by, closedByName: r.closed_by_name, closedAt: toDateOrNull(r.closed_at),
+    closingBalance: r.closing_balance, expectedBalance: r.expected_balance,
+    cashSalesTotal: r.cash_sales_total, acompteTotal: r.acompte_total,
+    creditRepaymentTotal: r.credit_repayment_total, cashRefundTotal: r.cash_refund_total,
+    difference: r.difference, varianceReason: r.variance_reason,
+    salesCount: r.sales_count, salesTotal: r.sales_total, notes: r.notes,
+    createdAt: toDate(r.created_at),
   };
 }
 

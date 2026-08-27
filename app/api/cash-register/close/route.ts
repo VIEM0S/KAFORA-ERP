@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
+import { resolveCashRegisterId } from '@/lib/api/cash-register';
 
 /**
  * Clôture une caisse. Toute l'atomicité (relecture de la session ouverte,
@@ -14,8 +15,8 @@ export async function POST(request: NextRequest) {
     const session = await getSessionClaims();
     if (!session) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
 
-    const { tenantId, storeId, registerId, countedAmount, notes, closedByName } = await request.json();
-    if (!tenantId || !storeId || !registerId || countedAmount === undefined) {
+    const { tenantId, storeId, countedAmount, notes, closedByName } = await request.json();
+    if (!tenantId || !storeId || countedAmount === undefined) {
       return NextResponse.json({ error: 'Champs manquants' }, { status: 400 });
     }
     if (tenantId !== session.tenantId) {
@@ -29,6 +30,11 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createServiceRoleClient();
+    // L'app n'a jamais eu qu'une seule caisse par magasin — jamais un
+    // identifiant fourni par le client (voir lib/api/cash-register.ts).
+    // Si ce magasin n'a jamais eu de caisse ouverte, il n'y a de toute façon
+    // rien à clôturer : la RPC le signale elle-même via NO_OPEN_SESSION.
+    const registerId = await resolveCashRegisterId(supabase, tenantId, storeId);
     const { data: result, error: rpcError } = await supabase.rpc('close_cash_register', {
       p_tenant_id: tenantId,
       p_store_id: storeId,

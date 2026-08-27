@@ -500,19 +500,34 @@ export interface SalesTrendPoint {
   revenue: number;
 }
 
+export type CashSessionStatus = 'OPEN' | 'CLOSED';
+
 export interface CashRegisterSession {
   id: string;
-  registerId: string;
-  openedBy: string;
+  tenantId: string;
+  storeId: string | null;
+  registerId: string | null;
+  status: CashSessionStatus;
+  openedBy: string | null;
+  openedByName: string | null;
   openedByUser?: User;
   openedAt: Date;
-  closedAt: Date | null;
-  closedBy: string | null;
   openingBalance: number;
-  expectedBalance: number;
-  actualBalance: number | null;
-  variance: number | null;
+  closedBy: string | null;
+  closedByName: string | null;
+  closedAt: Date | null;
+  closingBalance: number | null;
+  expectedBalance: number | null;
+  cashSalesTotal: number | null;
+  acompteTotal: number | null;
+  creditRepaymentTotal: number | null;
+  cashRefundTotal: number | null;
+  difference: number | null;
   varianceReason: string | null;
+  salesCount: number | null;
+  salesTotal: number | null;
+  notes: string | null;
+  createdAt: Date;
 }
 
 export interface CartItem {

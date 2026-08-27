@@ -13,9 +13,10 @@ import { PaymentDialog } from '@/components/pos/payment-dialog';
 import { CustomerPickerDialog } from '@/components/pos/customer-picker-dialog';
 import { SuccessDialog } from '@/components/pos/success-dialog';
 import type { Product } from '@/lib/types';
-import { ref, onValue } from 'firebase/database';
-import { rtdb } from '@/lib/firebase/client';
-import { RTDB_PATHS } from '@/lib/firebase/rtdb';
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
 
 export default function POSPage() {
   const { tenant, currentStore, user } = useAuthStore();
@@ -46,11 +47,13 @@ export default function POSPage() {
 
   useEffect(() => {
     if (!tenantId || !storeId) return;
-    const path = RTDB_PATHS.cashRegister(tenantId, `register_${storeId}`);
-    return onValue(
-      ref(rtdb, path),
-      snap => setRegisterOpen(snap.exists() && snap.val()?.status === 'OPEN'),
-      () => setRegisterOpen(null)
+    return watch(
+      'cash_sessions',
+      () => supabase.from('cash_sessions').select('id').eq('tenant_id', tenantId).eq('store_id', storeId)
+        .eq('status', 'OPEN').limit(1),
+      rows => setRegisterOpen(rows.length > 0),
+      () => setRegisterOpen(null),
+      `tenant_id=eq.${tenantId}`
     );
   }, [tenantId, storeId]);
 

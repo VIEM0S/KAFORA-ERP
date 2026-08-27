@@ -1,21 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
+import { resolveCashRegisterId } from '@/lib/api/cash-register';
 
 /**
  * Ouvre une session de caisse. Remplace l'écriture directe côté client dans
  * Realtime Database (RTDB) — la ligne cash_sessions créée ici sert à la fois
- * d'état "live" (status OPEN, lu par les écrans en temps réel — voir la
- * Phase 6 du plan de migration pour l'abonnement Realtime côté client) et
- * d'archive historique une fois fermée par /api/cash-register/close.
+ * d'état "live" (status OPEN, lu par un abonnement Realtime Postgres côté
+ * client — voir lib/supabase/watch.ts) et d'archive historique une fois
+ * fermée par /api/cash-register/close.
  */
 export async function POST(request: NextRequest) {
   try {
     const session = await getSessionClaims();
     if (!session) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
 
-    const { tenantId, storeId, registerId, openingBalance, openedByName } = await request.json();
-    if (!tenantId || !storeId || !registerId) {
+    const { tenantId, storeId, openingBalance, openedByName } = await request.json();
+    if (!tenantId || !storeId) {
       return NextResponse.json({ error: 'Champs manquants' }, { status: 400 });
     }
     if (tenantId !== session.tenantId) {
@@ -26,6 +27,9 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createServiceRoleClient();
+    // L'app n'a jamais eu qu'une seule caisse par magasin — jamais un
+    // identifiant fourni par le client (voir lib/api/cash-register.ts).
+    const registerId = await resolveCashRegisterId(supabase, tenantId, storeId);
     const { data: result, error: rpcError } = await supabase.rpc('open_cash_register', {
       p_tenant_id: tenantId,
       p_store_id: storeId,
