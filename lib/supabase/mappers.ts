@@ -1,6 +1,6 @@
 import type { Database } from './database.types';
 import type {
-  Store, Category, Product, Inventory, Customer, Supplier,
+  Store, Category, Product, Inventory, InventoryMovement, Customer, Supplier,
   Sale, SaleItem, Payment, Credit, CreditPayment, Quote, QuoteItem,
   PurchaseOrder, PurchaseOrderItem, Transfer, TransferLine,
   Alert, Notification, SaleReturn, SaleReturnItem, CashRegisterSession,
@@ -61,6 +61,16 @@ export function mapInventory(r: Row<'inventory'>): Inventory {
     quantity: r.quantity, minQuantity: r.min_quantity ?? undefined,
     maxQuantity: r.max_quantity, reorderPoint: r.reorder_point,
     lastStockCheck: toDateOrNull(r.last_stock_check),
+  };
+}
+
+export function mapInventoryMovement(r: Row<'inventory_movements'>): InventoryMovement {
+  return {
+    id: r.id, tenantId: r.tenant_id, productId: r.product_id, productName: r.product_name,
+    storeId: r.store_id, type: r.type, quantity: r.quantity,
+    previousQuantity: r.previous_quantity, newQuantity: r.new_quantity,
+    saleId: r.sale_id, transferId: r.transfer_id, purchaseOrderId: r.purchase_order_id,
+    reason: r.reason, createdAt: toDate(r.created_at),
   };
 }
 

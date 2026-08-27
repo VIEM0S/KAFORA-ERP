@@ -9,38 +9,24 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatCurrency, formatDateTime } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
-import { collection, query, orderBy, limit, where } from 'firebase/firestore';
-// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
-// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
-import { onSnapshot } from '@/lib/firebase/watch';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
+import { mapInventoryMovement } from '@/lib/supabase/mappers';
+import type { InventoryMovement, InventoryMovementType } from '@/lib/types';
 
-interface Movement {
-  id: string;
-  productId: string;
-  productName?: string;
-  storeId: string;
-  type: 'IN' | 'OUT' | 'ADJUSTMENT' | 'SALE'
-      | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'TRANSFER_CANCEL'
-      | 'RETURN' | 'PURCHASE';
-  quantity: number;
-  previousQuantity: number;
-  newQuantity: number;
-  reason?: string;
-  saleId?: string;
-  createdAt: unknown;
-}
-
-// Tous les types de mouvement réellement écrits par l'application.
+// Tous les types de mouvement réellement écrits par l'application (enum
+// Postgres inventory_movement_type — IN/OUT n'existent pas, un ajustement
+// manuel, entrée comme sortie, s'enregistre sous ADJUSTMENT, voir
+// app/(dashboard)/inventory/page.tsx).
 //
-// Les types de transfert manquaient : ils retombaient sur « Ajustement » par
-// défaut, avec un signe erroné — une réception de 50 sacs s'affichait
-// « -50 » alors que le stock passait bien de 0 à 50. Un commerçant qui lit
-// son historique doit pouvoir distinguer une vente d'un transfert reçu.
-const TYPE_CONFIG = {
-  IN:              { label: 'Entrée',           color: 'bg-green-100 text-green-700',   icon: ArrowUpCircle,   sign: '+' },
-  OUT:             { label: 'Sortie',           color: 'bg-red-100 text-red-700',       icon: ArrowDownCircle, sign: '-' },
+// Les types de transfert manquaient à l'origine : ils retombaient sur
+// « Ajustement » par défaut, avec un signe erroné — une réception de 50 sacs
+// s'affichait « -50 » alors que le stock passait bien de 0 à 50. Un
+// commerçant qui lit son historique doit pouvoir distinguer une vente d'un
+// transfert reçu.
+const TYPE_CONFIG: Record<InventoryMovementType, { label: string; color: string; icon: typeof Settings; sign: '+' | '-' | '±' }> = {
   ADJUSTMENT:      { label: 'Ajustement',       color: 'bg-blue-100 text-blue-700',     icon: Settings,        sign: '±' },
   SALE:            { label: 'Vente',            color: 'bg-orange-100 text-orange-700', icon: ArrowDownCircle, sign: '-' },
   PURCHASE:        { label: 'Achat',            color: 'bg-green-100 text-green-700',   icon: ArrowUpCircle,   sign: '+' },
@@ -48,13 +34,14 @@ const TYPE_CONFIG = {
   TRANSFER_IN:     { label: 'Transfert reçu',   color: 'bg-teal-100 text-teal-700',     icon: ArrowUpCircle,   sign: '+' },
   TRANSFER_OUT:    { label: 'Transfert envoyé', color: 'bg-purple-100 text-purple-700', icon: ArrowDownCircle, sign: '-' },
   TRANSFER_CANCEL: { label: 'Transfert annulé', color: 'bg-gray-100 text-gray-700',     icon: ArrowUpCircle,   sign: '+' },
+  INITIAL:         { label: 'Stock initial',    color: 'bg-gray-100 text-gray-700',     icon: ArrowUpCircle,   sign: '+' },
 };
 
 export default function MovementsPage() {
   const { tenant, currentStore } = useAuthStore();
   const tenantId = tenant?.id;
   const storeId = currentStore?.id;
-  const [movements, setMovements] = useState<Movement[]>([]);
+  const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [products, setProducts] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -63,33 +50,41 @@ export default function MovementsPage() {
   useEffect(() => {
     if (!tenantId) return;
     // Charger les noms de produits
-    const unsubP = onSnapshot(collection(db, tenantCol(tenantId, 'products')), snap => {
-      const map: Record<string, string> = {};
-      snap.docs.forEach(d => { map[d.id] = d.data().name; });
-      setProducts(map);
-    });
-    // Charger les mouvements
-    const unsubM = onSnapshot(
-      // Filtre magasin OBLIGATOIRE : sans lui, chaque responsable voyait
-      // l'historique de TOUTES les boutiques — y compris celles qu'il ne gère
-      // pas. Et avec le cloisonnement dans les règles, la requête serait
-      // purement rejetée, laissant la page vide.
-      query(
-        collection(db, tenantCol(tenantId, 'inventory_movements')),
-        where('storeId', '==', storeId),
-        orderBy('createdAt', 'desc'),
-        limit(500)
-      ),
-      snap => {
-        setMovements(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Movement[]);
-        setIsLoading(false);
-      }
+    const unsubP = watch(
+      'products',
+      () => supabase.from('products').select('id, name').eq('tenant_id', tenantId),
+      rows => {
+        const map: Record<string, string> = {};
+        rows.forEach(r => { map[r.id] = r.name; });
+        setProducts(map);
+      },
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
-    return () => { unsubP(); unsubM(); };
+    return unsubP;
   }, [tenantId]);
 
+  useEffect(() => {
+    if (!tenantId || !storeId) return;
+    // Filtre magasin OBLIGATOIRE : sans lui, chaque responsable voyait
+    // l'historique de TOUTES les boutiques — y compris celles qu'il ne gère
+    // pas. Et avec le cloisonnement RLS, la requête serait purement
+    // rejetée, laissant la page vide.
+    return watch(
+      'inventory_movements',
+      () => supabase.from('inventory_movements').select('*').eq('tenant_id', tenantId).eq('store_id', storeId)
+        .order('created_at', { ascending: false }).limit(500),
+      rows => {
+        setMovements(rows.map(mapInventoryMovement));
+        setIsLoading(false);
+      },
+      undefined,
+      `tenant_id=eq.${tenantId}`
+    );
+  }, [tenantId, storeId]);
+
   const filtered = movements.filter(m => {
-    const name = products[m.productId] || '';
+    const name = (m.productId && products[m.productId]) || '';
     const matchSearch = !search || name.toLowerCase().includes(search.toLowerCase());
     const matchType = filterType === 'all' || m.type === filterType;
     return matchSearch && matchType;
@@ -100,8 +95,8 @@ export default function MovementsPage() {
   // figée : sans les types de transfert, « Total entrées » comptait 200 alors
   // qu'aucun mouvement d'entrée classique n'existait — les réceptions étaient
   // comptées comme des ajustements.
-  const ENTREES = ['IN', 'PURCHASE', 'RETURN', 'TRANSFER_IN', 'TRANSFER_CANCEL'];
-  const SORTIES = ['OUT', 'SALE', 'TRANSFER_OUT'];
+  const ENTREES: InventoryMovementType[] = ['PURCHASE', 'RETURN', 'TRANSFER_IN', 'TRANSFER_CANCEL', 'INITIAL'];
+  const SORTIES: InventoryMovementType[] = ['SALE', 'TRANSFER_OUT'];
 
   const totalEntrees = movements
     .filter(m => ENTREES.includes(m.type))
@@ -147,12 +142,13 @@ export default function MovementsPage() {
               <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Tous les types</SelectItem>
-                <SelectItem value="IN">Entrées</SelectItem>
-                <SelectItem value="OUT">Sorties</SelectItem>
-                <SelectItem value="SALE">Ventes</SelectItem>
                 <SelectItem value="ADJUSTMENT">Ajustements</SelectItem>
+                <SelectItem value="SALE">Ventes</SelectItem>
+                <SelectItem value="PURCHASE">Achats</SelectItem>
+                <SelectItem value="RETURN">Retours clients</SelectItem>
                 <SelectItem value="TRANSFER_IN">Transferts reçus</SelectItem>
                 <SelectItem value="TRANSFER_OUT">Transferts envoyés</SelectItem>
+                <SelectItem value="TRANSFER_CANCEL">Transferts annulés</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -200,7 +196,7 @@ export default function MovementsPage() {
                           conservé sur le mouvement au moment de l'écriture (tous les
                           écrivains ne le renseignent pas), sinon — jamais l'ID
                           Firestore brut, illisible pour un commerçant. */}
-                      <TableCell className="font-medium text-sm">{products[m.productId] || m.productName || 'Produit supprimé'}</TableCell>
+                      <TableCell className="font-medium text-sm">{(m.productId && products[m.productId]) || m.productName || 'Produit supprimé'}</TableCell>
                       <TableCell className="text-center">
                         <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium ${cfg.color}`}>
                           <Icon className="h-3 w-3" />{cfg.label}

@@ -209,6 +209,26 @@ export interface Inventory {
   lastStockCheck?: Date | null;
 }
 
+export type InventoryMovementType =
+  'SALE' | 'PURCHASE' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'TRANSFER_CANCEL' | 'ADJUSTMENT' | 'RETURN' | 'INITIAL';
+
+export interface InventoryMovement {
+  id: string;
+  tenantId: string;
+  productId: string | null;
+  productName: string;
+  storeId: string | null;
+  type: InventoryMovementType;
+  quantity: number;
+  previousQuantity: number | null;
+  newQuantity: number | null;
+  saleId: string | null;
+  transferId: string | null;
+  purchaseOrderId: string | null;
+  reason: string | null;
+  createdAt: Date;
+}
+
 export interface Customer {
   id: string;
   tenantId: string;

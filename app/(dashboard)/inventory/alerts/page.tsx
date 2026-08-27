@@ -8,19 +8,16 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatCurrency } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
-import { collection, query, orderBy, where } from 'firebase/firestore';
-// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
-// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
-import { onSnapshot } from '@/lib/firebase/watch';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
+import { mapProduct, mapInventory } from '@/lib/supabase/mappers';
 import { useRouter } from 'next/navigation';
 import { estEnAlerte, seuilAlerte } from '@/lib/inventory/alert-threshold';
 import { ShoppingCart } from 'lucide-react';
 import { PO_REORDER_SUGGESTION_KEY, type ReorderSuggestionLine } from '@/lib/purchase-orders/reorder-suggestion';
-
-interface Product { id: string; name: string; sku: string; unit: string; alertThreshold: number; purchasePrice: number; trackInventory: boolean; }
-interface InventoryItem { id: string; productId: string; storeId: string; quantity: number; minQuantity?: number; }
+import type { Product, Inventory } from '@/lib/types';
 
 export default function AlertsPage() {
   const { tenant, currentStore } = useAuthStore();
@@ -29,22 +26,30 @@ export default function AlertsPage() {
   const router = useRouter();
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [inventory, setInventory] = useState<Inventory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (!tenantId) return;
-    const unsubP = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'products')), where('isActive', '==', true), where('trackInventory', '==', true), orderBy('name')),
-      snap => { setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Product[]); setIsLoading(false); }
+    return watch(
+      'products',
+      () => supabase.from('products').select('*').eq('tenant_id', tenantId).eq('is_active', true).eq('track_inventory', true).order('name'),
+      rows => { setProducts(rows.map(mapProduct)); setIsLoading(false); },
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
-    const unsubI = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'inventory')), where('storeId', '==', storeId)),
-      snap => {
-      setInventory(snap.docs.map(d => ({ id: d.id, ...d.data() })) as InventoryItem[]);
-    });
-    return () => { unsubP(); unsubI(); };
   }, [tenantId]);
+
+  useEffect(() => {
+    if (!tenantId || !storeId) return;
+    return watch(
+      'inventory',
+      () => supabase.from('inventory').select('*').eq('tenant_id', tenantId).eq('store_id', storeId),
+      rows => setInventory(rows.map(mapInventory)),
+      undefined,
+      `tenant_id=eq.${tenantId}`
+    );
+  }, [tenantId, storeId]);
 
   const getStock = (productId: string) =>
     inventory.find(i => i.productId === productId && i.storeId === storeId)?.quantity ?? 0;
