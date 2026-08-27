@@ -4,7 +4,7 @@ import type {
   Sale, SaleItem, Payment, Credit, CreditPayment, Quote, QuoteItem,
   PurchaseOrder, PurchaseOrderItem, Transfer, TransferLine,
   Alert, Notification, SaleReturn, SaleReturnItem, CashRegisterSession,
-  Tenant, Subscription, User,
+  Tenant, Subscription, User, DailyStat,
 } from '@/lib/types';
 
 /**
@@ -267,6 +267,20 @@ export function mapSubscription(r: Row<'subscriptions'>): Subscription {
     currentPeriodStart: toDateOrNull(r.current_period_start),
     currentPeriodEnd: toDateOrNull(r.current_period_end),
     limits: (r.limits as unknown as Subscription['limits']) ?? undefined,
+  };
+}
+
+export function mapDailyStat(r: Row<'daily_stats'>): DailyStat {
+  return {
+    date: r.date, revenue: r.revenue, cost: r.cost, margin: r.margin,
+    saleCount: r.sale_count, itemCount: r.item_count, uniqueCustomers: r.unique_customers,
+    byPayment: r.by_payment as Record<string, number> | null,
+    byStore: r.by_store as Record<string, number> | null,
+    revenueByCategory: r.revenue_by_category as Record<string, number> | null,
+    costByCategory: r.cost_by_category as Record<string, number> | null,
+    marginByCategory: r.margin_by_category as Record<string, number> | null,
+    topProducts: (r.top_products as DailyStat['topProducts']) ?? [],
+    costIncomplete: r.cost_incomplete,
   };
 }
 

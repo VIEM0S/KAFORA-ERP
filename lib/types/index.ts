@@ -454,6 +454,24 @@ export interface Notification {
 
 export type NotificationChannel = 'IN_APP' | 'EMAIL' | 'SMS' | 'WHATSAPP' | 'PUSH';
 
+/** Agrégat quotidien pré-calculé — voir netlify/functions/aggregate-daily-stats. */
+export interface DailyStat {
+  date: string; // AAAA-MM-JJ
+  revenue: number;
+  cost: number;
+  margin: number;
+  saleCount: number;
+  itemCount: number;
+  uniqueCustomers: number;
+  byPayment: Record<string, number> | null;
+  byStore: Record<string, number> | null;
+  revenueByCategory: Record<string, number> | null;
+  costByCategory: Record<string, number> | null;
+  marginByCategory: Record<string, number> | null;
+  topProducts: { productId: string; name: string; revenue: number; quantity: number }[];
+  costIncomplete: boolean;
+}
+
 export interface DashboardStats {
   todaySales: number;
   weeklyRevenue: number;
