@@ -11,6 +11,12 @@ const PUBLIC_PATHS = [
   '/api/auth/login',
   '/api/auth/logout',
   '/api/auth/register',
+  // Formulaire de contact de la landing page : soumis par des visiteurs
+  // anonymes, jamais connectés — sans cette entrée, la requête était
+  // redirigée vers /login avant même d'atteindre lib/email/send.ts,
+  // et échouait côté client avec "Connexion impossible" (constaté en
+  // direct sur kafora-erp.netlify.app après la bascule Supabase).
+  '/api/contact',
   // Pages légales : doivent rester consultables sans compte (avant
   // inscription, ou obligation légale d'accessibilité publique) — un
   // visiteur qui clique "Mentions légales" en pied de page ne doit jamais
