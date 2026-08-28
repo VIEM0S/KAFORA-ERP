@@ -29,12 +29,11 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ChevronDown } from 'lucide-react';
 import { useAuthStore } from '@/hooks/store';
-import { collection, query, orderBy, where, getDocs, doc, addDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
-// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
-import { onSnapshot } from '@/lib/firebase/watch';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
+import { mapCategory } from '@/lib/supabase/mappers';
 import type { Category } from '@/lib/types';
 
 function slugify(str: string) {
@@ -66,14 +65,13 @@ export default function CategoriesPage() {
 
   useEffect(() => {
     if (!tenantId) return;
-    const q = query(
-      collection(db, tenantCol(tenantId, 'categories')),
-      orderBy('name', 'asc')
+    return watch(
+      'categories',
+      () => supabase.from('categories').select('*').eq('tenant_id', tenantId).order('name', { ascending: true }),
+      rows => { setCategories(rows.map(mapCategory)); setIsLoading(false); },
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
-    return onSnapshot(q, (snap) => {
-      setCategories(snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Category[]);
-      setIsLoading(false);
-    });
   }, [tenantId]);
 
   const filtered = categories.filter(
@@ -105,22 +103,18 @@ export default function CategoriesPage() {
     }
     setIsSaving(true); setFormError(null);
     const payload = {
-      tenantId,
+      tenant_id: tenantId,
       name: form.name.trim(),
       slug: slugify(form.name),
       description: form.description.trim() || null,
-      isActive: form.isActive,
-      parentId: null,
-      updatedAt: serverTimestamp(),
+      is_active: form.isActive,
+      parent_id: null,
     };
     try {
-      if (editing) {
-        await updateDoc(doc(db, tenantCol(tenantId, 'categories'), editing.id), payload);
-      } else {
-        await addDoc(collection(db, tenantCol(tenantId, 'categories')), {
-          ...payload, createdAt: serverTimestamp(),
-        });
-      }
+      const { error } = editing
+        ? await supabase.from('categories').update(payload).eq('id', editing.id)
+        : await supabase.from('categories').insert(payload);
+      if (error) throw error;
       setShowDialog(false);
     } catch (e) {
       setFormError('Erreur lors de la sauvegarde');
@@ -132,7 +126,8 @@ export default function CategoriesPage() {
     if (!tenantId || !deleteTarget) return;
     setIsDeleting(true);
     try {
-      await deleteDoc(doc(db, tenantCol(tenantId, 'categories'), deleteTarget.id));
+      const { error } = await supabase.from('categories').delete().eq('id', deleteTarget.id);
+      if (error) throw error;
       setDeleteTarget(null);
     } catch (e) { console.error(e); }
     finally { setIsDeleting(false); }
@@ -140,9 +135,7 @@ export default function CategoriesPage() {
 
   const toggleActive = async (c: Category) => {
     if (!tenantId) return;
-    await updateDoc(doc(db, tenantCol(tenantId, 'categories'), c.id), {
-      isActive: !c.isActive, updatedAt: serverTimestamp(),
-    });
+    await supabase.from('categories').update({ is_active: !c.isActive }).eq('id', c.id);
   };
 
   return (

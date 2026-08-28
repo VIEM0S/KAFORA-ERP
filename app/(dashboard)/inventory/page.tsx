@@ -13,16 +13,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { formatCurrency } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
-import { collection, query, orderBy, doc, updateDoc, addDoc, serverTimestamp, getDocs, where } from 'firebase/firestore';
-// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
-// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
-import { onSnapshot } from '@/lib/firebase/watch';
-import { db } from '@/lib/firebase/client';
-import { tenantCol, inventoryKey } from '@/lib/firebase/collections';
-import type { Product } from '@/lib/types';
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
+import { mapProduct, mapInventory } from '@/lib/supabase/mappers';
+import type { Product, Inventory } from '@/lib/types';
 import { estEnAlerte, seuilAlerte } from '@/lib/inventory/alert-threshold';
-
-interface InventoryItem { id: string; productId: string; storeId: string; quantity: number; minQuantity?: number; }
 
 export default function InventoryPage() {
   const { tenant, currentStore } = useAuthStore();
@@ -30,7 +27,7 @@ export default function InventoryPage() {
   const storeId = currentStore?.id;
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [inventory, setInventory] = useState<Inventory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterAlert, setFilterAlert] = useState('all');
@@ -47,17 +44,25 @@ export default function InventoryPage() {
 
   useEffect(() => {
     if (!tenantId) return;
-    const unsubP = onSnapshot(query(collection(db, tenantCol(tenantId, 'products')), orderBy('name')), (snap) => {
-      setProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Product[]);
-      setIsLoading(false);
-    });
-    const unsubI = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'inventory')), where('storeId', '==', storeId)),
-      (snap) => {
-      setInventory(snap.docs.map((d) => ({ id: d.id, ...d.data() })) as InventoryItem[]);
-    });
-    return () => { unsubP(); unsubI(); };
+    return watch(
+      'products',
+      () => supabase.from('products').select('*').eq('tenant_id', tenantId).order('name'),
+      rows => { setProducts(rows.map(mapProduct)); setIsLoading(false); },
+      undefined,
+      `tenant_id=eq.${tenantId}`
+    );
   }, [tenantId]);
+
+  useEffect(() => {
+    if (!tenantId || !storeId) return;
+    return watch(
+      'inventory',
+      () => supabase.from('inventory').select('*').eq('tenant_id', tenantId).eq('store_id', storeId),
+      rows => setInventory(rows.map(mapInventory)),
+      undefined,
+      `tenant_id=eq.${tenantId}`
+    );
+  }, [tenantId, storeId]);
 
   const getStock = (productId: string) =>
     inventory.find((i) => i.productId === productId && i.storeId === storeId)?.quantity ?? 0;
@@ -85,31 +90,35 @@ export default function InventoryPage() {
     try {
       const qty = Number(adjQty);
       const currentQty = getStock(adjProduct.id);
-      let newQty = adjType === 'add' ? currentQty + qty : adjType === 'remove' ? Math.max(0, currentQty - qty) : qty;
+      const newQty = adjType === 'add' ? currentQty + qty : adjType === 'remove' ? Math.max(0, currentQty - qty) : qty;
+      const minQuantity = adjSeuil.trim() === '' ? null : Number(adjSeuil);
 
-      const invKey = inventoryKey(adjProduct.id, storeId);
       const existing = inventory.find((i) => i.productId === adjProduct.id && i.storeId === storeId);
       if (existing) {
-        await updateDoc(doc(db, tenantCol(tenantId, 'inventory'), existing.id), {
+        await supabase.from('inventory').update({
           quantity: newQty,
           // `null` efface le seuil propre au magasin et fait retomber sur
           // celui du produit — distinct de 0, qui désactive l'alerte.
-          minQuantity: adjSeuil.trim() === '' ? null : Number(adjSeuil),
-          updatedAt: serverTimestamp(),
-        });
+          min_quantity: minQuantity,
+        }).eq('id', existing.id);
       } else {
-        await addDoc(collection(db, tenantCol(tenantId, 'inventory')), {
-          tenantId, productId: adjProduct.id, storeId, quantity: newQty,
-          minQuantity: adjSeuil.trim() === '' ? null : Number(adjSeuil),
-          createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+        await supabase.from('inventory').insert({
+          tenant_id: tenantId, product_id: adjProduct.id, store_id: storeId, quantity: newQty,
+          min_quantity: minQuantity,
         });
       }
-      await addDoc(collection(db, tenantCol(tenantId, 'inventory_movements')), {
-        tenantId, productId: adjProduct.id, productName: adjProduct.name, storeId,
-        type: adjType === 'add' ? 'IN' : adjType === 'remove' ? 'OUT' : 'ADJUSTMENT',
+      // type ADJUSTMENT pour les deux sens (entrée/sortie manuelle) — même
+      // valeur d'enum que l'annulation de vente (cancel_sale), qui restocke
+      // aussi sous ADJUSTMENT ; le sens se lit dans le signe de `quantity`,
+      // pas dans un type "IN"/"OUT" séparé qui n'existe pas dans l'enum
+      // inventory_movement_type (les valeurs IN/OUT de l'ancien code
+      // Firestore n'avaient jamais été harmonisées avec le reste de l'app).
+      await supabase.from('inventory_movements').insert({
+        tenant_id: tenantId, product_id: adjProduct.id, product_name: adjProduct.name, store_id: storeId,
+        type: 'ADJUSTMENT',
         quantity: adjType === 'set' ? newQty - currentQty : (adjType === 'remove' ? -qty : qty),
-        previousQuantity: currentQty, newQuantity: newQty,
-        reason: adjNote || 'Ajustement manuel', createdAt: serverTimestamp(),
+        previous_quantity: currentQty, new_quantity: newQty,
+        reason: adjNote || 'Ajustement manuel',
       });
       setAdjProduct(null); setAdjQty(''); setAdjNote(''); setAdjSeuil('');
     } catch (e) { console.error(e); }

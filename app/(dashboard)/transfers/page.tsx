@@ -11,26 +11,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useAuthStore } from '@/hooks/store';
-import { collection, query, orderBy, limit } from 'firebase/firestore';
-// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
-// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
-import { onSnapshot } from '@/lib/firebase/watch';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
+import { mapTransfer, mapTransferLine } from '@/lib/supabase/mappers';
 import { ProductPicker } from '@/components/transfers/product-picker';
 import { TRANSFER_STATUS_LABELS } from '@/lib/transfers/rules';
-import type { TransferStatus } from '@/lib/types';
-
-interface TransferRow {
-  id: string;
-  reference: string;
-  fromStoreId: string;
-  toStoreId: string;
-  status: TransferStatus;
-  lines: { productId: string; productName: string; quantity: number }[];
-  note: string | null;
-  createdAt: { seconds: number } | null;
-}
+import type { TransferStatus, Transfer } from '@/lib/types';
 
 const STATUS_STYLE: Record<TransferStatus, string> = {
   PENDING: 'bg-amber-100 text-amber-800',
@@ -59,17 +47,19 @@ export default function TransfersPage() {
 
   useEffect(() => {
     if (!tenantId) return;
-    const unsub = onSnapshot(
-      collection(db, tenantCol(tenantId, 'stores')),
-      snap => setAllStores(snap.docs.map(d => ({ id: d.id, name: (d.data().name as string) || '—' })))
+    return watch(
+      'stores',
+      () => supabase.from('stores').select('id, name').eq('tenant_id', tenantId),
+      rows => setAllStores(rows.map(r => ({ id: r.id, name: r.name || '—' }))),
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
-    return () => unsub();
   }, [tenantId]);
 
   const stores = allStores.length > 0 ? allStores : myStores;
   const myStoreIds = myStores.map(s => s.id);
 
-  const [transfers, setTransfers] = useState<TransferRow[]>([]);
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -77,18 +67,20 @@ export default function TransfersPage() {
 
   useEffect(() => {
     if (!tenantId) return;
-    const unsub = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'transfers')), orderBy('createdAt', 'desc'), limit(100)),
-      snap => {
-        setTransfers(snap.docs.map(d => ({ id: d.id, ...d.data() }) as TransferRow));
+    return watch(
+      'transfers',
+      // transfer_lines embarqué via la relation FK.
+      () => supabase.from('transfers').select('*, transfer_lines(*)').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(100),
+      rows => {
+        setTransfers(rows.map(r => mapTransfer(r, (r.transfer_lines ?? []).map(mapTransferLine))));
         setIsLoading(false);
       },
-      () => setIsLoading(false)
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
-    return () => unsub();
   }, [tenantId]);
 
-  const storeName = (id: string) => stores.find(s => s.id === id)?.name || '—';
+  const storeName = (id: string | null) => (id && stores.find(s => s.id === id)?.name) || '—';
 
   const act = async (url: string, body: Record<string, unknown>, id: string) => {
     setBusyId(id);

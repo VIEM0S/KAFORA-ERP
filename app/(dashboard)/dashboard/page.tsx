@@ -13,34 +13,20 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { formatCurrency, formatRelativeTime } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
-import { collection, collectionGroup, query, orderBy, where, limit, getDocs, Timestamp } from 'firebase/firestore';
-// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
-// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
-import { onSnapshot } from '@/lib/firebase/watch';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
+import { mapSale, mapProduct, mapInventory, mapCredit, mapCategory } from '@/lib/supabase/mappers';
 import { isManagerPlus as isManagerPlusRole } from '@/lib/auth/roles';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface Sale {
-  id: string; total: number; status: string; paymentMethod?: string;
-  customerName?: string; createdAt: unknown; costTotal?: number;
-}
-interface SaleItem {
-  productId: string; productName: string; quantity: number; total: number; costTotal?: number;
-}
-interface Product { id: string; name: string; sku: string; unit: string; alertThreshold: number; purchasePrice: number | null; trackInventory: boolean; }
-interface InventoryItem { id: string; productId: string; storeId: string; quantity: number; }
-interface Credit { id: string; customerName: string; solde: number; dateEcheance: string; status: string; }
-interface Category { id: string; name: string; }
+import type { Sale, Product, Inventory, Credit, Category } from '@/lib/types';
 
 // ─── Hook données dashboard ───────────────────────────────────────────────────
 
 function useDashboardData(tenantId: string | undefined, storeId: string | undefined, isManagerPlus: boolean) {
   const [sales, setSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [inventory, setInventory] = useState<Inventory[]>([]);
   const [credits, setCredits] = useState<Credit[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   // undefined = pas encore résolu (encore en train de charger) ; 'error' =
@@ -56,25 +42,40 @@ function useDashboardData(tenantId: string | undefined, storeId: string | undefi
     let loaded = 0;
     const checkDone = () => { loaded++; if (loaded >= 4) setIsLoading(false); };
 
-    const unsubS = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'sales')), orderBy('createdAt', 'desc'), limit(300)),
-      snap => { setSales(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Sale[]); checkDone(); }
+    const unsubS = watch(
+      'sales',
+      () => supabase.from('sales').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(300),
+      rows => { setSales(rows.map(r => mapSale(r))); checkDone(); },
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
-    const unsubP = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'products')), where('isActive', '==', true)),
-      snap => { setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Product[]); checkDone(); }
+    const unsubP = watch(
+      'products',
+      () => supabase.from('products').select('*').eq('tenant_id', tenantId).eq('is_active', true),
+      rows => { setProducts(rows.map(mapProduct)); checkDone(); },
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
-    const unsubI = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'inventory')), where('storeId', '==', storeId)),
-      snap => { setInventory(snap.docs.map(d => ({ id: d.id, ...d.data() })) as InventoryItem[]); checkDone(); }
+    const unsubI = watch(
+      'inventory',
+      () => supabase.from('inventory').select('*').eq('tenant_id', tenantId).eq('store_id', storeId as string),
+      rows => { setInventory(rows.map(mapInventory)); checkDone(); },
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
-    const unsubC = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'credits')), orderBy('dateEcheance', 'asc'), limit(10)),
-      snap => { setCredits(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Credit[]); checkDone(); }
+    const unsubC = watch(
+      'credits',
+      () => supabase.from('credits').select('*').eq('tenant_id', tenantId).order('due_date', { ascending: true }).limit(10),
+      rows => { setCredits(rows.map(r => mapCredit(r))); checkDone(); },
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
-    const unsubCat = onSnapshot(
-      collection(db, tenantCol(tenantId, 'categories')),
-      snap => setCategories(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Category[])
+    const unsubCat = watch(
+      'categories',
+      () => supabase.from('categories').select('*').eq('tenant_id', tenantId),
+      rows => setCategories(rows.map(mapCategory)),
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
 
     return () => { unsubS(); unsubP(); unsubI(); unsubC(); unsubCat(); };
@@ -85,30 +86,33 @@ function useDashboardData(tenantId: string | undefined, storeId: string | undefi
     // que la page n'était pas rechargée en dur.
   }, [tenantId, storeId]);
 
-  // Coût/marge réel — réservé aux Managers+ (voir firestore.rules cost_summary).
-  // Un Caissier n'a pas les droits de lecture sur cette collection : on ne
-  // lance même pas la requête pour lui, pour ne pas déclencher d'erreur de
+  // Coût/marge réel — réservé aux Managers+ (RLS sale_cost_summary_select).
+  // Un Caissier n'a pas les droits de lecture sur cette table : on ne lance
+  // même pas la requête pour lui, pour ne pas déclencher d'erreur de
   // permission inutile et pour qu'aucune donnée de coût n'atteigne jamais
   // son navigateur.
+  //
+  // Remplace la sous-collection cost_summary ET la requête collectionGroup
+  // dédiée qui n'existait que pour contourner une limitation Firestore
+  // (interroger toutes les sous-collections cost_summary d'un coup) — une
+  // simple table avec tenant_id suffit ici, voir le plan de migration.
   useEffect(() => {
     if (!tenantId || !isManagerPlus) return;
     const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-    const unsub = onSnapshot(
-      query(
-        collectionGroup(db, 'cost_summary'),
-        where('tenantId', '==', tenantId),
-        where('createdAt', '>=', Timestamp.fromDate(startOfMonth))
-      ),
-      snap => {
-        const total = snap.docs.reduce((s, d) => s + (d.data().costTotal || 0), 0);
+    return watch(
+      'sale_cost_summary',
+      () => supabase.from('sale_cost_summary').select('cost_total').eq('tenant_id', tenantId)
+        .gte('created_at', startOfMonth.toISOString()),
+      rows => {
+        const total = rows.reduce((s, r) => s + (r.cost_total || 0), 0);
         setMonthlyCostTotal(total);
       },
       err => {
         console.error('Échec du calcul de marge mensuelle (cost_summary):', err);
         setMonthlyCostTotal('error');
-      }
+      },
+      `tenant_id=eq.${tenantId}`
     );
-    return () => unsub();
   }, [tenantId, isManagerPlus]);
 
   return { sales, products, inventory, credits, categories, monthlyCostTotal, isLoading };
@@ -147,16 +151,9 @@ export default function DashboardPage() {
   const yesterday = getDateStr(1);
   const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
 
-  const toTimestamp = (v: unknown): string => {
-    if (!v) return '';
-    if (typeof v === 'object' && v !== null && 'seconds' in v) {
-      return new Date((v as { seconds: number }).seconds * 1000).toISOString();
-    }
-    if (typeof v === 'object' && v !== null && 'toDate' in v) {
-      return (v as { toDate: () => Date }).toDate().toISOString();
-    }
-    return String(v);
-  };
+  // createdAt est déjà un objet Date (voir lib/supabase/mappers.ts) — plus
+  // besoin de gérer les Timestamps Firestore sérialisés.
+  const toTimestamp = (v: Date): string => v.toISOString();
 
   const completedSales = sales.filter(s => s.status === 'COMPLETED');
   const todaySales = completedSales.filter(s => toTimestamp(s.createdAt) >= today);
@@ -193,7 +190,7 @@ export default function DashboardPage() {
   // Crédits
   const activeCredits = credits.filter(c => ['PENDING', 'PARTIALLY_PAID', 'OVERDUE'].includes(c.status));
   const overdueCredits = credits.filter(c => c.status === 'OVERDUE');
-  const totalCreditEnCours = activeCredits.reduce((s, c) => s + c.solde, 0);
+  const totalCreditEnCours = activeCredits.reduce((s, c) => s + c.remainingAmount, 0);
 
   // Ventes récentes
   const recentSales = sales.slice(0, 8);
@@ -427,17 +424,17 @@ export default function DashboardPage() {
                 {activeCredits.length === 0 ? (
                   <p className="text-sm text-gray-400 text-center py-4">Aucun crédit actif</p>
                 ) : activeCredits.slice(0, 5).map(c => {
-                  const isLate = c.status === 'OVERDUE' || new Date(c.dateEcheance) < new Date();
+                  const isLate = c.status === 'OVERDUE' || c.dueDate < new Date();
                   return (
                     <div key={c.id} className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium text-gray-900">{c.customerName}</p>
+                        <p className="text-sm font-medium text-gray-900">{c.customerName || 'Client supprimé'}</p>
                         <p className={`text-xs ${isLate ? 'text-red-500' : 'text-gray-400'}`}>
-                          {isLate ? '⚠️ ' : ''}Éch. {c.dateEcheance ? new Date(c.dateEcheance).toLocaleDateString('fr-FR') : '—'}
+                          {isLate ? '⚠️ ' : ''}Éch. {c.dueDate ? c.dueDate.toLocaleDateString('fr-FR') : '—'}
                         </p>
                       </div>
                       <p className={`text-sm font-bold ${isLate ? 'text-red-600' : 'text-amber-600'}`}>
-                        {formatCurrency(c.solde)}
+                        {formatCurrency(c.remainingAmount)}
                       </p>
                     </div>
                   );

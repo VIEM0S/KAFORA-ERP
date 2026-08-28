@@ -17,29 +17,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { formatCurrency, formatDateTime, toFirestoreDate } from '@/lib/utils/helpers';
+import { formatCurrency, formatDateTime } from '@/lib/utils/helpers';
 import { exportToCsv, formatDateForCsv } from '@/lib/utils/export';
 import { Download } from 'lucide-react';
 import { useAuthStore } from '@/hooks/store';
-import { collection, query, orderBy, limit, getDocs, where } from 'firebase/firestore';
-// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
-// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
-import { onSnapshot } from '@/lib/firebase/watch';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
-import { describeFirestoreError, type ReadableError } from '@/lib/utils/firestore-errors';
-
-interface SaleItem {
-  productId: string; productName: string; productSku: string;
-  quantity: number; unitPrice: number; total: number; costPrice?: number;
-  returnedQuantity?: number;
-}
-interface Sale {
-  id: string; total: number; status: string; paymentMethod?: string;
-  customerName?: string; customerId?: string; createdAt: unknown;
-  discountPercent?: number; discountAmount?: number; tax?: number;
-  itemCount?: number; motifAnnulation?: string;
-}
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
+import { mapSale, mapSaleItem } from '@/lib/supabase/mappers';
+import { describeSupabaseError, type ReadableError } from '@/lib/utils/supabase-errors';
+import type { Sale, SaleItem } from '@/lib/types';
 
 const PM_LABELS: Record<string, { label: string; icon: typeof Banknote }> = {
   CASH:         { label: 'Espèces',      icon: Banknote },
@@ -82,19 +70,16 @@ export default function SalesPage() {
 
   useEffect(() => {
     if (!tenantId || !storeId) return;
-      // Filtre magasin OBLIGATOIRE : la règle Firestore contrôle le magasin de
-      // chaque vente. Une requête qui ne le prouve pas est rejetée EN BLOC
-      // pour un utilisateur affecté à un magasin — la page reste alors vide
-      // avec « permission-denied » en console, alors que les ventes existent.
-    const q = query(
-      collection(db, tenantCol(tenantId, 'sales')),
-      where('storeId', '==', storeId),
-      orderBy('createdAt', 'desc'), limit(300)
-    );
-    return onSnapshot(
-      q,
-      snap => {
-        setSales(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Sale[]);
+    // Filtre magasin OBLIGATOIRE : RLS contrôle déjà le magasin de chaque
+    // vente. Une requête qui ne le prouve pas est rejetée EN BLOC pour un
+    // utilisateur affecté à un magasin — la page reste alors vide avec un
+    // refus RLS en console, alors que les ventes existent.
+    return watch(
+      'sales',
+      () => supabase.from('sales').select('*').eq('tenant_id', tenantId).eq('store_id', storeId)
+        .order('created_at', { ascending: false }).limit(300),
+      rows => {
+        setSales(rows.map(r => mapSale(r)));
         setLoadError(null);
         setIsLoading(false);
       },
@@ -103,9 +88,10 @@ export default function SalesPage() {
         // laissait la page afficher « 0 vente » — indiscernable d'une
         // boutique qui n'a réellement rien vendu.
         console.error('Sales listener error:', err);
-        setLoadError(describeFirestoreError(err));
+        setLoadError(describeSupabaseError(err));
         setIsLoading(false);
-      }
+      },
+      `tenant_id=eq.${tenantId}`
     );
   }, [tenantId, storeId]);
 
@@ -113,9 +99,11 @@ export default function SalesPage() {
   useEffect(() => {
     if (!tenantId || !selected) { setSaleItems([]); return; }
     setLoadingItems(true);
-    getDocs(collection(db, `tenants/${tenantId}/sales/${selected.id}/sale_items`))
-      .then(snap => setSaleItems(snap.docs.map(d => ({ id: d.id, ...d.data() })) as unknown as SaleItem[]))
-      .finally(() => setLoadingItems(false));
+    (async () => {
+      const { data } = await supabase.from('sale_items').select('*').eq('sale_id', selected.id);
+      setSaleItems((data ?? []).map(mapSaleItem));
+      setLoadingItems(false);
+    })();
   }, [tenantId, selected?.id]);
 
   const filtered = sales.filter(s => {
@@ -126,7 +114,7 @@ export default function SalesPage() {
     let matchFrom = true;
     let matchTo = true;
     if (filterDateFrom || filterDateTo) {
-      const saleDate = toFirestoreDate(s.createdAt);
+      const saleDate = s.createdAt;
       if (filterDateFrom) {
         const fromDate = new Date(filterDateFrom);
         fromDate.setHours(0, 0, 0, 0);
@@ -162,7 +150,7 @@ export default function SalesPage() {
 
       setCancelTarget(null); setCancelMotif('');
       if (selected?.id === cancelTarget.id) {
-        setSelected(prev => prev ? { ...prev, status: 'CANCELLED', motifAnnulation: cancelMotif.trim() } : null);
+        setSelected(prev => prev ? { ...prev, status: 'CANCELLED', cancellationReason: cancelMotif.trim() } : null);
       }
     } catch (e) { console.error('Cancel error:', e); }
     finally { setIsCancelling(false); }
@@ -377,10 +365,10 @@ export default function SalesPage() {
                 <div className="flex justify-between"><span className="text-gray-500">Client</span><span className="font-medium">{selected.customerName || 'Client comptoir'}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Paiement</span><span>{PM_LABELS[selected.paymentMethod || 'CASH']?.label || selected.paymentMethod}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Statut</span><StatusBadge status={selected.status} /></div>
-                {selected.status === 'CANCELLED' && selected.motifAnnulation && (
+                {selected.status === 'CANCELLED' && selected.cancellationReason && (
                   <div className="bg-red-50 rounded-lg p-3">
                     <p className="text-xs text-red-600 font-medium">Motif d&apos;annulation</p>
-                    <p className="text-xs text-red-700 mt-1">{selected.motifAnnulation}</p>
+                    <p className="text-xs text-red-700 mt-1">{selected.cancellationReason}</p>
                   </div>
                 )}
               </div>
@@ -410,8 +398,8 @@ export default function SalesPage() {
                 {(selected.discountAmount || 0) > 0 && (
                   <div className="flex justify-between text-green-600"><span>Remise ({selected.discountPercent}%)</span><span>-{formatCurrency(selected.discountAmount || 0)}</span></div>
                 )}
-                {(selected.tax || 0) > 0 && (
-                  <div className="flex justify-between text-gray-500"><span>TVA</span><span>{formatCurrency(selected.tax || 0)}</span></div>
+                {(selected.taxAmount || 0) > 0 && (
+                  <div className="flex justify-between text-gray-500"><span>TVA</span><span>{formatCurrency(selected.taxAmount || 0)}</span></div>
                 )}
                 <div className="flex justify-between font-bold text-base pt-1 border-t">
                   <span>TOTAL</span>

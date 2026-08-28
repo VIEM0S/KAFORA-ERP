@@ -1,39 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/lib/firebase/admin';
-import { cookies } from 'next/headers';
-import { FieldValue } from 'firebase-admin/firestore';
+import { createServiceRoleClient } from '@/lib/supabase/server';
+import { getSessionClaims } from '@/lib/api/session';
 
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get('__session')?.value;
-    if (!sessionCookie) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
-
-    const decoded = await adminAuth.verifySessionCookie(sessionCookie, true);
+    const session = await getSessionClaims();
+    if (!session) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
     // Restaurer un compte annule une décision de suppression déjà validée —
     // réservé au Propriétaire, cohérent avec le reste du workflow.
-    if (decoded.role !== 'OWNER') {
+    if (session.role !== 'OWNER') {
       return NextResponse.json({ error: 'Réservé au Propriétaire' }, { status: 403 });
     }
-    const tenantId = decoded.tenantId as string;
+    const tenantId = session.tenantId as string;
 
     const { uid } = await request.json();
     if (!uid) return NextResponse.json({ error: 'Champ manquant' }, { status: 400 });
 
-    const userRef = adminDb.doc(`tenants/${tenantId}/users/${uid}`);
-    const userSnap = await userRef.get();
-    if (!userSnap.exists) {
-      return NextResponse.json({ error: 'Compte introuvable (a peut-être été supprimé définitivement avant ce fix)' }, { status: 404 });
+    const supabase = createServiceRoleClient();
+    const { data: existing } = await supabase
+      .from('users')
+      .select('id')
+      .eq('id', uid)
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+    if (!existing) {
+      return NextResponse.json({ error: 'Compte introuvable' }, { status: 404 });
     }
 
-    await adminAuth.updateUser(uid, { disabled: false });
-    await userRef.update({
-      isActive: true,
-      deletedAt: null,
-      deletedBy: null,
-      restoredAt: FieldValue.serverTimestamp(),
-      restoredBy: decoded.uid,
-    });
+    await supabase.auth.admin.updateUserById(uid, { ban_duration: 'none' });
+    await supabase
+      .from('users')
+      .update({
+        is_active: true,
+        deleted_at: null,
+        deleted_by: null,
+        restored_at: new Date().toISOString(),
+        restored_by: session.uid,
+      })
+      .eq('id', uid);
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -15,55 +15,30 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
 } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { formatCurrency, toFirestoreDate, formatDateTime } from '@/lib/utils/helpers';
+import { formatCurrency, formatDateTime } from '@/lib/utils/helpers';
 import { exportToCsv } from '@/lib/utils/export';
 import { Download } from 'lucide-react';
 import { useAuthStore } from '@/hooks/store';
-import { ref, onValue, set, push, get } from 'firebase/database';
-import { rtdb } from '@/lib/firebase/client';
-import { RTDB_PATHS } from '@/lib/firebase/rtdb';
-import { collection, query, where, orderBy, limit, collectionGroup } from 'firebase/firestore';
-// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
-// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
-import { onSnapshot } from '@/lib/firebase/watch';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
+import { mapCashSession, mapSale } from '@/lib/supabase/mappers';
 import { isManagerPlus as isManagerPlusRole } from '@/lib/auth/roles';
-
-interface CashSession {
-  status: 'OPEN' | 'CLOSED';
-  openedBy: string;
-  openedByName: string;
-  openedAt: number;
-  openingBalance: number;
-  closedAt?: number;
-  closingBalance?: number;
-  expectedBalance?: number;
-  difference?: number;
-  notes?: string;
-}
-
-interface Sale {
-  id: string; total: number; paymentMethod?: string;
-  /** Part réglée immédiatement sur une vente à crédit — argent dans le tiroir. */
-  acompte?: number;
-  status?: string;
-  createdAt: unknown;
-}
+import type { CashRegisterSession, Sale } from '@/lib/types';
 
 
 export default function CashRegisterPage() {
   const { tenant, currentStore, user } = useAuthStore();
   const tenantId = tenant?.id;
   const storeId = currentStore?.id;
-  const registerId = storeId ? `register_${storeId}` : null;
 
-  const [session, setSession] = useState<CashSession | null>(null);
+  const [session, setSession] = useState<CashRegisterSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [todaySales, setTodaySales] = useState<Sale[]>([]);
   const [creditRepaymentTotal, setCreditRepaymentTotal] = useState(0);
   const [cashRefundTotal, setCashRefundTotal] = useState(0);
-  const [sessionHistory, setSessionHistory] = useState<{ id: string; data: CashSession }[]>([]);
+  const [sessionHistory, setSessionHistory] = useState<CashRegisterSession[]>([]);
 
   const [showOpen, setShowOpen] = useState(false);
   const [showClose, setShowClose] = useState(false);
@@ -72,80 +47,72 @@ export default function CashRegisterPage() {
   const [closeNotes, setCloseNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
-  // ─── Écoute RTDB de la caisse ────────────────────────────────────────────
+  // ─── État de la caisse ────────────────────────────────────────────────────
+  // Remplace l'écoute RTDB (Realtime Database est entièrement éliminée) : la
+  // ligne cash_sessions status='OPEN' de ce magasin EST l'état live, via un
+  // abonnement Realtime Postgres — même rôle, une seule source de vérité au
+  // lieu d'une double-écriture Firestore+RTDB.
   useEffect(() => {
-    if (!tenantId || !registerId) return;
-    const path = RTDB_PATHS.cashRegister(tenantId, registerId);
-    const cashRef = ref(rtdb, path);
-    const unsub = onValue(cashRef, snap => {
-      setSession(snap.exists() ? snap.val() : null);
-      setIsLoading(false);
-    });
-    return () => unsub();
-  }, [tenantId, registerId]);
+    if (!tenantId || !storeId) return;
+    return watch(
+      'cash_sessions',
+      () => supabase.from('cash_sessions').select('*').eq('tenant_id', tenantId).eq('store_id', storeId)
+        .eq('status', 'OPEN').limit(1),
+      rows => {
+        setSession(rows.length > 0 ? mapCashSession(rows[0]) : null);
+        setIsLoading(false);
+      },
+      undefined,
+      `tenant_id=eq.${tenantId}`
+    );
+  }, [tenantId, storeId]);
 
   // ─── Ventes du jour (pour calcul attendu) ────────────────────────────────
-  // Fix : ne filtrait ni par magasin ni par session — le solde attendu à la
-  // fermeture mélangeait les ventes de TOUS les magasins du tenant, et
-  // comptait depuis minuit même si la caisse avait été ouverte plus tard dans
-  // la journée. On scope maintenant au magasin courant + à la session en
+  // Fix (héritage Firestore) : ne filtrait ni par magasin ni par session — le
+  // solde attendu à la fermeture mélangeait les ventes de TOUS les magasins
+  // du tenant, et comptait depuis minuit même si la caisse avait été ouverte
+  // plus tard dans la journée. Scope au magasin courant + à la session en
   // cours (depuis son ouverture), ce qui est aussi ce qui permet à un
   // Caissier de ne voir que le total de SA session (ou de la session
   // partagée en cas de relève), jamais un CA jour/mois consolidé.
   useEffect(() => {
     if (!tenantId || !storeId) return;
-    const q = query(
-      collection(db, tenantCol(tenantId, 'sales')),
-      where('storeId', '==', storeId),
-      orderBy('createdAt', 'desc'), limit(200)
+    const sinceStart = session?.status === 'OPEN'
+      ? session.openedAt
+      : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
+    return watch(
+      'sales',
+      () => supabase.from('sales').select('*').eq('tenant_id', tenantId).eq('store_id', storeId)
+        .gte('created_at', sinceStart.toISOString()).order('created_at', { ascending: false }).limit(200),
+      rows => setTodaySales(rows.map(r => mapSale(r))),
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
-    return onSnapshot(q, snap => {
-      const all = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Sale[];
-      const sinceStart = session?.status === 'OPEN' && session.openedAt
-        ? new Date(session.openedAt)
-        : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
-      setTodaySales(all.filter(s => toFirestoreDate(s.createdAt) >= sinceStart));
-    });
   }, [tenantId, storeId, session?.status, session?.openedAt]);
 
   // ─── Versements de dette encaissés pendant la session ────────────────────
   //
   // Un client qui vient régler sa dette dépose de l'argent dans ce tiroir.
-  // Ces versements vivent dans des sous-collections (credits/{id}/credit_payments),
-  // d'où la requête par groupe de collections, filtrée sur le magasin.
+  // credit_payments est une table de premier niveau (tenant_id/store_id
+  // directs) — plus besoin de la requête par groupe de collections que
+  // Firestore imposait pour une sous-collection.
   useEffect(() => {
     if (!tenantId || !storeId) { setCreditRepaymentTotal(0); return; }
-
-    const sinceStart = session?.status === 'OPEN' && session.openedAt
-      ? new Date(session.openedAt)
+    const sinceStart = session?.status === 'OPEN'
+      ? session.openedAt
       : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
 
-    // tenantId doit être filtré ICI, pas seulement vérifié dans la règle de
-    // sécurité : sans lui dans la requête, Firestore ne peut pas prouver que
-    // la liste est sûre (aucun lien statique entre le filtre de la requête et
-    // resource.data.tenantId dans la règle) et refuse toute la requête —
-    // constaté en direct, "Ventes espèces" restait à 0 quels que soient les
-    // règlements de dette encaissés pendant la session.
-    const q = query(
-      collectionGroup(db, 'credit_payments'),
-      where('tenantId', '==', tenantId),
-      where('storeId', '==', storeId),
-      where('createdAt', '>=', sinceStart)
-    );
-    return onSnapshot(
-      q,
-      snap => {
-        // On ne compte que les règlements en espèces : un virement ou un
-        // paiement Mobile Money ne passe pas par le tiroir.
-        const total = snap.docs
-          .map(d => d.data() as { paymentMethod?: string; montant?: number })
-          .filter(d => (d.paymentMethod || 'CASH') === 'CASH')
-          .reduce((sum, d) => sum + (Number(d.montant) || 0), 0);
-        setCreditRepaymentTotal(total);
-      },
-      // Index absent ou versements antérieurs sans magasin : on n'empêche pas
-      // la caisse de fonctionner, on affiche simplement 0 de ce côté.
-      () => setCreditRepaymentTotal(0)
+    return watch(
+      'credit_payments',
+      // On ne compte que les règlements en espèces : un virement ou un
+      // paiement Mobile Money ne passe pas par le tiroir.
+      () => supabase.from('credit_payments').select('amount').eq('tenant_id', tenantId).eq('store_id', storeId)
+        .eq('payment_method', 'CASH').gte('created_at', sinceStart.toISOString()),
+      rows => setCreditRepaymentTotal(rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0)),
+      // Coupure ou refus RLS : on n'empêche pas la caisse de fonctionner, on
+      // affiche simplement 0 de ce côté.
+      () => setCreditRepaymentTotal(0),
+      `tenant_id=eq.${tenantId}`
     );
   }, [tenantId, storeId, session?.status, session?.openedAt]);
 
@@ -155,49 +122,38 @@ export default function CashRegisterPage() {
   // caisse. Sans cette déduction, le solde attendu reste trop élevé et le
   // caissier apparaît en manquant pour de l'argent qu'il a légitimement rendu.
   //
-  // On ne compte que `cashRefund`, pas `refundAmount` : la part imputée sur
+  // On ne compte que `cash_refund`, pas `refund_amount` : la part imputée sur
   // une dette client n'a jamais quitté le tiroir.
   useEffect(() => {
     if (!tenantId || !storeId) { setCashRefundTotal(0); return; }
-
-    const sinceStart = session?.status === 'OPEN' && session.openedAt
-      ? new Date(session.openedAt)
+    const sinceStart = session?.status === 'OPEN'
+      ? session.openedAt
       : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
 
-    const q = query(
-      collection(db, tenantCol(tenantId, 'sale_returns')),
-      where('storeId', '==', storeId),
-      where('createdAt', '>=', sinceStart)
-    );
-    return onSnapshot(
-      q,
-      snap => {
-        const total = snap.docs
-          .map(d => d.data() as { refundMethod?: string; cashRefund?: number; refundAmount?: number })
-          .filter(d => (d.refundMethod || 'CASH') === 'CASH')
-          // `cashRefund` n'existe que sur les retours récents : pour les
-          // anciens, on retombe sur le montant total, seule valeur connue.
-          .reduce((sum, d) => sum + (Number(d.cashRefund ?? d.refundAmount) || 0), 0);
-        setCashRefundTotal(total);
-      },
-      () => setCashRefundTotal(0)
+    return watch(
+      'sale_returns',
+      () => supabase.from('sale_returns').select('cash_refund, refund_amount').eq('tenant_id', tenantId).eq('store_id', storeId)
+        .eq('refund_method', 'CASH').gte('created_at', sinceStart.toISOString()),
+      rows => setCashRefundTotal(rows.reduce((sum, r) => sum + (Number(r.cash_refund ?? r.refund_amount) || 0), 0)),
+      () => setCashRefundTotal(0),
+      `tenant_id=eq.${tenantId}`
     );
   }, [tenantId, storeId, session?.status, session?.openedAt]);
 
-  // ─── Historique des sessions (Firestore) ──────────────────────────────────
+  // ─── Historique des sessions ──────────────────────────────────────────────
   // Réservé à Manager+ : un Caissier n'a besoin que du statut de la session en
   // cours pour ouvrir/fermer son poste, pas de l'historique des clôtures
   // passées (CA d'autres jours/caissiers/magasins).
   const canViewHistory = isManagerPlusRole(user?.role);
   useEffect(() => {
     if (!tenantId || !storeId || !canViewHistory) { setSessionHistory([]); return; }
-    const q = query(
-      collection(db, tenantCol(tenantId, 'cash_sessions')),
-      orderBy('openedAt', 'desc'), limit(10)
+    return watch(
+      'cash_sessions',
+      () => supabase.from('cash_sessions').select('*').eq('tenant_id', tenantId).order('opened_at', { ascending: false }).limit(10),
+      rows => setSessionHistory(rows.map(mapCashSession)),
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
-    return onSnapshot(q, snap => {
-      setSessionHistory(snap.docs.map(d => ({ id: d.id, data: d.data() as CashSession })));
-    });
   }, [tenantId, storeId, canViewHistory]);
 
   // ─── Calculs ────────────────────────────────────────────────────────────
@@ -226,10 +182,12 @@ export default function CashRegisterPage() {
   const cashSalesToday = validSales.filter(s => (s.paymentMethod || 'CASH') === 'CASH');
   const cashTotal = cashSalesToday.reduce((s, v) => s + (v.total || 0), 0);
 
-  // Acomptes encaissés sur les ventes à crédit de la session.
+  // Acomptes encaissés sur les ventes à crédit de la session. paidAmount
+  // PORTE l'acompte pour une vente CREDIT (voir app/api/pos/checkout/route.ts
+  // — receivedCash = acompte, stocké tel quel dans sales.paid_amount).
   const acompteTotal = validSales
     .filter(s => (s.paymentMethod || '') === 'CREDIT')
-    .reduce((sum, v) => sum + (v.acompte || 0), 0);
+    .reduce((sum, v) => sum + (v.paidAmount || 0), 0);
 
   // ─── Encaissements HORS espèces ──────────────────────────────────────────
   //
@@ -242,7 +200,7 @@ export default function CashRegisterPage() {
     if (m === 'CREDIT') {
       // Seule la part NON versée reste hors caisse ; l'acompte est déjà
       // compté dans le tiroir plus haut.
-      const solde = (v.total || 0) - (v.acompte || 0);
+      const solde = (v.total || 0) - (v.paidAmount || 0);
       if (solde > 0) acc['CREDIT'] = (acc['CREDIT'] || 0) + solde;
       return acc;
     }
@@ -270,19 +228,20 @@ export default function CashRegisterPage() {
 
   // ─── Ouvrir la caisse ───────────────────────────────────────────────────
   const handleOpen = async () => {
-    if (!tenantId || !registerId || !user) return;
+    if (!tenantId || !storeId || !user) return;
     const amount = Number(openingAmount) || 0;
     setIsSaving(true);
     try {
-      const path = RTDB_PATHS.cashRegister(tenantId, registerId);
-      const newSession: CashSession = {
-        status: 'OPEN',
-        openedBy: user.id,
-        openedByName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-        openedAt: Date.now(),
-        openingBalance: amount,
-      };
-      await set(ref(rtdb, path), newSession);
+      const res = await fetch('/api/cash-register/open', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId, storeId, openingBalance: amount,
+          openedByName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || "Erreur lors de l'ouverture de la caisse");
       setShowOpen(false);
       setOpeningAmount('');
     } catch (e) {
@@ -295,23 +254,19 @@ export default function CashRegisterPage() {
   // ─── Fermer la caisse ───────────────────────────────────────────────────
   const [closeError, setCloseError] = useState<string | null>(null);
   const handleClose = async () => {
-    if (!tenantId || !registerId || !user || !session) return;
+    if (!tenantId || !storeId || !user || !session) return;
     const counted = Number(closingAmount) || 0;
     setIsSaving(true);
     setCloseError(null);
     try {
       // La différence est recalculée côté serveur à partir des vraies ventes
-      // Firestore — on ne fait plus confiance au total calculé côté client,
-      // ce qui empêche un caissier de masquer un manque de caisse.
+      // — on ne fait plus confiance au total calculé côté client, ce qui
+      // empêche un caissier de masquer un manque de caisse.
       const res = await fetch('/api/cash-register/close', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tenantId, storeId, registerId,
-          openedBy: session.openedBy,
-          openedByName: session.openedByName,
-          openedAt: session.openedAt,
-          openingBalance: session.openingBalance,
+          tenantId, storeId,
           countedAmount: counted,
           notes: closeNotes || null,
           closedByName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
@@ -329,10 +284,9 @@ export default function CashRegisterPage() {
         );
       }
 
-      // Réinitialiser RTDB
-      const path = RTDB_PATHS.cashRegister(tenantId, registerId);
-      await set(ref(rtdb, path), { status: 'CLOSED', closedAt: Date.now() });
-
+      // Pas de réinitialisation manuelle d'état à faire : la ligne
+      // cash_sessions passe elle-même à CLOSED, l'abonnement Realtime
+      // (voir plus haut) répercute le changement automatiquement.
       setShowClose(false);
       setClosingAmount('');
       setCloseNotes('');
@@ -390,7 +344,7 @@ export default function CashRegisterPage() {
                   </p>
                   {isOpen && session && (
                     <p className="text-sm text-gray-500">
-                      Ouverte par {session.openedByName} · {formatDateTime(new Date(session.openedAt))}
+                      Ouverte par {session.openedByName} · {formatDateTime(session.openedAt)}
                     </p>
                   )}
                 </div>
@@ -454,12 +408,12 @@ export default function CashRegisterPage() {
               disabled={sessionHistory.length === 0}
               onClick={() => exportToCsv(
                 `clotures-caisse-${new Date().toISOString().slice(0, 10)}`,
-                sessionHistory.map(({ id, data }) => ({ id, ...data })),
+                sessionHistory,
                 [
                   { key: 'id', label: 'N° session' },
                   { key: 'openedByName', label: 'Ouvert par' },
-                  { key: 'openedAt', label: 'Ouverture', format: (v) => v ? formatDateTime(new Date(v as number)) : '' },
-                  { key: 'closedAt', label: 'Fermeture', format: (v) => v ? formatDateTime(new Date(v as number)) : '' },
+                  { key: 'openedAt', label: 'Ouverture', format: (v) => v ? formatDateTime(v as Date) : '' },
+                  { key: 'closedAt', label: 'Fermeture', format: (v) => v ? formatDateTime(v as Date) : '' },
                   { key: 'openingBalance', label: 'Fond initial' },
                   { key: 'expectedBalance', label: 'Attendu' },
                   { key: 'closingBalance', label: 'Compté' },
@@ -491,12 +445,12 @@ export default function CashRegisterPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sessionHistory.map(({ id, data }) => {
+                  {sessionHistory.map(data => {
                     const diff = data.difference || 0;
                     return (
-                      <TableRow key={id}>
-                        <TableCell className="text-sm text-gray-500">{formatDateTime(new Date(data.openedAt))}</TableCell>
-                        <TableCell className="text-sm text-gray-500">{data.closedAt ? formatDateTime(new Date(data.closedAt)) : '—'}</TableCell>
+                      <TableRow key={data.id}>
+                        <TableCell className="text-sm text-gray-500">{formatDateTime(data.openedAt)}</TableCell>
+                        <TableCell className="text-sm text-gray-500">{data.closedAt ? formatDateTime(data.closedAt) : '—'}</TableCell>
                         <TableCell className="text-right text-sm">{formatCurrency(data.openingBalance)}</TableCell>
                         <TableCell className="text-right text-sm">{formatCurrency(data.expectedBalance || 0)}</TableCell>
                         <TableCell className="text-right text-sm font-medium">{formatCurrency(data.closingBalance || 0)}</TableCell>

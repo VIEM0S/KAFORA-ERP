@@ -18,26 +18,27 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils/helpers';
 import { useAuthStore, useCartStore } from '@/hooks/store';
-import { collection, query, orderBy, where, doc, addDoc, updateDoc, serverTimestamp, getDocs } from 'firebase/firestore';
-// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
-// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
-import { onSnapshot } from '@/lib/firebase/watch';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
+import { mapQuote, mapQuoteItem, mapProduct, mapCustomer } from '@/lib/supabase/mappers';
 import { useRouter } from 'next/navigation';
-import type { Product, Customer } from '@/lib/types';
+import type { Product, Customer, Quote, QuoteStatus } from '@/lib/types';
 
-interface QuoteItem { product: Product; quantity: number; unitPrice: number; }
-/** Structure réelle d'un article de devis stocké dans Firestore */
-interface QuoteItemStored { productId: string; productName: string; productSku: string; quantity: number; unitPrice: number; total: number; }
-interface Quote {
-  id: string; tenantId: string; customerId: string; customerName: string;
-  status: 'PENDING' | 'ACCEPTED' | 'CONVERTED' | 'REFUSED' | 'EXPIRED';
-  dateValidite: string; total: number; note?: string;
-  items?: QuoteItemStored[]; userId: string; createdAt: unknown; updatedAt: unknown;
+/** Ligne en cours de saisie dans le formulaire "nouveau devis" — distinct de
+ * QuoteItem (lib/types), qui est la ligne telle qu'enregistrée. */
+interface DraftLine { product: Product; quantity: number; unitPrice: number; }
+
+/** Jamais numéroté légalement (contrairement aux ventes/BC) — généré pour
+ * l'affichage seulement. Fonction top-niveau (pas dans le composant) : la
+ * règle react-hooks/purity interdit un appel impur (Date.now) atteignable
+ * depuis le rendu, même via un gestionnaire d'événement non mémoïsé. */
+function genQuoteReference(): string {
+  return `DEV-${Date.now().toString(36).toUpperCase()}`;
 }
 
-const STATUS_CONFIG = {
+const STATUS_CONFIG: Record<QuoteStatus, { label: string; color: string; icon: typeof Clock }> = {
   PENDING:   { label: 'En attente', color: 'bg-amber-100 text-amber-700',  icon: Clock },
   ACCEPTED:  { label: 'Accepté',    color: 'bg-blue-100 text-blue-700',    icon: CheckCircle2 },
   CONVERTED: { label: 'Converti',   color: 'bg-green-100 text-green-700',  icon: ShoppingCart },
@@ -63,7 +64,7 @@ export default function QuotesPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [customerSearch, setCustomerSearch] = useState('');
   const [productSearch, setProductSearch] = useState('');
-  const [lignes, setLignes] = useState<QuoteItem[]>([]);
+  const [lignes, setLignes] = useState<DraftLine[]>([]);
   const [dateValidite, setDateValidite] = useState('');
   const [note, setNote] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -73,16 +74,32 @@ export default function QuotesPage() {
 
   useEffect(() => {
     if (!tenantId) return;
-    const unsubQ = onSnapshot(query(collection(db, tenantCol(tenantId, 'quotes')), orderBy('createdAt', 'desc')), snap => {
-      setQuotes(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Quote[]);
-      setIsLoading(false);
-    });
-    const unsubP = onSnapshot(query(collection(db, tenantCol(tenantId, 'products')), where('isActive', '==', true), orderBy('name')), snap => {
-      setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Product[]);
-    });
-    const unsubC = onSnapshot(query(collection(db, tenantCol(tenantId, 'customers')), where('isActive', '==', true), orderBy('createdAt', 'desc')), snap => {
-      setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Customer[]);
-    });
+    const unsubQ = watch(
+      'quotes',
+      // quote_items embarqué via la relation FK — évite un aller-retour par
+      // devis (contrairement à Firestore, une jointure Postgres est native).
+      () => supabase.from('quotes').select('*, quote_items(*)').eq('tenant_id', tenantId).order('created_at', { ascending: false }),
+      rows => {
+        setQuotes(rows.map(r => mapQuote(r, (r.quote_items ?? []).map(mapQuoteItem))));
+        setIsLoading(false);
+      },
+      undefined,
+      `tenant_id=eq.${tenantId}`
+    );
+    const unsubP = watch(
+      'products',
+      () => supabase.from('products').select('*').eq('tenant_id', tenantId).eq('is_active', true).order('name'),
+      rows => setProducts(rows.map(mapProduct)),
+      undefined,
+      `tenant_id=eq.${tenantId}`
+    );
+    const unsubC = watch(
+      'customers',
+      () => supabase.from('customers').select('*').eq('tenant_id', tenantId).eq('is_active', true).order('created_at', { ascending: false }),
+      rows => setCustomers(rows.map(mapCustomer)),
+      undefined,
+      `tenant_id=eq.${tenantId}`
+    );
     return () => { unsubQ(); unsubP(); unsubC(); };
   }, [tenantId]);
 
@@ -114,31 +131,41 @@ export default function QuotesPage() {
     if (!dateValidite) { setFormError('Date de validité obligatoire'); return; }
     setIsSaving(true); setFormError(null);
     try {
-      const items = lignes.map(l => ({
-        productId: l.product.id, productName: l.product.name, productSku: l.product.sku,
-        quantity: l.quantity, unitPrice: l.unitPrice, total: l.quantity * l.unitPrice,
-      }));
       const customerName = selectedCustomer.customerType === 'BUSINESS'
         ? selectedCustomer.companyName
         : `${selectedCustomer.firstName || ''} ${selectedCustomer.lastName || ''}`.trim();
 
-      await addDoc(collection(db, tenantCol(tenantId, 'quotes')), {
-        tenantId, customerId: selectedCustomer.id, customerName,
-        status: 'PENDING', dateValidite, total, note: note || null,
-        items, userId: user.id,
-        createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-      });
+      // Deux écritures non-atomiques (comme la plupart des CRUD simples de
+      // cette page) — acceptable ici : un devis orphelin sans lignes en cas
+      // de crash entre les deux est sans conséquence financière, contrairement
+      // au checkout ou au versement de crédit (qui restent des RPC atomiques).
+      const { data: quote, error: quoteError } = await supabase.from('quotes').insert({
+        tenant_id: tenantId, customer_id: selectedCustomer.id, customer_name: customerName,
+        reference: genQuoteReference(),
+        status: 'PENDING', valid_until: new Date(dateValidite).toISOString(),
+        subtotal: total, tax_amount: 0, discount_amount: 0, total,
+        notes: note || null,
+      }).select().single();
+      if (quoteError) throw quoteError;
+
+      const { error: itemsError } = await supabase.from('quote_items').insert(
+        lignes.map(l => ({
+          quote_id: quote.id, tenant_id: tenantId,
+          product_id: l.product.id, product_name: l.product.name, product_sku: l.product.sku,
+          quantity: l.quantity, unit_price: l.unitPrice, total: l.quantity * l.unitPrice,
+        }))
+      );
+      if (itemsError) throw itemsError;
+
       setShowNewQuote(false); setLignes([]); setSelectedCustomer(null);
       setDateValidite(''); setNote(''); setCustomerSearch('');
     } catch (e) { setFormError('Erreur lors de la création'); console.error(e); }
     finally { setIsSaving(false); }
   };
 
-  const handleStatus = async (quoteId: string, status: Quote['status']) => {
+  const handleStatus = async (quoteId: string, status: QuoteStatus) => {
     if (!tenantId) return;
-    await updateDoc(doc(db, tenantCol(tenantId, 'quotes'), quoteId), {
-      status, updatedAt: serverTimestamp(),
-    });
+    await supabase.from('quotes').update({ status }).eq('id', quoteId);
     if (selected?.id === quoteId) setSelected(prev => prev ? { ...prev, status } : null);
   };
 
@@ -149,14 +176,16 @@ export default function QuotesPage() {
     const introuvables: string[] = [];
 
     for (const item of convertTarget.items) {
-      const pSnap = await getDocs(query(collection(db, tenantCol(tenantId, 'products')), where('__name__', '==', item.productId)));
-      if (pSnap.empty) {
+      const { data: pRow } = item.productId
+        ? await supabase.from('products').select('*').eq('id', item.productId).maybeSingle()
+        : { data: null };
+      if (!pRow) {
         // Produit supprimé depuis l'établissement du devis : on le signale
         // plutôt que de le faire disparaître silencieusement du panier.
-        introuvables.push(item.productName || item.productId);
+        introuvables.push(item.productName || item.productId || '');
         continue;
       }
-      const p = { id: pSnap.docs[0].id, ...pSnap.docs[0].data() } as Product;
+      const p = mapProduct(pRow);
       addItem(p, item.quantity);
 
       // PRIX DU DEVIS, pas le prix courant.
@@ -170,14 +199,14 @@ export default function QuotesPage() {
       }
     }
 
-    const cSnap = await getDocs(query(collection(db, tenantCol(tenantId, 'customers')), where('__name__', '==', convertTarget.customerId)));
-    if (!cSnap.empty) {
-      setCustomer({ id: cSnap.docs[0].id, ...cSnap.docs[0].data() } as Customer);
+    if (convertTarget.customerId) {
+      const { data: cRow } = await supabase.from('customers').select('*').eq('id', convertTarget.customerId).maybeSingle();
+      if (cRow) setCustomer(mapCustomer(cRow));
     }
 
     // Traçabilité : la vente doit pouvoir être rattachée à son devis.
     const ref = `Devis ${convertTarget.id.slice(0, 8).toUpperCase()}`;
-    setNotes(convertTarget.note ? `${ref} — ${convertTarget.note}` : ref);
+    setNotes(convertTarget.notes ? `${ref} — ${convertTarget.notes}` : ref);
     // Lu par le checkout pour faire passer CE devis en "Converti" une fois la
     // vente réellement encaissée (voir commentaire plus bas et hooks/store.ts).
     setSourceQuoteId(convertTarget.id);
@@ -258,7 +287,7 @@ export default function QuotesPage() {
                       <TableCell className="text-sm text-gray-500">{formatDate(q.createdAt)}</TableCell>
                       <TableCell className="font-medium text-sm">{q.customerName}</TableCell>
                       <TableCell className="text-right font-bold">{formatCurrency(q.total)}</TableCell>
-                      <TableCell className="text-sm text-gray-500">{formatDate(q.dateValidite)}</TableCell>
+                      <TableCell className="text-sm text-gray-500">{formatDate(q.validUntil)}</TableCell>
                       <TableCell><StatusBadge status={q.status} /></TableCell>
                       <TableCell><ChevronRight className="h-4 w-4 text-gray-400" /></TableCell>
                     </TableRow>
@@ -279,8 +308,8 @@ export default function QuotesPage() {
                 <div className="flex justify-between"><span className="text-gray-500">Client</span><span className="font-medium">{selected.customerName}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Statut</span><StatusBadge status={selected.status} /></div>
                 <div className="flex justify-between"><span className="text-gray-500">Total</span><span className="font-bold text-lg text-primary-600">{formatCurrency(selected.total)}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Validité</span><span>{formatDate(selected.dateValidite)}</span></div>
-                {selected.note && <div><span className="text-gray-500">Note</span><p className="mt-1 text-gray-700">{selected.note}</p></div>}
+                <div className="flex justify-between"><span className="text-gray-500">Validité</span><span>{formatDate(selected.validUntil)}</span></div>
+                {selected.notes && <div><span className="text-gray-500">Note</span><p className="mt-1 text-gray-700">{selected.notes}</p></div>}
               </div>
 
               {/* Articles */}
@@ -288,8 +317,8 @@ export default function QuotesPage() {
                 <div className="mb-4">
                   <p className="text-sm font-medium text-gray-900 mb-2">Articles</p>
                   <div className="space-y-2">
-                    {selected.items.map((item, i) => (
-                      <div key={i} className="flex justify-between text-sm bg-gray-50 rounded-lg px-3 py-2">
+                    {selected.items.map((item) => (
+                      <div key={item.id} className="flex justify-between text-sm bg-gray-50 rounded-lg px-3 py-2">
                         <div><p className="font-medium">{item.productName}</p>
                         <p className="text-xs text-gray-400">{item.quantity} × {formatCurrency(item.unitPrice)}</p></div>
                         <p className="font-bold">{formatCurrency(item.quantity * item.unitPrice)}</p>

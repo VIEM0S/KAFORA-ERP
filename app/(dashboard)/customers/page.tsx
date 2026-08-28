@@ -33,12 +33,11 @@ import {
 import { formatCurrency } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
 import { useRouter } from 'next/navigation';
-import { collection, query, orderBy, doc, addDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
-// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
-import { onSnapshot } from '@/lib/firebase/watch';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
+import { mapCustomer } from '@/lib/supabase/mappers';
 import type { Customer, CustomerType } from '@/lib/types';
 
 interface CustomerForm {
@@ -79,11 +78,13 @@ export default function CustomersPage() {
 
   useEffect(() => {
     if (!tenantId) return;
-    const q = query(collection(db, tenantCol(tenantId, 'customers')), orderBy('createdAt', 'desc'));
-    return onSnapshot(q, (snap) => {
-      setCustomers(snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Customer[]);
-      setIsLoading(false);
-    });
+    return watch(
+      'customers',
+      () => supabase.from('customers').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }),
+      rows => { setCustomers(rows.map(mapCustomer)); setIsLoading(false); },
+      undefined,
+      `tenant_id=eq.${tenantId}`
+    );
   }, [tenantId]);
 
   const filtered = customers.filter((c) => {
@@ -127,32 +128,26 @@ export default function CustomersPage() {
       setFormError('Le prénom est obligatoire'); return;
     }
     setIsSaving(true); setFormError(null);
+    // search_name (recherche multi-champ insensible à la casse) est une
+    // colonne GÉNÉRÉE côté Postgres (generated always as ... stored) — plus
+    // besoin de la calculer côté client comme avec Firestore, et l'écrire
+    // serait d'ailleurs refusé par la base.
     const payload = {
-      tenantId, code: form.code.trim() || genCode(customers),
-      firstName: form.customerType === 'INDIVIDUAL' ? form.firstName.trim() : null,
-      lastName: form.customerType === 'INDIVIDUAL' ? form.lastName.trim() || null : null,
-      companyName: form.customerType === 'BUSINESS' ? form.companyName.trim() : null,
+      tenant_id: tenantId, code: form.code.trim() || genCode(customers),
+      first_name: form.customerType === 'INDIVIDUAL' ? form.firstName.trim() : null,
+      last_name: form.customerType === 'INDIVIDUAL' ? form.lastName.trim() || null : null,
+      company_name: form.customerType === 'BUSINESS' ? form.companyName.trim() : null,
       email: form.email.trim() || null, phone: form.phone.trim() || null,
       address: form.address.trim() || null, city: form.city.trim() || null,
-      customerType: form.customerType, creditLimit: Number(form.creditLimit) || 0,
-      creditUsed: editing?.creditUsed || 0,
-      notes: form.notes.trim() || null, isActive: form.isActive,
-      // Champ dénormalisé : un client se cherche par prénom, nom OU raison
-      // sociale, et Firestore ne sait pas interroger trois champs à la fois.
-      // On concatène le tout en minuscules pour une recherche par préfixe.
-      searchName: [
-        form.customerType === 'INDIVIDUAL' ? form.firstName.trim() : '',
-        form.customerType === 'INDIVIDUAL' ? form.lastName.trim() : '',
-        form.customerType === 'BUSINESS' ? form.companyName.trim() : '',
-      ].filter(Boolean).join(' ').toLowerCase(),
-      updatedAt: serverTimestamp(),
+      customer_type: form.customerType, credit_limit: Number(form.creditLimit) || 0,
+      credit_used: editing?.creditUsed || 0,
+      notes: form.notes.trim() || null, is_active: form.isActive,
     };
     try {
-      if (editing) {
-        await updateDoc(doc(db, tenantCol(tenantId, 'customers'), editing.id), payload);
-      } else {
-        await addDoc(collection(db, tenantCol(tenantId, 'customers')), { ...payload, createdAt: serverTimestamp() });
-      }
+      const { error } = editing
+        ? await supabase.from('customers').update(payload).eq('id', editing.id)
+        : await supabase.from('customers').insert(payload);
+      if (error) throw error;
       setShowDialog(false);
     } catch (e) { setFormError('Erreur lors de la sauvegarde'); console.error(e); }
     finally { setIsSaving(false); }
@@ -161,7 +156,11 @@ export default function CustomersPage() {
   const handleDelete = async () => {
     if (!tenantId || !deleteTarget) return;
     setIsDeleting(true);
-    try { await deleteDoc(doc(db, tenantCol(tenantId, 'customers'), deleteTarget.id)); setDeleteTarget(null); }
+    try {
+      const { error } = await supabase.from('customers').delete().eq('id', deleteTarget.id);
+      if (error) throw error;
+      setDeleteTarget(null);
+    }
     catch (e) { console.error(e); } finally { setIsDeleting(false); }
   };
 

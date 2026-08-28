@@ -98,8 +98,9 @@ export interface Transfer {
   id: string;
   tenantId: string;
   reference: string;
-  fromStoreId: string;
-  toStoreId: string;
+  // Nullables : le transfert reste consultable après suppression d'un magasin.
+  fromStoreId: string | null;
+  toStoreId: string | null;
   status: TransferStatus;
   lines: TransferLine[];
   note: string | null;
@@ -208,6 +209,26 @@ export interface Inventory {
   lastStockCheck?: Date | null;
 }
 
+export type InventoryMovementType =
+  'SALE' | 'PURCHASE' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'TRANSFER_CANCEL' | 'ADJUSTMENT' | 'RETURN' | 'INITIAL';
+
+export interface InventoryMovement {
+  id: string;
+  tenantId: string;
+  productId: string | null;
+  productName: string;
+  storeId: string | null;
+  type: InventoryMovementType;
+  quantity: number;
+  previousQuantity: number | null;
+  newQuantity: number | null;
+  saleId: string | null;
+  transferId: string | null;
+  purchaseOrderId: string | null;
+  reason: string | null;
+  createdAt: Date;
+}
+
 export interface Customer {
   id: string;
   tenantId: string;
@@ -236,7 +257,12 @@ export interface Sale {
   reference: string;
   customerId: string | null;
   customer?: Customer;
-  storeIdFrom: string;
+  // Instantané pris à la création : reste lisible même si le client est
+  // supprimé ensuite (voir migration 019).
+  customerName: string | null;
+  // Nullable : la vente reste consultable après suppression du magasin
+  // (garantie côté UI, voir supabase/migrations/..._019_deletable_entity_fk_fixes.sql).
+  storeIdFrom: string | null;
   storeFrom?: Store;
   cashierId: string;
   cashier?: User;
@@ -244,7 +270,11 @@ export interface Sale {
   subtotal: number;
   taxAmount: number;
   discountAmount: number;
+  // Le % appliqué au panier entier — discountAmount seul ne permet pas de
+  // le retrouver après coup (ex. "Remise (10%)" affichée sur la facture).
+  discountPercent: number | null;
   discountReason: string | null;
+  itemCount: number | null;
   total: number;
   paidAmount: number;
   changeGiven: number;
@@ -252,6 +282,9 @@ export interface Sale {
   notes: string | null;
   items: SaleItem[];
   payments: Payment[];
+  cancellationReason: string | null;
+  cancelledBy: string | null;
+  cancelledAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -286,8 +319,13 @@ export interface Payment {
 export interface Credit {
   id: string;
   tenantId: string;
-  customerId: string;
+  // Nullable : le crédit reste consultable après suppression du client.
+  customerId: string | null;
   customer?: Customer;
+  // Instantané pris à la création (même principe que Sale.customerName) :
+  // reste lisible même si le client est supprimé ensuite.
+  customerName: string | null;
+  customerPhone: string | null;
   saleId: string | null;
   reference: string;
   totalAmount: number;
@@ -308,19 +346,28 @@ export type CreditStatus = 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | '
 export interface CreditPayment {
   id: string;
   creditId: string;
+  storeId: string | null;
   amount: number;
   paymentMethod: PaymentMethod;
   reference: string | null;
   notes: string | null;
+  userName: string | null;
+  /** Solde restant immédiatement après ce versement — pour l'historique. */
+  remainingAfter: number | null;
   createdAt: Date;
 }
 
 export interface Quote {
   id: string;
   tenantId: string;
-  reference: string;
+  // Jamais numéroté légalement (contrairement aux ventes/BC) — généré côté
+  // client par commodité d'affichage uniquement.
+  reference: string | null;
   customerId: string | null;
   customer?: Customer;
+  // Instantané pris à la création : reste lisible même si le client est
+  // supprimé ensuite (voir migration 032).
+  customerName: string | null;
   status: QuoteStatus;
   validUntil: Date | null;
   subtotal: number;
@@ -335,7 +382,9 @@ export interface Quote {
   updatedAt: Date;
 }
 
-export type QuoteStatus = 'DRAFT' | 'PENDING' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'CONVERTED';
+// Valeurs réellement utilisées par l'app (quotes/page.tsx) — corrigé en
+// migration 031, l'enum d'origine (DRAFT/SENT/REJECTED) était aspirationnel.
+export type QuoteStatus = 'PENDING' | 'ACCEPTED' | 'CONVERTED' | 'REFUSED' | 'EXPIRED';
 
 export interface QuoteItem {
   id: string;
@@ -361,6 +410,7 @@ export interface Supplier {
   address: string | null;
   city: string | null;
   country: string | null;
+  website: string | null;
   paymentTerms: number | null;
   taxId: string | null;
   notes: string | null;
@@ -404,6 +454,24 @@ export interface Notification {
 
 export type NotificationChannel = 'IN_APP' | 'EMAIL' | 'SMS' | 'WHATSAPP' | 'PUSH';
 
+/** Agrégat quotidien pré-calculé — voir netlify/functions/aggregate-daily-stats. */
+export interface DailyStat {
+  date: string; // AAAA-MM-JJ
+  revenue: number;
+  cost: number;
+  margin: number;
+  saleCount: number;
+  itemCount: number;
+  uniqueCustomers: number;
+  byPayment: Record<string, number> | null;
+  byStore: Record<string, number> | null;
+  revenueByCategory: Record<string, number> | null;
+  costByCategory: Record<string, number> | null;
+  marginByCategory: Record<string, number> | null;
+  topProducts: { productId: string; name: string; revenue: number; quantity: number }[];
+  costIncomplete: boolean;
+}
+
 export interface DashboardStats {
   todaySales: number;
   weeklyRevenue: number;
@@ -432,19 +500,34 @@ export interface SalesTrendPoint {
   revenue: number;
 }
 
+export type CashSessionStatus = 'OPEN' | 'CLOSED';
+
 export interface CashRegisterSession {
   id: string;
-  registerId: string;
-  openedBy: string;
+  tenantId: string;
+  storeId: string | null;
+  registerId: string | null;
+  status: CashSessionStatus;
+  openedBy: string | null;
+  openedByName: string | null;
   openedByUser?: User;
   openedAt: Date;
-  closedAt: Date | null;
-  closedBy: string | null;
   openingBalance: number;
-  expectedBalance: number;
-  actualBalance: number | null;
-  variance: number | null;
+  closedBy: string | null;
+  closedByName: string | null;
+  closedAt: Date | null;
+  closingBalance: number | null;
+  expectedBalance: number | null;
+  cashSalesTotal: number | null;
+  acompteTotal: number | null;
+  creditRepaymentTotal: number | null;
+  cashRefundTotal: number | null;
+  difference: number | null;
   varianceReason: string | null;
+  salesCount: number | null;
+  salesTotal: number | null;
+  notes: string | null;
+  createdAt: Date;
 }
 
 export interface CartItem {
@@ -474,7 +557,7 @@ export interface PurchaseOrder {
   reference: string;
   supplierId: string;
   supplier?: Supplier;
-  storeId: string; // magasin/entrepôt de destination
+  storeId: string | null; // magasin/entrepôt de destination — nullable après suppression
   status: PurchaseOrderStatus;
   items: PurchaseOrderItem[];
   subtotal: number;
@@ -508,7 +591,7 @@ export interface SaleReturn {
   tenantId: string;
   saleId: string;
   saleReference: string;
-  storeId: string;
+  storeId: string | null;
   customerId: string | null;
   items: SaleReturnItem[];
   refundAmount: number;

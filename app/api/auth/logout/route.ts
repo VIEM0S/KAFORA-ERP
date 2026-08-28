@@ -1,34 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth } from '@/lib/firebase/admin';
-import { cookies } from 'next/headers';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 
-export async function POST(request: NextRequest) {
+export async function POST(_request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get('__session')?.value;
+    const supabaseServer = await createServerSupabaseClient();
 
-    if (sessionCookie) {
-      // Révoquer toutes les sessions Firebase de l'utilisateur
-      try {
-        const decoded = await adminAuth.verifySessionCookie(sessionCookie);
-        await adminAuth.revokeRefreshTokens(decoded.uid);
-      } catch {
-        // Cookie invalide ou expiré — on continue quand même
-      }
-    }
+    // scope: 'global' révoque TOUTES les sessions actives de l'utilisateur
+    // (équivalent adminAuth.revokeRefreshTokens), pas seulement celle-ci —
+    // et supprime au passage les cookies de session côté navigateur.
+    await supabaseServer.auth.signOut({ scope: 'global' });
 
-    const response = NextResponse.json({ success: true });
-
-    // Supprimer le cookie de session
-    response.cookies.set('__session', '', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 0,
-      path: '/',
-    });
-
-    return response;
+    return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Logout error:', error);
     return NextResponse.json({ success: true });

@@ -11,11 +11,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatCurrency } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
-import { collection, query, orderBy, where } from 'firebase/firestore';
-// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
-// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
-import { onSnapshot } from '@/lib/firebase/watch';
-import { db } from '@/lib/firebase/client';
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
+import { mapDailyStat } from '@/lib/supabase/mappers';
+import type { DailyStat } from '@/lib/types';
 import dynamic from 'next/dynamic';
 
 // Graphiques chargés À LA DEMANDE : `recharts` pèse ~120 ko et bloquait
@@ -32,25 +33,6 @@ const RevenueChart = dynamic(() => import('@/components/analytics/charts').then(
 const WeeklyChart = dynamic(() => import('@/components/analytics/charts').then(m => m.WeeklyChart), { ssr: false, loading: () => chartFallback });
 const PaymentChart = dynamic(() => import('@/components/analytics/charts').then(m => m.PaymentChart), { ssr: false, loading: () => chartFallback });
 const VolumeChart = dynamic(() => import('@/components/analytics/charts').then(m => m.VolumeChart), { ssr: false, loading: () => chartFallback });
-import { tenantCol } from '@/lib/firebase/collections';
-
-/** Agrégat quotidien pré-calculé (voir netlify/functions/aggregate-daily-stats). */
-interface DailyStat {
-  date: string;                 // AAAA-MM-JJ
-  revenue: number;
-  cost: number;                 // coût d'achat RÉEL, relevé à la vente
-  margin: number;
-  saleCount: number;
-  uniqueCustomers: number;
-  byPayment: Record<string, number>;
-  byStore: Record<string, number>;
-  revenueByCategory?: Record<string, number>;
-  costByCategory?: Record<string, number>;
-  marginByCategory?: Record<string, number>;
-  topProducts: { productId: string; name: string; revenue: number; quantity: number }[];
-  costIncomplete?: boolean;
-}
-
 
 const MONTHS_FR = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
 
@@ -68,16 +50,17 @@ export default function AnalyticsPage() {
   // libellés, pas de donnée sensible, lue une fois indépendamment du reste.
   useEffect(() => {
     if (!tenantId) return;
-    const unsub = onSnapshot(
-      collection(db, tenantCol(tenantId, 'categories')),
-      snap => {
+    return watch(
+      'categories',
+      () => supabase.from('categories').select('id, name').eq('tenant_id', tenantId),
+      rows => {
         const names: Record<string, string> = {};
-        snap.docs.forEach(d => { names[d.id] = (d.data().name as string) || d.id; });
+        rows.forEach(r => { names[r.id] = r.name || r.id; });
         setCategoryNames(names);
       },
-      () => setCategoryNames({})
+      () => setCategoryNames({}),
+      `tenant_id=eq.${tenantId}`
     );
-    return () => unsub();
   }, [tenantId]);
 
   // Lecture des agrégats pré-calculés (un document par journée), produits par
@@ -94,19 +77,16 @@ export default function AnalyticsPage() {
     from.setUTCDate(from.getUTCDate() - monthsCount * 31);
     const fromKey = from.toISOString().slice(0, 10);
 
-    const unsub = onSnapshot(
-      query(
-        collection(db, tenantCol(tenantId, 'daily_stats')),
-        where('date', '>=', fromKey),
-        orderBy('date', 'asc')
-      ),
-      snap => {
-        setDailyStats(snap.docs.map(d => d.data() as DailyStat));
+    return watch(
+      'daily_stats',
+      () => supabase.from('daily_stats').select('*').eq('tenant_id', tenantId).gte('date', fromKey).order('date', { ascending: true }),
+      rows => {
+        setDailyStats(rows.map(mapDailyStat));
         setIsLoading(false);
       },
-      () => setIsLoading(false)
+      () => setIsLoading(false),
+      `tenant_id=eq.${tenantId}`
     );
-    return () => unsub();
   }, [tenantId, monthsCount]);
 
   // Top produits : agrégés côté serveur sur TOUTES les lignes de vente.
@@ -133,22 +113,19 @@ export default function AnalyticsPage() {
   useEffect(() => {
     const ids = topProductIds ? topProductIds.split(',') : [];
     if (!tenantId || ids.length === 0) { setStockLevels({}); return; }
-    // "in" est limité à 30 valeurs côté Firestore — le top est plafonné à 5,
-    // largement dans la marge.
-    const unsub = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'inventory')), where('productId', 'in', ids)),
-      snap => {
+    return watch(
+      'inventory',
+      () => supabase.from('inventory').select('product_id, quantity').eq('tenant_id', tenantId).in('product_id', ids),
+      rows => {
         const totals: Record<string, number> = {};
-        snap.docs.forEach(d => {
-          const data = d.data();
-          const pid = data.productId as string;
-          totals[pid] = (totals[pid] || 0) + (Number(data.quantity) || 0);
+        rows.forEach(r => {
+          totals[r.product_id] = (totals[r.product_id] || 0) + (Number(r.quantity) || 0);
         });
         setStockLevels(totals);
       },
-      () => setStockLevels({})
+      () => setStockLevels({}),
+      `tenant_id=eq.${tenantId}`
     );
-    return () => unsub();
   }, [tenantId, topProductIds]);
 
   // Rotation = vitesse de vente (unités/jour sur la période) rapportée au

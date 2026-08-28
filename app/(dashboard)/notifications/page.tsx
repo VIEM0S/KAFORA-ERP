@@ -11,12 +11,10 @@ import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/hooks/store';
 import { useRouter } from 'next/navigation';
 import { formatRelativeTime } from '@/lib/utils/helpers';
-import { collection, query, orderBy, where, doc, updateDoc, deleteDoc, limit, writeBatch } from 'firebase/firestore';
-// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
-// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
-import { onSnapshot } from '@/lib/firebase/watch';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
 import { isManagerPlus as isManagerPlusRole } from '@/lib/auth/roles';
 import { estEnAlerte } from '@/lib/inventory/alert-threshold';
 
@@ -54,8 +52,8 @@ function useDerivedNotifications(tenantId: string | undefined, storeId: string |
   useEffect(() => {
     if (!tenantId) return;
     let products: Record<string, { name: string; alertThreshold: number; trackInventory: boolean }> = {};
-    let inventory: { productId: string; storeId: string; quantity: number }[] = [];
-    let credits: { id: string; customerName: string; solde: number; dateEcheance: string; status: string }[] = [];
+    let inventory: { productId: string; storeId: string; quantity: number; minQuantity: number | null }[] = [];
+    let credits: { id: string; customerName: string | null; remainingAmount: number; dueDate: string | null; status: string }[] = [];
 
     const buildNotifications = () => {
       const notifs: Notification[] = [];
@@ -73,7 +71,7 @@ function useDerivedNotifications(tenantId: string | undefined, storeId: string |
             isRead: false, link: '/inventory/alerts', createdAt: { seconds: now / 1000 },
           });
         } else if (estEnAlerte(inv.quantity, {
-          seuilMagasin: (inv as { minQuantity?: number }).minQuantity,
+          seuilMagasin: inv.minQuantity ?? undefined,
           seuilProduit: p.alertThreshold,
         })) {
           notifs.push({
@@ -86,19 +84,20 @@ function useDerivedNotifications(tenantId: string | undefined, storeId: string |
 
       // Crédits en retard / échéance proche
       credits.forEach(c => {
-        if (!['PENDING', 'PARTIALLY_PAID', 'OVERDUE'].includes(c.status)) return;
-        const echeance = new Date(c.dateEcheance).getTime();
+        if (!['PENDING', 'PARTIALLY_PAID', 'OVERDUE'].includes(c.status) || !c.dueDate) return;
+        const echeance = new Date(c.dueDate).getTime();
         const diff = echeance - now;
+        const customerName = c.customerName || 'Client supprimé';
         if (diff < 0) {
           notifs.push({
             id: `credit-overdue-${c.id}`, type: 'CREDIT_OVERDUE',
-            title: 'Crédit en retard', message: `${c.customerName} doit ${c.solde.toLocaleString()} FCFA`,
+            title: 'Crédit en retard', message: `${customerName} doit ${c.remainingAmount.toLocaleString()} FCFA`,
             isRead: false, link: '/credits', createdAt: { seconds: now / 1000 },
           });
         } else if (diff < 48 * 60 * 60 * 1000) {
           notifs.push({
             id: `credit-due-${c.id}`, type: 'CREDIT_DUE_SOON',
-            title: 'Échéance proche', message: `${c.customerName} — échéance dans moins de 48h`,
+            title: 'Échéance proche', message: `${customerName} — échéance dans moins de 48h`,
             isRead: false, link: '/credits', createdAt: { seconds: now / 1000 },
           });
         }
@@ -108,39 +107,52 @@ function useDerivedNotifications(tenantId: string | undefined, storeId: string |
       setIsLoading(false);
     };
 
-    const unsubP = onSnapshot(collection(db, tenantCol(tenantId, 'products')), snap => {
-      products = {};
-      snap.docs.forEach(d => {
-        products[d.id] = {
-          name: d.data().name,
-          // `??` et non `||` : un seuil à 0 signifie « ne pas alerter »
-          // et doit être respecté tel quel.
-          alertThreshold: d.data().alertThreshold ?? 10,
-          trackInventory: d.data().trackInventory,
-        };
-      });
-      buildNotifications();
-    });
+    const unsubP = watch(
+      'products',
+      () => supabase.from('products').select('id, name, alert_threshold, track_inventory').eq('tenant_id', tenantId),
+      rows => {
+        products = {};
+        rows.forEach(r => {
+          products[r.id] = {
+            name: r.name,
+            // `??` et non `||` : un seuil à 0 signifie « ne pas alerter »
+            // et doit être respecté tel quel.
+            alertThreshold: r.alert_threshold ?? 10,
+            trackInventory: r.track_inventory,
+          };
+        });
+        buildNotifications();
+      },
+      undefined,
+      `tenant_id=eq.${tenantId}`
+    );
 
-    const unsubI = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'inventory')), where('storeId', '==', storeId)),
-      snap => {
-      inventory = snap.docs.map(d => ({
-        productId: d.data().productId, storeId: d.data().storeId, quantity: d.data().quantity || 0,
-      }));
-      buildNotifications();
-    });
-
-    const unsubC = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'credits')),
-        where('status', 'in', ['PENDING', 'PARTIALLY_PAID', 'OVERDUE'])),
-      snap => {
-        credits = snap.docs.map(d => ({
-          id: d.id, customerName: d.data().customerName,
-          solde: d.data().solde, dateEcheance: d.data().dateEcheance, status: d.data().status,
+    const unsubI = watch(
+      'inventory',
+      () => supabase.from('inventory').select('product_id, store_id, quantity, min_quantity').eq('tenant_id', tenantId),
+      rows => {
+        inventory = rows.map(r => ({
+          productId: r.product_id, storeId: r.store_id, quantity: r.quantity || 0, minQuantity: r.min_quantity,
         }));
         buildNotifications();
-      }
+      },
+      undefined,
+      `tenant_id=eq.${tenantId}`
+    );
+
+    const unsubC = watch(
+      'credits',
+      () => supabase.from('credits').select('id, customer_name, remaining_amount, due_date, status')
+        .eq('tenant_id', tenantId).in('status', ['PENDING', 'PARTIALLY_PAID', 'OVERDUE']),
+      rows => {
+        credits = rows.map(r => ({
+          id: r.id, customerName: r.customer_name,
+          remainingAmount: r.remaining_amount, dueDate: r.due_date, status: r.status,
+        }));
+        buildNotifications();
+      },
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
 
     return () => { unsubP(); unsubI(); unsubC(); };
@@ -149,49 +161,47 @@ function useDerivedNotifications(tenantId: string | undefined, storeId: string |
   return { notifications, isLoading };
 }
 
-// Lit la vraie collection `alerts` (écrite côté serveur : demandes de
+// Lit la vraie table `alerts` (écrite côté serveur : demandes de
 // suppression, conflits de synchronisation offline, remboursements...).
-// Fix : ces alertes étaient écrites depuis plusieurs routes API mais
-// n'étaient jamais lues nulle part — un Propriétaire ne voyait donc jamais
-// une demande de suppression en attente dans /notifications.
+// Fix (héritage Firestore) : ces alertes étaient écrites depuis plusieurs
+// routes API mais n'étaient jamais lues nulle part — un Propriétaire ne
+// voyait donc jamais une demande de suppression en attente ici.
 function useFirestoreAlerts(tenantId: string | undefined, userRole: string | undefined, currentUserId: string | undefined) {
   const [alerts, setAlerts] = useState<Notification[]>([]);
 
   useEffect(() => {
     if (!tenantId || !userRole) { setAlerts([]); return; }
-    const q = query(
-      collection(db, tenantCol(tenantId, 'alerts')),
-      where('isResolved', '==', false),
-      orderBy('createdAt', 'desc'),
-      limit(50)
-    );
-    return onSnapshot(q, snap => {
-      const items: Notification[] = [];
-      snap.docs.forEach(d => {
-        const data = d.data();
-        // Une alerte peut cibler soit un rôle entier (targetRole — ex: toute
-        // demande de suppression va à OWNER), soit un utilisateur précis
-        // (targetUserId — ex: "ta demande a été approuvée" ne doit être vue
-        // QUE par l'Admin qui l'a faite, pas par tout Manager+).
-        const targetRole = data.targetRole as string | undefined;
-        const targetUserId = data.targetUserId as string | undefined;
-        if (targetUserId) {
-          if (targetUserId !== currentUserId) return;
-        } else if (targetRole) {
-          if (targetRole !== userRole) return;
-        } else {
-          const isManagerPlus = isManagerPlusRole(userRole);
-          if (!isManagerPlus) return;
-        }
-        if (data.isRead) return;
-        items.push({
-          id: d.id, type: data.type, title: data.title, message: data.message,
-          isRead: !!data.isRead, link: data.reference === 'users' ? '/users' : undefined,
-          createdAt: data.createdAt, source: 'firestore',
+    return watch(
+      'alerts',
+      () => supabase.from('alerts').select('*').eq('tenant_id', tenantId).eq('is_resolved', false)
+        .order('created_at', { ascending: false }).limit(50),
+      rows => {
+        const items: Notification[] = [];
+        rows.forEach(data => {
+          // Une alerte peut cibler soit un rôle entier (target_role — ex:
+          // toute demande de suppression va à OWNER), soit un utilisateur
+          // précis (target_user_id — ex: "ta demande a été approuvée" ne
+          // doit être vue QUE par l'Admin qui l'a faite, pas par tout
+          // Manager+).
+          if (data.target_user_id) {
+            if (data.target_user_id !== currentUserId) return;
+          } else if (data.target_role) {
+            if (data.target_role !== userRole) return;
+          } else {
+            if (!isManagerPlusRole(userRole)) return;
+          }
+          if (data.is_read) return;
+          items.push({
+            id: data.id, type: data.type as Notification['type'], title: data.title, message: data.message || '',
+            isRead: !!data.is_read, link: data.reference === 'users' ? '/users' : undefined,
+            createdAt: data.created_at, source: 'firestore',
+          });
         });
-      });
-      setAlerts(items);
-    });
+        setAlerts(items);
+      },
+      undefined,
+      `tenant_id=eq.${tenantId}`
+    );
   }, [tenantId, userRole, currentUserId]);
 
   return alerts;
@@ -213,18 +223,16 @@ export default function NotificationsPage() {
   const dismiss = (n: Notification) => {
     setDismissed(prev => new Set(prev).add(n.id));
     // Les alertes dérivées (stock/crédits) n'existent pas en base — seules
-    // les vraies alertes Firestore doivent être marquées lues pour de bon,
-    // sinon elles réapparaîtraient à chaque rechargement de la page.
-    if (n.source === 'firestore' && tenantId) {
-      updateDoc(doc(db, tenantCol(tenantId, 'alerts'), n.id), { isRead: true }).catch(() => {});
+    // les vraies alertes doivent être marquées lues pour de bon, sinon
+    // elles réapparaîtraient à chaque rechargement de la page.
+    if (n.source === 'firestore') {
+      supabase.from('alerts').update({ is_read: true }).eq('id', n.id).then(() => {});
     }
   };
   const dismissAll = () => {
     setDismissed(new Set(notifications.map(n => n.id)));
-    if (tenantId) {
-      firestoreAlerts.forEach(n => {
-        updateDoc(doc(db, tenantCol(tenantId, 'alerts'), n.id), { isRead: true }).catch(() => {});
-      });
+    if (firestoreAlerts.length > 0) {
+      supabase.from('alerts').update({ is_read: true }).in('id', firestoreAlerts.map(n => n.id)).then(() => {});
     }
   };
 

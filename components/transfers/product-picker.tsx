@@ -3,11 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, Loader2, Check } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import {
-  collection, query, where, orderBy, limit, getDocs,
-} from 'firebase/firestore';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
+import { supabase } from '@/lib/supabase/client';
 
 /**
  * Sélecteur de produit pour les transferts.
@@ -15,9 +11,11 @@ import { tenantCol } from '@/lib/firebase/collections';
  * La recherche est faite CÔTÉ SERVEUR, comme au POS : on ne charge jamais le
  * catalogue entier, qui peut compter des milliers de références.
  *
- * Elle interroge `nameLower` (champ dénormalisé en minuscules, car Firestore
- * est sensible à la casse) et le code-barres en correspondance exacte, pour
- * que la douchette fonctionne aussi ici.
+ * `ILIKE` (accéléré par l'index trigram idx_products_name_trgm — voir
+ * supabase/migrations) remplace la recherche par PRÉFIXE Firestore
+ * (`nameLower >= x AND nameLower <= x + ''`) : elle trouve aussi les
+ * correspondances au milieu du nom ("Ciment 50kg" trouvé en tapant "50kg"),
+ * pas seulement en début de chaîne.
  *
  * Le stock disponible dans le magasin source est affiché à côté de chaque
  * résultat : sans cette information, on prépare un transfert qui sera refusé
@@ -61,59 +59,36 @@ export function ProductPicker({ tenantId, storeId, onPick, alreadyPicked = [] }:
     // Débounce : une requête par pause de frappe, pas par caractère.
     const timer = setTimeout(async () => {
       try {
-        const col = collection(db, tenantCol(tenantId, 'products'));
-        const lower = t.toLowerCase();
-
         const [byName, byBarcode] = await Promise.all([
-          getDocs(
-            query(
-              col,
-              where('isActive', '==', true),
-              where('nameLower', '>=', lower),
-              where('nameLower', '<=', lower + '\uf8ff'),
-              orderBy('nameLower'),
-              limit(15)
-            )
-          ).catch(() => null),
-          getDocs(query(col, where('barcode', '==', t), limit(5))).catch(() => null),
+          supabase.from('products').select('id, name, sku')
+            .eq('tenant_id', tenantId).eq('is_active', true)
+            .ilike('name', `%${t}%`).limit(15),
+          supabase.from('products').select('id, name, sku')
+            .eq('tenant_id', tenantId).eq('barcode', t).limit(5),
         ]);
 
         if (mine !== seq.current) return; // une frappe plus récente a pris le relais
 
         const merged = new Map<string, ProductHit>();
-        for (const snap of [byBarcode, byName]) {
-          snap?.docs.forEach(d => {
-            const data = d.data();
-            merged.set(d.id, {
-              id: d.id,
-              name: (data.name as string) || '',
-              sku: (data.sku as string) || '',
-              available: null,
-            });
+        for (const res of [byBarcode, byName]) {
+          (res.data ?? []).forEach(p => {
+            merged.set(p.id, { id: p.id, name: p.name, sku: p.sku || '', available: null });
           });
         }
 
         const list = [...merged.values()];
 
-        // Stock disponible dans le magasin source, pour les résultats affichés.
+        // Stock disponible dans le magasin source, pour les résultats
+        // affichés — une seule requête plutôt qu'une par produit (le
+        // relationnel s'y prête, contrairement aux lectures Firestore
+        // individuelles de l'original).
         if (storeId && list.length > 0) {
-          const invSnaps = await Promise.all(
-            list.map(p =>
-              getDocs(
-                query(
-                  collection(db, tenantCol(tenantId, 'inventory')),
-                  where('productId', '==', p.id),
-                  where('storeId', '==', storeId),
-                  limit(1)
-                )
-              ).catch(() => null)
-            )
-          );
+          const { data: invRows } = await supabase
+            .from('inventory').select('product_id, quantity')
+            .eq('store_id', storeId).in('product_id', list.map(p => p.id));
           if (mine !== seq.current) return;
-          list.forEach((p, i) => {
-            const s = invSnaps[i];
-            p.available = s && !s.empty ? (s.docs[0].data().quantity as number) || 0 : 0;
-          });
+          const byProduct = new Map((invRows ?? []).map(r => [r.product_id, r.quantity]));
+          list.forEach(p => { p.available = byProduct.get(p.id) ?? 0; });
         }
 
         if (mine !== seq.current) return;

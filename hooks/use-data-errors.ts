@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { describeFirestoreError, type ReadableError } from '@/lib/utils/firestore-errors';
+import { describeSupabaseError, type ReadableError } from '@/lib/utils/supabase-errors';
 
 /**
  * Registre central des erreurs de chargement de données.
@@ -34,7 +34,7 @@ export const useDataErrors = create<DataErrorState>((set) => ({
       // Journalisé aussi : le message affiché reste volontairement simple,
       // la console garde le détail technique pour le support.
       console.error(`[${key}] échec de chargement`, err);
-      return { errors: { ...state.errors, [key]: describeFirestoreError(err) } };
+      return { errors: { ...state.errors, [key]: describeSupabaseError(err) } };
     }),
 
   clearError: (key) =>

@@ -12,46 +12,26 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { formatCurrency, toFirestoreDate, formatDate, formatDateTime } from '@/lib/utils/helpers';
+import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
-import { collection, query, orderBy, limit, getDocs, doc, getDoc, where } from 'firebase/firestore';
-// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
-// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
-import { onSnapshot } from '@/lib/firebase/watch';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
+import { mapSale, mapSaleItem, mapQuote, mapQuoteItem } from '@/lib/supabase/mappers';
 import { generateInvoicePDF, generateThermalReceipt } from '@/lib/utils/pdf';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
 import type { InvoiceData } from '@/lib/utils/pdf';
-import { describeFirestoreError, type ReadableError } from '@/lib/utils/firestore-errors';
+import { describeSupabaseError, type ReadableError } from '@/lib/utils/supabase-errors';
+import type { Sale, SaleItem, Quote } from '@/lib/types';
 
-interface Sale {
-  id: string; reference?: string; total: number; subtotal: number; status: string;
-  paymentMethod?: string; customerName?: string; customerId?: string;
-  discountPercent?: number; discountAmount?: number; tax?: number;
-  acompte?: number; soldeCredit?: number; amountReceived?: number; change?: number;
-  createdAt: unknown;
-}
-
-interface SaleItem {
-  productName: string; productSku: string;
-  quantity: number; unitPrice: number; total: number;
-}
-
-interface Quote {
-  id: string; total: number; status: string;
-  customerName?: string; customerId?: string;
-  dateValidite?: string; note?: string;
-  items?: QuoteItem[];
-  createdAt: unknown;
-}
-
-interface QuoteItem {
-  productName: string; productSku: string;
-  quantity: number; unitPrice: number; total: number;
-}
+/** Vente à crédit : le solde restant dû, dérivé (jamais stocké tel quel —
+ * `paidAmount` porte déjà l'acompte pour une vente CREDIT, voir
+ * app/api/pos/checkout/route.ts). */
+const soldeCreditOf = (sale: Sale) =>
+  sale.paymentMethod === 'CREDIT' ? Math.max(0, sale.total - sale.paidAmount) : undefined;
 
 
 export default function InvoicesPage() {
@@ -78,22 +58,30 @@ export default function InvoicesPage() {
     let done = 0;
     const check = () => { done++; if (done >= 2) setIsLoading(false); };
 
-    const unsubS = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'sales')),
-        where('storeId', '==', storeId),
-        orderBy('createdAt', 'desc'), limit(200)),
-      snap => { setSales(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Sale[]); setLoadError(null); check(); },
-      // Sans ce gestionnaire, un index manquant laissait la page annoncer
+    const unsubS = watch(
+      'sales',
+      () => supabase.from('sales').select('*').eq('tenant_id', tenantId).eq('store_id', storeId)
+        .order('created_at', { ascending: false }).limit(200),
+      rows => { setSales(rows.map(r => mapSale(r))); setLoadError(null); check(); },
+      // Sans ce gestionnaire, un refus RLS laissait la page annoncer
       // « Aucune vente trouvée » — indiscernable d'un magasin sans facture.
       err => {
         console.error('Invoices listener error:', err);
-        setLoadError(describeFirestoreError(err));
+        setLoadError(describeSupabaseError(err));
         check();
-      }
+      },
+      `tenant_id=eq.${tenantId}`
     );
-    const unsubQ = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'quotes')), orderBy('createdAt', 'desc')),
-      snap => { setQuotes(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Quote[]); check(); }
+    const unsubQ = watch(
+      'quotes',
+      // quote_items embarqué via la relation FK, pour generateQuoteInvoice.
+      () => supabase.from('quotes').select('*, quote_items(*)').eq('tenant_id', tenantId).order('created_at', { ascending: false }),
+      rows => {
+        setQuotes(rows.map(r => mapQuote(r, (r.quote_items ?? []).map(mapQuoteItem))));
+        check();
+      },
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
     return () => { unsubS(); unsubQ(); };
   }, [tenantId, storeId]);
@@ -135,11 +123,9 @@ export default function InvoicesPage() {
     if (!tenantId) return;
     setIsGenerating(sale.id);
     try {
-      const itemsSnap = await getDocs(
-        collection(db, `tenants/${tenantId}/sales/${sale.id}/sale_items`)
-      );
-      const items: SaleItem[] = itemsSnap.docs.map(d => d.data() as SaleItem);
-      const date = toFirestoreDate(sale.createdAt);
+      const { data } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id);
+      const items = (data ?? []).map(mapSaleItem);
+      const date = sale.createdAt;
 
       const invoiceData: InvoiceData = {
         ...getTenantConfig(),
@@ -154,14 +140,14 @@ export default function InvoicesPage() {
           total: i.total,
         })),
         subtotal: sale.subtotal || sale.total,
-        discountPercent: sale.discountPercent,
+        discountPercent: sale.discountPercent ?? undefined,
         discountAmount: sale.discountAmount,
-        tax: sale.tax,
+        tax: sale.taxAmount,
         total: sale.total,
         paymentMethod: sale.paymentMethod,
-        amountReceived: sale.amountReceived,
-        change: sale.change,
-        soldeCredit: sale.soldeCredit,
+        amountReceived: sale.paidAmount,
+        change: sale.changeGiven,
+        soldeCredit: soldeCreditOf(sale),
       };
 
       if (format === 'A4') generateInvoicePDF(invoiceData);
@@ -179,10 +165,8 @@ export default function InvoicesPage() {
     setIsGenerating(quote.id);
     try {
       const items = quote.items || [];
-      const date = toFirestoreDate(quote.createdAt);
-      const validite = quote.dateValidite
-        ? new Date(quote.dateValidite).toLocaleDateString('fr-FR')
-        : undefined;
+      const date = quote.createdAt;
+      const validite = quote.validUntil ? quote.validUntil.toLocaleDateString('fr-FR') : undefined;
 
       const invoiceData: InvoiceData = {
         ...getTenantConfig(),
@@ -191,7 +175,7 @@ export default function InvoicesPage() {
         date: date.toLocaleDateString('fr-FR'),
         dueDate: validite,
         customerName: quote.customerName || 'Client',
-        items: items.map((i: QuoteItem) => ({
+        items: items.map(i => ({
           description: i.productName,
           quantity: i.quantity,
           unitPrice: i.unitPrice,
@@ -199,7 +183,7 @@ export default function InvoicesPage() {
         })),
         subtotal: quote.total,
         total: quote.total,
-        notes: quote.note || undefined,
+        notes: quote.notes || undefined,
       };
 
       generateInvoicePDF(invoiceData);
@@ -216,10 +200,8 @@ export default function InvoicesPage() {
     setPreviewSale(sale);
     setLoadingPreview(true);
     try {
-      const itemsSnap = await getDocs(
-        collection(db, `tenants/${tenantId}/sales/${sale.id}/sale_items`)
-      );
-      setPreviewItems(itemsSnap.docs.map(d => d.data() as SaleItem));
+      const { data } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id);
+      setPreviewItems((data ?? []).map(mapSaleItem));
     } finally {
       setLoadingPreview(false);
     }
@@ -430,7 +412,7 @@ export default function InvoicesPage() {
                         </TableCell>
                         <TableCell className="text-sm text-gray-500">{formatDate(q.createdAt)}</TableCell>
                         <TableCell className="text-sm font-medium">{q.customerName}</TableCell>
-                        <TableCell className="text-sm text-gray-500">{q.dateValidite ? formatDate(q.dateValidite) : '—'}</TableCell>
+                        <TableCell className="text-sm text-gray-500">{q.validUntil ? formatDate(q.validUntil) : '—'}</TableCell>
                         <TableCell className="text-right font-bold">{formatCurrency(q.total)}</TableCell>
                         <TableCell>
                           <span className={`text-xs px-2 py-1 rounded-full font-medium ${st.color}`}>{st.label}</span>

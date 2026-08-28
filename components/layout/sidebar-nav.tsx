@@ -16,12 +16,10 @@ import { useAuthStore, useUIStore } from '@/hooks/store';
 import { useLogout } from '@/hooks/useAuth';
 import { COMPANY_COLORS } from '@/lib/constants';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
-import { collection, query, where } from 'firebase/firestore';
-// onSnapshot vient d'ici : l'enveloppe remonte les échecs au bandeau global
-// (voir lib/firebase/watch.ts), au lieu de laisser l'écran vide sans explication.
-import { onSnapshot } from '@/lib/firebase/watch';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
+import { watch } from '@/lib/supabase/watch';
 import { estEnAlerte } from '@/lib/inventory/alert-threshold';
 
 interface NavItem {
@@ -249,27 +247,29 @@ export function Sidebar() {
     const storeId = currentStore?.id;
     if (!tenantId || !storeId) return;
 
-    const unsubCred = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'credits')), where('status', '==', 'OVERDUE')),
-      snap => setOverdueCount(snap.size)
+    const unsubCred = watch(
+      'credits',
+      () => supabase.from('credits').select('id').eq('tenant_id', tenantId).eq('status', 'OVERDUE'),
+      rows => setOverdueCount(rows.length),
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
 
-    const unsubInv = onSnapshot(
-      query(collection(db, tenantCol(tenantId, 'inventory')), where('storeId', '==', storeId)),
-      async snap => {
-      const { getDocs } = await import('firebase/firestore');
-      const prodSnap = await getDocs(collection(db, tenantCol(tenantId, 'products')));
-      const thresh: Record<string, number> = {};
-      prodSnap.docs.forEach(d => { thresh[d.id] = d.data().alertThreshold ?? 10; });
-      const low = snap.docs.filter(d => {
-        const data = d.data();
-        return data.storeId === storeId && estEnAlerte(data.quantity || 0, {
-          seuilMagasin: data.minQuantity,
-          seuilProduit: thresh[data.productId],
-        });
-      }).length;
-      setLowStockCount(low);
-    });
+    const unsubInv = watch(
+      'inventory',
+      () => supabase.from('inventory').select('product_id, quantity, min_quantity').eq('tenant_id', tenantId).eq('store_id', storeId),
+      async rows => {
+        const { data: prodRows } = await supabase.from('products').select('id, alert_threshold').eq('tenant_id', tenantId);
+        const thresh: Record<string, number> = {};
+        (prodRows ?? []).forEach(p => { thresh[p.id] = p.alert_threshold ?? 10; });
+        const low = rows.filter(r =>
+          estEnAlerte(r.quantity || 0, { seuilMagasin: r.min_quantity ?? undefined, seuilProduit: thresh[r.product_id] })
+        ).length;
+        setLowStockCount(low);
+      },
+      undefined,
+      `tenant_id=eq.${tenantId}`
+    );
 
     return () => { unsubCred(); unsubInv(); };
   }, [tenant?.id, currentStore?.id]);

@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react';
-import { collection, query, orderBy, where, onSnapshot } from 'firebase/firestore';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
+import { supabase } from '@/lib/supabase/client';
+// watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
+// (voir lib/supabase/watch.ts). Fix (héritage Firestore) : ce hook posait
+// directement `onSnapshot` de 'firebase/firestore', sans passer par
+// l'enveloppe lib/firebase/watch.ts — un des 3 écouteurs de l'app qui
+// échouaient silencieusement (refus RLS ou coupure = écran vide, sans
+// explication), signalé dans le plan de migration.
+import { watch } from '@/lib/supabase/watch';
+import { mapProduct, mapCategory } from '@/lib/supabase/mappers';
 import type { Product, Category } from '@/lib/types';
 
 export function useProductsData(tenantId: string | undefined) {
@@ -12,30 +18,24 @@ export function useProductsData(tenantId: string | undefined) {
   useEffect(() => {
     if (!tenantId) return;
 
-    const qProducts = query(
-      collection(db, tenantCol(tenantId, 'products')),
-      orderBy('name', 'asc')
+    const unsubProducts = watch(
+      'products',
+      () => supabase.from('products').select('*').eq('tenant_id', tenantId).order('name', { ascending: true }),
+      rows => {
+        setProducts(rows.map(mapProduct));
+        setIsLoading(false);
+      },
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
-    const unsubProducts = onSnapshot(qProducts, (snap) => {
-      const data = snap.docs.map((d) => ({
-        id: d.id,
-        ...d.data(),
-        createdAt: d.data().createdAt?.toDate?.() ?? new Date(),
-        updatedAt: d.data().updatedAt?.toDate?.() ?? new Date(),
-      })) as Product[];
-      setProducts(data);
-      setIsLoading(false);
-    });
 
-    const qCats = query(
-      collection(db, tenantCol(tenantId, 'categories')),
-      where('isActive', '==', true),
-      orderBy('name', 'asc')
+    const unsubCats = watch(
+      'categories',
+      () => supabase.from('categories').select('*').eq('tenant_id', tenantId).eq('is_active', true).order('name', { ascending: true }),
+      rows => setCategories(rows.map(mapCategory)),
+      undefined,
+      `tenant_id=eq.${tenantId}`
     );
-    const unsubCats = onSnapshot(qCats, (snap) => {
-      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Category[];
-      setCategories(data);
-    });
 
     return () => { unsubProducts(); unsubCats(); };
   }, [tenantId]);

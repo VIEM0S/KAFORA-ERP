@@ -1,8 +1,5 @@
 import { useState } from 'react';
-import { doc, writeBatch } from 'firebase/firestore';
-import { skuKey, hasSku } from '@/lib/products/sku';
-import { db } from '@/lib/firebase/client';
-import { tenantCol } from '@/lib/firebase/collections';
+import { supabase } from '@/lib/supabase/client';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -22,15 +19,11 @@ export function DeleteProductDialog({ tenantId, product, onOpenChange }: DeleteP
     if (!tenantId || !product) return;
     setIsDeleting(true);
     try {
-      // On libère la réservation du SKU en même temps que le produit :
-      // sinon la référence resterait bloquée et le commerçant ne pourrait
-      // plus la réutiliser pour un nouvel article.
-      const batch = writeBatch(db);
-      batch.delete(doc(db, tenantCol(tenantId, 'products'), product.id));
-      if (hasSku(product.sku)) {
-        batch.delete(doc(db, tenantCol(tenantId, 'product_skus'), skuKey(product.sku)));
-      }
-      await batch.commit();
+      // Plus de réservation de SKU à libérer séparément (voir
+      // product-form-dialog.tsx) : la contrainte unique Postgres se
+      // désactive d'elle-même dès que la ligne produit disparaît.
+      const { error } = await supabase.from('products').delete().eq('id', product.id);
+      if (error) throw error;
       onOpenChange(false);
     } catch (err) {
       console.error(err);

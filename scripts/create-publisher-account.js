@@ -2,94 +2,94 @@
  * Crée un compte ÉDITEUR (SUPER_ADMIN) — sans tenant, donc sans être client.
  *
  * Un super-admin administre Kafora, il n'en est pas utilisateur : il n'a ni
- * commerce, ni magasin, ni stock. Son profil vit dans `_super_admin/{uid}`,
- * en dehors de l'arborescence `tenants/`, et son claim `tenantId` vaut null.
- *
- * Concrètement, ça garantit qu'il n'apparaît jamais dans sa propre liste de
- * clients — et donc qu'on ne risque pas d'enregistrer un paiement sur un vrai
- * client en croyant agir sur son compte de test.
+ * commerce, ni magasin, ni stock. Son profil vit dans la table
+ * `super_admins`, séparée de `users` (qui exige un tenant_id) — même
+ * séparation qu'avec `_super_admin/{uid}` sous Firestore, pour la même
+ * raison : garantir qu'il n'apparaît jamais dans sa propre liste de clients,
+ * et donc qu'on ne risque pas d'enregistrer un paiement sur un vrai client
+ * en croyant agir sur son compte de test. Voir app/api/auth/login/route.ts
+ * (branche SUPER_ADMIN) : app_metadata est synchronisé automatiquement à la
+ * prochaine connexion dès que la ligne super_admins existe, pas besoin de le
+ * faire ici à la main.
  *
  * Usage :
- *   node scripts/create-publisher-account.js <email> <motdepasse> <serviceAccount.json>
+ *   node --env-file=.env scripts/create-publisher-account.js <email> <motdepasse>
  *
- * Si le compte existe déjà dans Firebase Auth, il est réutilisé (le mot de
+ * Si le compte existe déjà dans Supabase Auth, il est réutilisé (le mot de
  * passe n'est alors pas modifié).
  *
- * ATTENTION : conservez le fichier JSON du compte de service HORS du dépôt.
+ * Lit NEXT_PUBLIC_SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY depuis
+ * l'environnement (voir .env) — pas de fichier de compte de service séparé
+ * comme avec Firebase, la clé de service Supabase suffit.
  */
 
-const { initializeApp, cert } = require('firebase-admin/app');
-const { getAuth } = require('firebase-admin/auth');
-const { getFirestore } = require('firebase-admin/firestore');
-const fs = require('fs');
+const { createClient } = require('@supabase/supabase-js');
 
-const [email, password, saPath] = process.argv.slice(2);
+const [email, password] = process.argv.slice(2);
 
-if (!email || !password || !saPath) {
-  console.error(
-    'Usage : node scripts/create-publisher-account.js <email> <motdepasse> <serviceAccount.json>'
-  );
+if (!email || !password) {
+  console.error('Usage : node --env-file=.env scripts/create-publisher-account.js <email> <motdepasse>');
   process.exit(1);
 }
 if (password.length < 8) {
   console.error('Mot de passe : 8 caractères minimum.');
   process.exit(1);
 }
-if (!fs.existsSync(saPath)) {
-  console.error(`Fichier introuvable : ${saPath}`);
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!supabaseUrl || !serviceRoleKey) {
+  console.error('NEXT_PUBLIC_SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY doivent être définies (voir .env).');
   process.exit(1);
 }
-
-const sa = JSON.parse(fs.readFileSync(saPath, 'utf8'));
-initializeApp({
-  credential: cert({
-    projectId: sa.project_id,
-    clientEmail: sa.client_email,
-    privateKey: sa.private_key,
-  }),
+const supabase = createClient(supabaseUrl, serviceRoleKey, {
+  auth: { autoRefreshToken: false, persistSession: false },
 });
 
-async function main() {
-  const auth = getAuth();
-  const db = getFirestore();
+async function findUserByEmail(email) {
+  // L'API admin GoTrue n'a pas de "getUserByEmail" direct — on liste et on
+  // filtre. Un projet Kafora a un nombre de comptes largement sous la
+  // pagination par défaut (1000/page) ; pas besoin de boucler les pages ici.
+  const { data, error } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+  if (error) throw error;
+  return data.users.find((u) => u.email?.toLowerCase() === email.toLowerCase()) ?? null;
+}
 
-  let user;
-  try {
-    user = await auth.getUserByEmail(email);
-    console.log(`Compte existant réutilisé (${user.uid}).`);
-  } catch {
-    user = await auth.createUser({ email, password, emailVerified: true });
-    console.log(`Compte créé (${user.uid}).`);
+async function main() {
+  let user = await findUserByEmail(email);
+
+  if (user) {
+    console.log(`Compte existant réutilisé (${user.id}).`);
+  } else {
+    const { data, error } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+    });
+    if (error) throw error;
+    user = data.user;
+    console.log(`Compte créé (${user.id}).`);
   }
 
-  // Profil éditeur, hors de l'arborescence des clients.
-  await db.doc(`_super_admin/${user.uid}`).set(
+  const { error: upsertError } = await supabase.from('super_admins').upsert(
     {
-      uid: user.uid,
+      id: user.id,
       email,
-      firstName: 'Administration',
-      lastName: 'Kafora',
-      isActive: true,
-      createdAt: new Date().toISOString(),
+      first_name: 'Administration',
+      last_name: 'Kafora',
+      is_active: true,
     },
-    { merge: true }
+    { onConflict: 'id' }
   );
-
-  // tenantId null : aucun client rattaché. Les règles Firestore ne lui
-  // ouvrent donc aucun tenant ; son seul accès est /api/admin/*, qui
-  // vérifie le rôle côté serveur.
-  await auth.setCustomUserClaims(user.uid, {
-    tenantId: null,
-    role: 'SUPER_ADMIN',
-    storeIds: null,
-  });
+  if (upsertError) throw upsertError;
 
   console.log(`\n${email} est un compte éditeur (SUPER_ADMIN), sans tenant.`);
   console.log('Connectez-vous avec ce compte : vous arriverez sur la console clients.');
+  console.log("(app_metadata est synchronisé à la connexion — pas besoin de vous reconnecter deux fois.)");
   process.exit(0);
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error('Échec :', err.message || err);
   process.exit(1);
 });

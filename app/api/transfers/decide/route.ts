@@ -1,30 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/lib/firebase/admin';
-import { FieldValue } from 'firebase-admin/firestore';
-import { cookies } from 'next/headers';
+import { createServiceRoleClient } from '@/lib/supabase/server';
+import { getSessionClaims } from '@/lib/api/session';
 import { checkSubscriptionAllows } from '@/lib/api/subscription-guard';
-import { resolveTransferSettings, canApprove, canShip, canTransitionTo } from '@/lib/transfers/rules';
-import type { TransferLine, TransferStatus, UserRole } from '@/lib/types';
+import { resolveTransferSettings, canApprove, canShip } from '@/lib/transfers/rules';
+import type { UserRole } from '@/lib/types';
 
 /**
- * Approuve, refuse ou annule un transfert.
- *
- * Le cas sensible est l'annulation d'un transfert DÉJÀ EXPÉDIÉ : le stock est
- * sorti de la source et n'est jamais entré à destination. Si on se contentait
- * de changer le statut, la marchandise disparaîtrait purement et simplement
- * des comptes. On la rend donc à la source, avec un mouvement de stock qui
- * garde la trace de l'aller et du retour.
+ * Approuve, refuse ou annule un transfert. Le cas sensible (annulation d'un
+ * transfert déjà expédié, restitution du stock à la source) vit dans
+ * decide_transfer() en RPC.
  */
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get('__session')?.value;
-    if (!sessionCookie) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
-
-    const decoded = await adminAuth.verifySessionCookie(sessionCookie, true);
-    const tenantId = decoded.tenantId as string;
-    const callerRole = decoded.role as UserRole;
-    const callerStoreIds = decoded.storeIds as string[] | null | undefined;
+    const session = await getSessionClaims();
+    if (!session) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    const tenantId = session.tenantId as string;
+    const callerRole = session.role as UserRole;
+    const callerStoreIds = session.storeIds;
 
     const blocked = await checkSubscriptionAllows(tenantId, 'write');
     if (blocked) {
@@ -38,115 +30,46 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Requête invalide' }, { status: 400 });
     }
 
-    const tenantSnap = await adminDb.doc(`tenants/${tenantId}`).get();
-    const settings = resolveTransferSettings(tenantSnap.data()?.transferSettings);
+    const supabase = createServiceRoleClient();
+    const { data: tenant } = await supabase.from('tenants').select('transfer_settings').eq('id', tenantId).maybeSingle();
+    const settings = resolveTransferSettings(tenant?.transfer_settings as Parameters<typeof resolveTransferSettings>[0]);
 
     // Approuver/refuser relève des rôles d'approbation ; annuler relève des
     // rôles d'expédition (celui qui peut envoyer peut renoncer à envoyer).
-    const allowed =
-      action === 'CANCEL' ? canShip(callerRole, settings) : canApprove(callerRole, settings);
+    const allowed = action === 'CANCEL' ? canShip(callerRole, settings) : canApprove(callerRole, settings);
     if (!allowed) {
       return NextResponse.json({ error: 'Votre rôle ne permet pas cette action' }, { status: 403 });
     }
 
-    const transferRef = adminDb.doc(`tenants/${tenantId}/transfers/${transferId}`);
-    const snapBefore = await transferRef.get();
-    if (!snapBefore.exists) {
-      return NextResponse.json({ error: 'Transfert introuvable' }, { status: 404 });
-    }
-    const before = snapBefore.data() as {
-      status: TransferStatus; fromStoreId: string; toStoreId: string; lines: TransferLine[];
-    };
+    const { data: transfer } = await supabase
+      .from('transfers').select('from_store_id, to_store_id').eq('id', transferId).eq('tenant_id', tenantId).maybeSingle();
+    if (!transfer) return NextResponse.json({ error: 'Transfert introuvable' }, { status: 404 });
 
     if (Array.isArray(callerStoreIds)) {
       const involved =
-        callerStoreIds.includes(before.fromStoreId) || callerStoreIds.includes(before.toStoreId);
+        (transfer.from_store_id && callerStoreIds.includes(transfer.from_store_id)) ||
+        (transfer.to_store_id && callerStoreIds.includes(transfer.to_store_id));
       if (!involved) {
         return NextResponse.json({ error: "Vous n'avez pas accès à ces magasins" }, { status: 403 });
       }
     }
 
-    const target: TransferStatus =
-      action === 'APPROVE' ? 'APPROVED' : action === 'REJECT' ? 'REJECTED' : 'CANCELLED';
-
-    // Restitution nécessaire ? Uniquement si le stock est déjà sorti.
-    const needsRestock = action === 'CANCEL' && before.status === 'SHIPPED';
-    const found = needsRestock
-      ? await Promise.all(
-          before.lines.map(l =>
-            adminDb
-              .collection(`tenants/${tenantId}/inventory`)
-              .where('productId', '==', l.productId)
-              .where('storeId', '==', before.fromStoreId)
-              .limit(1)
-              .get()
-          )
-        )
-      : [];
-
-    const result = await adminDb.runTransaction(async tx => {
-      const snap = await tx.get(transferRef);
-      const t = snap.data() as {
-        status: TransferStatus; fromStoreId: string; lines: TransferLine[];
-      };
-
-      if (!canTransitionTo(t.status, target)) {
-        return { error: `Action impossible depuis l'état « ${t.status} »`, status: 409 };
-      }
-      // L'état a pu changer entre la lecture initiale et la transaction :
-      // on ne restitue que si le transfert est TOUJOURS expédié.
-      if (needsRestock && t.status !== 'SHIPPED') {
-        return { error: 'État modifié entre-temps, réessayez', status: 409 };
-      }
-
-      if (needsRestock) {
-        const existing = await Promise.all(
-          found.map(f => (f.empty ? null : tx.get(f.docs[0].ref)))
-        );
-        t.lines.forEach((line, i) => {
-          const prev = (existing[i]?.data()?.quantity as number) || 0;
-          if (found[i] && !found[i].empty) {
-            tx.update(found[i].docs[0].ref, { quantity: prev + line.quantity });
-          } else {
-            const ref = adminDb.collection(`tenants/${tenantId}/inventory`).doc();
-            tx.set(ref, {
-              tenantId, productId: line.productId, storeId: t.fromStoreId,
-              quantity: line.quantity, minQuantity: 0,
-            });
-          }
-          tx.set(adminDb.collection(`tenants/${tenantId}/inventory_movements`).doc(), {
-            tenantId,
-            productId: line.productId,
-            productName: line.productName,
-            storeId: t.fromStoreId,
-            type: 'TRANSFER_CANCEL',
-            quantity: line.quantity,
-            previousQuantity: prev,
-            newQuantity: prev + line.quantity,
-            transferId,
-            reason: "Annulation d'un transfert expédié — retour au magasin source",
-            createdAt: FieldValue.serverTimestamp(),
-          });
-        });
-      }
-
-      tx.update(transferRef, {
-        status: target,
-        ...(action === 'APPROVE'
-          ? { approvedBy: decoded.uid, approvedAt: FieldValue.serverTimestamp() }
-          : {}),
-        ...(action === 'REJECT' ? { rejectionReason: reason?.trim() || null } : {}),
-      });
-
-      return { success: true, restocked: needsRestock };
+    const { data: result, error: rpcError } = await supabase.rpc('decide_transfer', {
+      p_tenant_id: tenantId, p_transfer_id: transferId, p_caller_id: session.uid,
+      p_action: action, p_reason: (reason?.trim() || null) as string,
     });
+    if (rpcError) throw rpcError;
 
-    if ('error' in result) {
-      return NextResponse.json({ error: result.error }, { status: result.status });
-    }
     return NextResponse.json(result);
   } catch (error) {
     console.error('Transfer decide error:', error);
-    return NextResponse.json({ error: 'Erreur interne' }, { status: 500 });
+    const msg = error instanceof Error ? error.message : 'Erreur interne';
+    const isKnownBusinessError = msg.includes('INVALID_STATUS') || msg.includes('INVALID_ACTION');
+    const isNotFound = msg.includes('NOT_FOUND');
+    const cleanMsg = msg.replace(/^.*(INVALID_STATUS|INVALID_ACTION|NOT_FOUND):\s*/, '');
+    return NextResponse.json(
+      { error: (isKnownBusinessError || isNotFound) ? cleanMsg : 'Erreur interne' },
+      { status: isNotFound ? 404 : isKnownBusinessError ? 409 : 500 }
+    );
   }
 }
