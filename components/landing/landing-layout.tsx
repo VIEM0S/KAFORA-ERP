@@ -31,8 +31,12 @@ export function LandingLayout({ children }: { children: React.ReactNode }) {
               <span className="text-xl font-bold text-gray-900">KAFORA</span>
             </Link>
 
-            {/* Desktop Navigation */}
-            <div className="hidden md:flex items-center gap-8">
+            {/* Desktop Navigation.
+                Bascule à lg (1024px), pas md (768px) : à 768px pile, logo +
+                5 liens + Secteurs + 2 boutons ont besoin d'environ 815px et
+                n'en ont que ~753 — le bouton "Essai gratuit" débordait sur
+                tablette. lg laisse assez de marge. */}
+            <div className="hidden lg:flex items-center gap-8">
               <Link href="/#features" className="text-sm font-medium text-gray-600 hover:text-gray-900">
                 Fonctionnalités
               </Link>
@@ -60,7 +64,7 @@ export function LandingLayout({ children }: { children: React.ReactNode }) {
               </Link>
             </div>
 
-            <div className="hidden md:flex items-center gap-4">
+            <div className="hidden lg:flex items-center gap-4">
               <Link href="/login">
                 <Button variant="ghost">Connexion</Button>
               </Link>
@@ -71,7 +75,7 @@ export function LandingLayout({ children }: { children: React.ReactNode }) {
 
             {/* Mobile Menu Button */}
             <button
-              className="md:hidden p-2 text-gray-600 hover:text-gray-900"
+              className="lg:hidden p-2 text-gray-600 hover:text-gray-900"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             >
               {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
@@ -81,7 +85,7 @@ export function LandingLayout({ children }: { children: React.ReactNode }) {
 
         {/* Mobile Menu */}
         {mobileMenuOpen && (
-          <div className="md:hidden bg-white border-b border-gray-100">
+          <div className="lg:hidden bg-white border-b border-gray-100">
             <div className="px-4 py-4 space-y-3">
               <Link href="/#features" onClick={() => setMobileMenuOpen(false)} className="block text-sm font-medium text-gray-600 hover:text-gray-900">
                 Fonctionnalités
