@@ -5,8 +5,13 @@ import { LandingLayout } from "@/components/landing/landing-layout";
 import { Button } from "@/components/ui/button";
 import { PLAN_DISPLAY_LIST } from "@/lib/utils/plan-display";
 import {
+  REFERRAL_REFERRER_BONUS_DAYS,
+  REFERRAL_REFEREE_BONUS_DAYS,
+} from "@/lib/constants";
+import {
   ArrowRight,
   BarChart3,
+  Gift,
   Package,
   Shield,
   ShoppingCart,
@@ -236,6 +241,48 @@ export default function HomePage() {
                 </Button>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Parrainage Section */}
+      <section id="parrainage" className="py-20 bg-white">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="rounded-2xl bg-gradient-to-br from-pink-50 to-primary-50 border border-pink-100 p-8 md:p-12 text-center">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-pink-100 mb-6">
+              <Gift className="h-8 w-8 text-pink-600" />
+            </div>
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+              Parrainez un commerçant, gagnez du temps
+            </h2>
+            <p className="text-xl text-gray-500 max-w-2xl mx-auto mb-8">
+              Chaque client Kafora a son propre lien de parrainage. Vous
+              recevez {REFERRAL_REFERRER_BONUS_DAYS} jours offerts sur votre
+              abonnement dès le premier paiement de la personne que vous
+              parrainez, et elle profite immédiatement de{" "}
+              {REFERRAL_REFEREE_BONUS_DAYS} jours d&apos;essai en plus.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Button
+                size="lg"
+                className="bg-primary-600 text-white hover:bg-primary-700 h-14 px-8 text-lg"
+                onClick={() => router.push("/login")}
+              >
+                Voir mon lien de parrainage
+                <ArrowRight className="ml-2 h-5 w-5" />
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                className="h-14 px-8 text-lg"
+                onClick={() => router.push("/setup")}
+              >
+                Devenir client Kafora
+              </Button>
+            </div>
+            <p className="text-sm text-gray-400 mt-4">
+              Déjà client ? Retrouvez votre lien dans Réglages → Parrainage.
+            </p>
           </div>
         </div>
       </section>

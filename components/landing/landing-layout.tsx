@@ -29,6 +29,9 @@ export function LandingLayout({ children }: { children: React.ReactNode }) {
               <a href="#pricing" className="text-sm font-medium text-gray-600 hover:text-gray-900">
                 Tarifs
               </a>
+              <a href="#parrainage" className="text-sm font-medium text-gray-600 hover:text-gray-900">
+                Parrainage
+              </a>
               <a href="#contact" className="text-sm font-medium text-gray-600 hover:text-gray-900">
                 Contact
               </a>
@@ -62,6 +65,9 @@ export function LandingLayout({ children }: { children: React.ReactNode }) {
               </a>
               <a href="#pricing" onClick={() => setMobileMenuOpen(false)} className="block text-sm font-medium text-gray-600 hover:text-gray-900">
                 Tarifs
+              </a>
+              <a href="#parrainage" onClick={() => setMobileMenuOpen(false)} className="block text-sm font-medium text-gray-600 hover:text-gray-900">
+                Parrainage
               </a>
               <a href="#contact" onClick={() => setMobileMenuOpen(false)} className="block text-sm font-medium text-gray-600 hover:text-gray-900">
                 Contact

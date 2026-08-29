@@ -429,12 +429,12 @@ export default function SettingsPage() {
               <div>
                 <Label>Votre lien de parrainage</Label>
                 <div className="flex gap-2 mt-1">
-                  <Input readOnly value={origin ? `${origin}/register?ref=${tenant.referralCode}` : tenant.referralCode} />
+                  <Input readOnly value={origin ? `${origin}/setup?ref=${tenant.referralCode}` : tenant.referralCode} />
                   <Button
                     type="button"
                     variant="outline"
                     onClick={async () => {
-                      const link = `${origin}/register?ref=${tenant.referralCode}`;
+                      const link = `${origin}/setup?ref=${tenant.referralCode}`;
                       await navigator.clipboard.writeText(link);
                       setCodeCopied(true);
                       setTimeout(() => setCodeCopied(false), 2000);
