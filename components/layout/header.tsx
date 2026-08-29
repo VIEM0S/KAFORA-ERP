@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase/client';
 import { watch } from '@/lib/supabase/watch';
 import { isManagerPlus as isManagerPlusRole, isOwnerOrAdmin as isOwnerOrAdminRole } from '@/lib/auth/roles';
 import { estEnAlerte } from '@/lib/inventory/alert-threshold';
+import { SUBSCRIPTION_PLANS, PlanId } from '@/lib/constants';
 
 export function Header() {
   const { user, tenant, currentStore, stores, setCurrentStore } = useAuthStore();
@@ -84,6 +85,16 @@ export function Header() {
 
   const initials = `${user?.firstName?.charAt(0) || ''}${user?.lastName?.charAt(0) || ''}`;
 
+  // Le sélecteur (dropdown, changer de magasin) suggère une fonctionnalité
+  // Multi-magasins que le forfait n'inclut pas forcément — voir
+  // lib/constants (multiStoreEnabled) et app/(dashboard)/transfers/page.tsx.
+  // Sans ce garde-fou, un tenant Starter voit un menu de sélection pour une
+  // action qu'il ne peut pas faire (il n'a qu'un seul magasin de toute façon,
+  // sauf rétrogradation Business → Starter avec des magasins existants).
+  const planId = tenant?.subscription?.plan as PlanId | undefined;
+  const plan = planId && planId in SUBSCRIPTION_PLANS ? SUBSCRIPTION_PLANS[planId] : SUBSCRIPTION_PLANS.BUSINESS;
+  const multiStoreAllowed = plan.features.multiStoreEnabled;
+
   return (
     <header className="h-16 bg-white border-b border-gray-100 flex items-center justify-between px-4 lg:px-6 shadow-sm">
 
@@ -104,7 +115,24 @@ export function Header() {
           className="hidden md:block p-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors flex-shrink-0">
           <PanelLeft className="h-5 w-5" />
         </button>
-        {stores.length > 0 && (
+        {stores.length > 0 && !multiStoreAllowed && (
+          // Pas de dropdown ni de flèche : rien à "changer" pour un forfait
+          // sans Multi-magasins, on ne montre que le magasin courant.
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-50 border border-gray-200">
+            <div className="h-7 w-7 bg-primary-100 rounded-lg flex items-center justify-center">
+              <Store className="h-4 w-4 text-primary-600" />
+            </div>
+            <div className="text-left hidden sm:block">
+              <p className="text-sm font-semibold text-gray-800 leading-tight">
+                {currentStore?.name || stores[0]?.name || 'Magasin'}
+              </p>
+              {currentStore?.city && (
+                <p className="text-xs text-gray-400 leading-tight">{currentStore.city}</p>
+              )}
+            </div>
+          </div>
+        )}
+        {stores.length > 0 && multiStoreAllowed && (
           <div className="relative">
             <button onClick={() => setStoreDropdownOpen(!storeDropdownOpen)}
               className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors">
