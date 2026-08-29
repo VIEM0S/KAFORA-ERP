@@ -31,8 +31,11 @@ const PUBLIC_PATHS = [
   '/sitemap.xml',
 ];
 
-// Préfixes publics (assets, etc.)
-const PUBLIC_PREFIXES = ['/_next', '/favicon', '/images', '/icons', '/fonts'];
+// Préfixes publics (assets, etc.). '/solutions' : pages d'atterrissage par
+// secteur (quincaillerie, épicerie...) — publiques par nature, en préfixe
+// plutôt qu'une entrée par page pour que chaque nouveau secteur ajouté
+// (voir lib/utils/vertical-pages.ts) reste public sans y retoucher.
+const PUBLIC_PREFIXES = ['/_next', '/favicon', '/images', '/icons', '/fonts', '/solutions'];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
