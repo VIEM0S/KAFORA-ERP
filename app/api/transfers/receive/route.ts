@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
 import { checkSubscriptionAllows } from '@/lib/api/subscription-guard';
+import { checkPlanFeatureAllows } from '@/lib/api/plan-guard';
 import { resolveTransferSettings, canShip } from '@/lib/transfers/rules';
 import type { UserRole } from '@/lib/types';
 
@@ -16,6 +17,11 @@ export async function POST(request: NextRequest) {
     const tenantId = session.tenantId as string;
     const callerRole = session.role as UserRole;
     const callerStoreIds = session.storeIds;
+
+    const featureBlocked = await checkPlanFeatureAllows(tenantId, 'multiStoreEnabled');
+    if (featureBlocked) {
+      return NextResponse.json({ error: featureBlocked.error }, { status: featureBlocked.status });
+    }
 
     const blocked = await checkSubscriptionAllows(tenantId, 'write');
     if (blocked) {

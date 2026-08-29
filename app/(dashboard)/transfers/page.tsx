@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { ArrowRightLeft, Plus, Check, X, Truck, PackageCheck, Loader2 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout';
+import { PlanLocked } from '@/components/subscription/plan-locked';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +19,7 @@ import { watch } from '@/lib/supabase/watch';
 import { mapTransfer, mapTransferLine } from '@/lib/supabase/mappers';
 import { ProductPicker } from '@/components/transfers/product-picker';
 import { TRANSFER_STATUS_LABELS } from '@/lib/transfers/rules';
+import { SUBSCRIPTION_PLANS, PlanId } from '@/lib/constants';
 import type { TransferStatus, Transfer } from '@/lib/types';
 
 const STATUS_STYLE: Record<TransferStatus, string> = {
@@ -33,6 +35,14 @@ export default function TransfersPage() {
   const { tenant, stores: myStores } = useAuthStore();
   const tenantId = tenant?.id;
 
+  // Dérivé du store d'auth, même technique que la page Analytics. Gardé même
+  // si `stores.length >= 2` : une rétrogradation Business → Starter peut
+  // laisser 2 magasins existants, le comptage seul ne suffirait pas à
+  // re-verrouiller après coup.
+  const planId = tenant?.subscription?.plan as PlanId | undefined;
+  const plan = planId && planId in SUBSCRIPTION_PLANS ? SUBSCRIPTION_PLANS[planId] : SUBSCRIPTION_PLANS.BUSINESS;
+  const multiStoreAllowed = plan.features.multiStoreEnabled;
+
   // TOUS les magasins du tenant, pas seulement ceux de l'utilisateur.
   //
   // `myStores` ne contient que les magasins auxquels il est affecté. Un
@@ -46,7 +56,7 @@ export default function TransfersPage() {
   const [allStores, setAllStores] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !multiStoreAllowed) return;
     return watch(
       'stores',
       () => supabase.from('stores').select('id, name').eq('tenant_id', tenantId),
@@ -54,7 +64,7 @@ export default function TransfersPage() {
       undefined,
       `tenant_id=eq.${tenantId}`
     );
-  }, [tenantId]);
+  }, [tenantId, multiStoreAllowed]);
 
   const stores = allStores.length > 0 ? allStores : myStores;
   const myStoreIds = myStores.map(s => s.id);
@@ -66,7 +76,7 @@ export default function TransfersPage() {
   const [showCreate, setShowCreate] = useState(false);
 
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !multiStoreAllowed) return;
     return watch(
       'transfers',
       // transfer_lines embarqué via la relation FK.
@@ -78,7 +88,7 @@ export default function TransfersPage() {
       undefined,
       `tenant_id=eq.${tenantId}`
     );
-  }, [tenantId]);
+  }, [tenantId, multiStoreAllowed]);
 
   const storeName = (id: string | null) => (id && stores.find(s => s.id === id)?.name) || '—';
 
@@ -99,6 +109,12 @@ export default function TransfersPage() {
       setBusyId(null);
     }
   };
+
+  if (!multiStoreAllowed) return (
+    <DashboardLayout>
+      <PlanLocked feature="multiStoreEnabled" currentPlanName={plan.name} />
+    </DashboardLayout>
+  );
 
   return (
     <DashboardLayout>

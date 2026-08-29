@@ -21,6 +21,7 @@ import { supabase } from '@/lib/supabase/client';
 // (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
 import { watch } from '@/lib/supabase/watch';
 import { estEnAlerte } from '@/lib/inventory/alert-threshold';
+import { SUBSCRIPTION_PLANS, PlanId, PlanFeatureFlag } from '@/lib/constants';
 
 interface NavItem {
   title: string;
@@ -29,6 +30,10 @@ interface NavItem {
   badge?: number;
   badgeKey?: string;
   roles?: string[];
+  // Masque l'entrée si le forfait du tenant n'inclut pas cette fonctionnalité
+  // (voir SUBSCRIPTION_PLANS dans lib/constants). Filtrage UX seulement — la
+  // vraie protection est côté page/API (voir lib/api/plan-guard.ts).
+  feature?: PlanFeatureFlag;
   children?: NavItem[];
 }
 
@@ -59,7 +64,7 @@ const NAV_ITEMS: NavItem[] = [
       { title: 'Mouvements', href: '/inventory/movements', icon: History },
       { title: 'Alertes', href: '/inventory/alerts', icon: AlertTriangle, badgeKey: 'lowStock' },
       { title: 'Bons de commande', href: '/purchase-orders', icon: PackagePlus, roles: ['OWNER', 'ADMIN', 'MANAGER'] },
-      { title: 'Transferts', href: '/transfers', icon: ArrowRightLeft, roles: ['OWNER', 'ADMIN', 'MANAGER'] },
+      { title: 'Transferts', href: '/transfers', icon: ArrowRightLeft, roles: ['OWNER', 'ADMIN', 'MANAGER'], feature: 'multiStoreEnabled' },
     ],
   },
   { title: 'Clients', href: '/customers', icon: Users },
@@ -67,7 +72,7 @@ const NAV_ITEMS: NavItem[] = [
   { title: 'Fournisseurs', href: '/suppliers', icon: Truck },
   { title: 'Caisse', href: '/cash-register', icon: DollarSign },
   { title: 'Factures', href: '/invoices', icon: FileText },
-  { title: 'Analytics', href: '/analytics', icon: BarChart3, roles: ['OWNER', 'ADMIN', 'REGIONAL_MANAGER', 'MANAGER'] },
+  { title: 'Analytics', href: '/analytics', icon: BarChart3, roles: ['OWNER', 'ADMIN', 'REGIONAL_MANAGER', 'MANAGER'], feature: 'analyticsEnabled' },
   { title: 'Magasins', href: '/stores', icon: Store, roles: ['OWNER', 'ADMIN'] },
   { title: 'Notifications', href: '/notifications', icon: Bell },
 ];
@@ -290,13 +295,28 @@ export function Sidebar() {
   // planteraient sur un tenantId absent. On ne lui montre donc que ce qui
   // le concerne : la console clients.
   const isPublisher = userRole === 'SUPER_ADMIN';
-  const allowed = (item: { roles?: string[] }) =>
-    isPublisher
+
+  const planId = tenant?.subscription?.plan as PlanId | undefined;
+  const planFeatures =
+    planId && planId in SUBSCRIPTION_PLANS
+      ? SUBSCRIPTION_PLANS[planId].features
+      : SUBSCRIPTION_PLANS.BUSINESS.features;
+
+  const allowed = (item: { roles?: string[]; feature?: PlanFeatureFlag }) => {
+    if (item.feature && !planFeatures[item.feature]) return false;
+    return isPublisher
       ? item.roles?.includes('SUPER_ADMIN') ?? false
       : !item.roles || item.roles.includes(userRole);
+  };
+  // Récursif : sans ça, les `roles`/`feature` des enfants (ex. "Transferts"
+  // sous "Stock") n'étaient jamais appliqués — seul le top-level était filtré.
+  const applyFilter = (items: NavItem[]): NavItem[] =>
+    items
+      .filter(allowed)
+      .map((item) => (item.children ? { ...item, children: applyFilter(item.children) } : item));
 
-  const filteredNav = NAV_ITEMS.filter(allowed);
-  const filteredAdmin = ADMIN_ITEMS.filter(allowed);
+  const filteredNav = applyFilter(NAV_ITEMS);
+  const filteredAdmin = applyFilter(ADMIN_ITEMS);
 
   const collapsed = sidebarCollapsed;
   const pathname = usePathname();

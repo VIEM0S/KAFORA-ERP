@@ -16,10 +16,18 @@ const EXTRA_PERKS: Record<PlanId, string[]> = {
   ENTERPRISE: ['Formation incluse'],
 };
 
+// Ancré uniquement dans des fonctionnalités réelles et déjà listées par
+// buildPlanFeatures() ci-dessous : Business/Enterprise décrivent les deux
+// fonctionnalités réellement verrouillées par forfait (voir
+// lib/api/plan-guard.ts et components/subscription/plan-locked.tsx) —
+// ce texte n'est plus une promesse sans verrou derrière.
 const PLAN_DESCRIPTION: Record<PlanId, string> = {
-  STARTER: 'Pour les petites entreprises',
-  BUSINESS: 'Pour les entreprises en croissance',
-  ENTERPRISE: 'Pour les grandes structures',
+  STARTER:
+    "Pour une boutique unique : caisse, stock et suivi des crédits clients dans un seul outil, sans payer pour des fonctions dont vous n'avez pas encore besoin.",
+  BUSINESS:
+    'Pour les commerces à 2 boutiques ou plus : transférez du stock entre magasins et comparez leurs performances grâce aux Analytics avancés.',
+  ENTERPRISE:
+    'Pour les réseaux en expansion : aucune limite de boutiques, produits ou utilisateurs, avec un support dédié joignable en priorité.',
 };
 
 const PLAN_CTA: Record<PlanId, string> = {

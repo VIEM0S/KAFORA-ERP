@@ -1,8 +1,13 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
-import { SUBSCRIPTION_PLANS, PlanId } from '@/lib/constants';
+import { SUBSCRIPTION_PLANS, PlanId, PlanFeatureFlag } from '@/lib/constants';
 
 type LimitedResource = 'maxUsers' | 'maxStores' | 'maxProducts' | 'maxCustomers';
 type CountableTable = 'users' | 'stores' | 'products' | 'customers';
+
+const FEATURE_LABEL: Record<PlanFeatureFlag, string> = {
+  analyticsEnabled: 'Analytics avancés',
+  multiStoreEnabled: 'Multi-magasins',
+};
 
 const RESOURCE_TO_TABLE: Record<LimitedResource, CountableTable> = {
   maxUsers: 'users',
@@ -57,4 +62,33 @@ export async function checkPlanLimit(
   }
 
   return { allowed: true };
+}
+
+/**
+ * Équivalent de checkPlanLimit pour un flag booléen de SUBSCRIPTION_PLANS.features
+ * (analyticsEnabled, multiStoreEnabled) plutôt qu'un compteur.
+ */
+export async function checkPlanFeature(
+  tenantId: string,
+  feature: PlanFeatureFlag
+): Promise<{ allowed: true } | { allowed: false; reason: string }> {
+  const supabase = createServiceRoleClient();
+
+  const { data: sub } = await supabase
+    .from('subscriptions')
+    .select('plan')
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+
+  const planId = sub?.plan as PlanId | undefined;
+  const plan = planId && planId in SUBSCRIPTION_PLANS ? SUBSCRIPTION_PLANS[planId] : SUBSCRIPTION_PLANS.BUSINESS;
+
+  if (plan.features[feature]) {
+    return { allowed: true };
+  }
+
+  return {
+    allowed: false,
+    reason: `${FEATURE_LABEL[feature]} n'est pas inclus dans le forfait ${plan.name}. Passez à un forfait supérieur pour en profiter.`,
+  };
 }

@@ -6,6 +6,7 @@ import {
   ShoppingCart, Users, RefreshCw, Calendar
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout';
+import { PlanLocked } from '@/components/subscription/plan-locked';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -16,6 +17,7 @@ import { supabase } from '@/lib/supabase/client';
 // (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
 import { watch } from '@/lib/supabase/watch';
 import { mapDailyStat } from '@/lib/supabase/mappers';
+import { SUBSCRIPTION_PLANS, PlanId } from '@/lib/constants';
 import type { DailyStat } from '@/lib/types';
 import dynamic from 'next/dynamic';
 
@@ -40,6 +42,14 @@ export default function AnalyticsPage() {
   const { tenant, currentStore, stores } = useAuthStore();
   const tenantId = tenant?.id;
 
+  // Dérivé directement du store d'auth (comme SubscriptionBanner pour
+  // l'expiration) : pas d'appel réseau dédié pour savoir si le forfait
+  // inclut Analytics. Repli sur BUSINESS si l'abonnement n'est pas encore
+  // chargé, cohérent avec checkPlanFeature côté serveur.
+  const planId = tenant?.subscription?.plan as PlanId | undefined;
+  const plan = planId && planId in SUBSCRIPTION_PLANS ? SUBSCRIPTION_PLANS[planId] : SUBSCRIPTION_PLANS.BUSINESS;
+  const analyticsAllowed = plan.features.analyticsEnabled;
+
   const [period, setPeriod] = useState<'3m' | '6m' | '12m'>('6m');
   const monthsCount = period === '3m' ? 3 : period === '6m' ? 6 : 12;
   const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
@@ -49,7 +59,7 @@ export default function AnalyticsPage() {
   // Résolution des noms de catégorie pour la marge par catégorie — juste des
   // libellés, pas de donnée sensible, lue une fois indépendamment du reste.
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !analyticsAllowed) return;
     return watch(
       'categories',
       () => supabase.from('categories').select('id, name').eq('tenant_id', tenantId),
@@ -61,7 +71,7 @@ export default function AnalyticsPage() {
       () => setCategoryNames({}),
       `tenant_id=eq.${tenantId}`
     );
-  }, [tenantId]);
+  }, [tenantId, analyticsAllowed]);
 
   // Lecture des agrégats pré-calculés (un document par journée), produits par
   // la fonction planifiée netlify/functions/aggregate-daily-stats.
@@ -70,7 +80,7 @@ export default function AnalyticsPage() {
   // Au-delà de 500 ventes les chiffres devenaient faux SANS AVERTIR, et
   // chaque ouverture coûtait des centaines de lectures Firestore.
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !analyticsAllowed) return;
     setIsLoading(true);
 
     const from = new Date();
@@ -87,7 +97,7 @@ export default function AnalyticsPage() {
       () => setIsLoading(false),
       `tenant_id=eq.${tenantId}`
     );
-  }, [tenantId, monthsCount]);
+  }, [tenantId, monthsCount, analyticsAllowed]);
 
   // Top produits : agrégés côté serveur sur TOUTES les lignes de vente.
   // L'ancienne version échantillonnait 20 ventes maximum — un « top » qui
@@ -268,6 +278,12 @@ export default function AnalyticsPage() {
   const uniqueCustomers = sum(dailyStats, s => s.uniqueCustomers);
   const hasIncompleteCost = dailyStats.some(s => s.costIncomplete);
   const noData = !isLoading && dailyStats.length === 0;
+
+  if (!analyticsAllowed) return (
+    <DashboardLayout>
+      <PlanLocked feature="analyticsEnabled" currentPlanName={plan.name} />
+    </DashboardLayout>
+  );
 
   if (isLoading) return (
     <DashboardLayout>

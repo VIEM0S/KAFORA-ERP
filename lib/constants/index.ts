@@ -206,12 +206,21 @@ export const SUBSCRIPTION_PLANS = {
       posEnabled: true,
       analyticsEnabled: true,
       multiStoreEnabled: true,
-      apiAccessEnabled: true,
+      // Pas encore implémenté (aucune route API publique / clé API dans le
+      // code) : ne pas passer à true tant que la fonctionnalité n'existe pas
+      // réellement, sinon la page Tarifs vend un avantage qui n'existe pas.
+      apiAccessEnabled: false,
     },
   },
 } as const;
 
 export type PlanId = keyof typeof SUBSCRIPTION_PLANS;
+
+// Flags booléens de SUBSCRIPTION_PLANS.features qui sont réellement
+// vérifiés côté serveur (voir lib/supabase/plan-limits.ts checkPlanFeature)
+// — par opposition à apiAccessEnabled ci-dessus, qui reste false partout
+// tant qu'aucun code ne l'applique.
+export type PlanFeatureFlag = 'analyticsEnabled' | 'multiStoreEnabled';
 
 /**
  * Parrainage : jours offerts au premier paiement réel du filleul (pas à

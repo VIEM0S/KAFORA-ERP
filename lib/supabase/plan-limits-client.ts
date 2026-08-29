@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase/client';
-import { SUBSCRIPTION_PLANS, PlanId } from '@/lib/constants';
+import { SUBSCRIPTION_PLANS, PlanId, PlanFeatureFlag } from '@/lib/constants';
 
 type LimitedResource = 'maxUsers' | 'maxStores' | 'maxProducts' | 'maxCustomers';
 type CountableTable = 'users' | 'stores' | 'products' | 'customers';
@@ -9,6 +9,11 @@ const RESOURCE_TO_TABLE: Record<LimitedResource, CountableTable> = {
   maxStores: 'stores',
   maxProducts: 'products',
   maxCustomers: 'customers',
+};
+
+const FEATURE_LABEL: Record<PlanFeatureFlag, string> = {
+  analyticsEnabled: 'Analytics avancés',
+  multiStoreEnabled: 'Multi-magasins',
 };
 
 /**
@@ -57,4 +62,30 @@ export async function checkPlanLimitClient(
     };
   }
   return { allowed: true };
+}
+
+/**
+ * Équivalent client de checkPlanFeature (lib/supabase/plan-limits.ts), même
+ * caveat que checkPlanLimitClient ci-dessus : vérification UX, pas une
+ * frontière de sécurité.
+ */
+export async function checkPlanFeatureClient(
+  tenantId: string,
+  feature: PlanFeatureFlag
+): Promise<{ allowed: true } | { allowed: false; reason: string }> {
+  const { data: sub } = await supabase
+    .from('subscriptions')
+    .select('plan')
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+
+  const planId = sub?.plan as PlanId | undefined;
+  const plan = planId && planId in SUBSCRIPTION_PLANS ? SUBSCRIPTION_PLANS[planId] : SUBSCRIPTION_PLANS.BUSINESS;
+
+  if (plan.features[feature]) return { allowed: true };
+
+  return {
+    allowed: false,
+    reason: `${FEATURE_LABEL[feature]} n'est pas inclus dans le forfait ${plan.name}. Passe à un forfait supérieur pour en profiter.`,
+  };
 }
