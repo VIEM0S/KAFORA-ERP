@@ -11,8 +11,8 @@ const SUPPORT_LABEL: Record<PlanId, string> = {
 // Avantages purement marketing, sans équivalent en "feature flag" dans
 // SUBSCRIPTION_PLANS (rien à activer/désactiver dans le code pour ceux-ci).
 const EXTRA_PERKS: Record<PlanId, string[]> = {
-  STARTER: [],
-  BUSINESS: [],
+  STARTER: ['Formation incluse'],
+  BUSINESS: ['Formation incluse'],
   ENTERPRISE: ['Formation incluse'],
 };
 
