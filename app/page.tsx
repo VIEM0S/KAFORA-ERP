@@ -2,6 +2,7 @@
 
 import { ContactSection } from "@/components/landing/contact-section";
 import { LandingLayout } from "@/components/landing/landing-layout";
+import { TestimonialsSection, TESTIMONIALS } from "@/components/landing/testimonials-section";
 import { Button } from "@/components/ui/button";
 import { PLAN_DISPLAY_LIST } from "@/lib/utils/plan-display";
 import {
@@ -244,6 +245,10 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* Témoignages — n'affiche rien tant que TESTIMONIALS est vide, voir
+          components/landing/testimonials-section.tsx */}
+      <TestimonialsSection testimonials={TESTIMONIALS} />
 
       {/* Parrainage Section */}
       <section id="parrainage" className="py-20 bg-white">
