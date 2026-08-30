@@ -12,12 +12,13 @@ import {
 import {
   ArrowRight,
   BarChart3,
+  Check,
+  CreditCard,
   Gift,
   Package,
   Shield,
   ShoppingCart,
   Store,
-  Zap,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -61,11 +62,12 @@ export default function HomePage() {
               <Store className="h-10 w-10 text-white" />
             </div>
             <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold text-white mb-6">
-              Kafora
+              Gérez toute votre entreprise
+              <br className="hidden md:block" /> depuis un seul endroit.
             </h1>
             <p className="text-xl md:text-2xl text-primary-200 mb-8 max-w-3xl mx-auto">
-              La solution de gestion moderne pour les commerces africains.
-              Inventaire, ventes, crédits, analytics - tout en un seul système.
+              Kafora centralise vos ventes, stocks, caisses, clients et
+              boutiques dans un ERP conçu pour les entreprises africaines.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button
@@ -80,41 +82,32 @@ export default function HomePage() {
                 size="lg"
                 variant="outline"
                 className="bg-transparent border-white/30 text-white hover:bg-white/10 h-14 px-8 text-lg"
-                onClick={() => router.push("/login")}
+                onClick={() =>
+                  document.getElementById("contact")?.scrollIntoView({ behavior: "smooth" })
+                }
               >
-                Se connecter
+                Demander une démo
               </Button>
             </div>
-          </div>
-
-          {/* Stats */}
-          <div className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-8">
-            {[
-              { value: "500+", label: "Entreprises" },
-              { value: "50M+", label: "Transactions" },
-              { value: "99.9%", label: "Disponibilité" },
-              { value: "24/7", label: "Support" },
-            ].map((stat) => (
-              <div key={stat.label} className="text-center">
-                <p className="text-3xl md:text-4xl font-bold text-white">
-                  {stat.value}
-                </p>
-                <p className="text-primary-300">{stat.label}</p>
-              </div>
-            ))}
+            <p className="mt-8 text-sm text-primary-300 tracking-wide">
+              Stocks · POS · Multi-boutiques · Crédits · Analytics · Paiements
+            </p>
           </div>
         </div>
       </section>
 
-      {/* Features Section */}
+      {/* Problèmes → Solutions Section (remplace l'ancienne liste de
+          fonctionnalités : on part de ce que vit un dirigeant, pas d'un
+          catalogue de features — voir l'audit landing du 2026-08-29). */}
       <section id="features" className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              Tout ce dont vous avez besoin
+              Les problèmes que Kafora résout au quotidien
             </h2>
             <p className="text-xl text-gray-500 max-w-2xl mx-auto">
-              Une solution complète pour gérer votre entreprise du quotidien
+              Les mêmes difficultés reviennent, que vous ayez une boutique ou
+              plusieurs. Voici comment Kafora y répond.
             </p>
           </div>
 
@@ -122,52 +115,86 @@ export default function HomePage() {
             {[
               {
                 icon: Package,
-                title: "Gestion des stocks",
-                description:
-                  "Suivez vos produits en temps réel, alertes automatiques de stock bas, mouvements traqués.",
+                question: "Vous perdez le contrôle de vos stocks ?",
+                intro: "Kafora vous montre en temps réel :",
+                points: [
+                  "ce qui est vendu",
+                  "ce qui reste en stock",
+                  "ce qui entre et ce qui sort",
+                  "quels produits sont en rupture",
+                ],
               },
               {
                 icon: ShoppingCart,
-                title: "Point de vente rapide",
-                description:
-                  "Interface POS ultra-rapide, scan code-barres, paiement mobile money, factures automatiques.",
+                question: "Votre caisse vous fait perdre du temps ?",
+                intro: "Un point de vente pensé pour aller vite :",
+                points: [
+                  "scan code-barres",
+                  "espèces, Mobile Money, carte ou crédit",
+                  "facture générée automatiquement",
+                ],
               },
               {
                 icon: BarChart3,
-                title: "Analytics avancés",
-                description:
-                  "Tableaux de bord interactifs, rapports de ventes, analysis de rentabilité par produit.",
+                question: "Vous pilotez votre activité à l'aveugle ?",
+                intro: "Kafora vous donne une vue claire de votre activité :",
+                points: [
+                  "chiffre d'affaires et marge par produit",
+                  "évolution des ventes dans le temps",
+                  "produits les plus vendus et rotation du stock",
+                ],
               },
               {
                 icon: Shield,
-                title: "Multi-utilisateurs",
-                description:
-                  "Gérez les accès par rôle: caissier, manager, propriétaire. Historique complet des actions.",
+                question: "Vous ne savez pas qui fait quoi dans votre équipe ?",
+                intro: "Chaque utilisateur a un rôle et des droits définis :",
+                points: [
+                  "caissier, manager, propriétaire",
+                  "accès limité par boutique si besoin",
+                  "historique des actions sensibles",
+                ],
               },
               {
-                icon: Zap,
-                title: "Gestion des crédits",
-                description:
-                  "Suivez les créances clients, rappels automatiques, historique des paiements.",
+                icon: CreditCard,
+                question: "Vos clients achètent à crédit ?",
+                intro: "Suivez chaque dossier de crédit :",
+                points: [
+                  "dettes en cours",
+                  "paiements reçus",
+                  "échéances à venir",
+                  "historique complet par client",
+                ],
               },
               {
                 icon: Store,
-                title: "Multi-magasins",
-                description:
-                  "Gérez plusieurs points de vente, transferts inter-magasins, rapport consolidé.",
+                question: "Vous avez plusieurs boutiques ?",
+                intro: "Depuis un seul endroit, suivez :",
+                points: [
+                  "les ventes de chaque boutique",
+                  "les stocks et les transferts entre elles",
+                  "les caisses de chaque point de vente",
+                ],
               },
-            ].map((feature) => (
+            ].map((item) => (
               <div
-                key={feature.title}
+                key={item.question}
                 className="p-6 rounded-2xl border border-gray-100 hover:border-gray-200 hover:shadow-lg transition-all group"
               >
                 <div className="h-12 w-12 rounded-xl bg-primary-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  <feature.icon className="h-6 w-6 text-primary-600" />
+                  <item.icon className="h-6 w-6 text-primary-600" />
                 </div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                  {feature.title}
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  {item.question}
                 </h3>
-                <p className="text-gray-500">{feature.description}</p>
+                <p className="text-sm text-gray-500 mb-3">{item.intro}</p>
+                <ul className="space-y-1.5">
+                  {item.points.map((point) => (
+                    <li key={point} className="flex items-start gap-2 text-sm text-gray-600">
+                      <Check className="h-4 w-4 text-success-500 flex-shrink-0 mt-0.5" />
+                      <span>{point}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             ))}
           </div>

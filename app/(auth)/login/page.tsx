@@ -120,7 +120,7 @@ export default function LoginPage() {
           <Link href="/">
             <h1 className="text-3xl font-bold text-white hover:text-primary-200 transition-colors">Kafora</h1>
           </Link>
-          <p className="text-primary-200 mt-2">Système de gestion Enterprise</p>
+          <p className="text-primary-200 mt-2">Système de gestion d&apos;entreprise</p>
         </div>
 
         <Card className="border-0 shadow-2xl">
