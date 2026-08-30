@@ -3,6 +3,11 @@
 import { ContactSection } from "@/components/landing/contact-section";
 import { LandingLayout } from "@/components/landing/landing-layout";
 import { TestimonialsSection, TESTIMONIALS } from "@/components/landing/testimonials-section";
+import { WhoItsForSection } from "@/components/landing/who-its-for-section";
+import { MultiStoreSection } from "@/components/landing/multi-store-section";
+import { HowItWorksSection } from "@/components/landing/how-it-works-section";
+import { SetupServiceSection } from "@/components/landing/setup-service-section";
+import { FaqSection } from "@/components/landing/faq-section";
 import { Button } from "@/components/ui/button";
 import { PLAN_DISPLAY_LIST } from "@/lib/utils/plan-display";
 import {
@@ -95,6 +100,8 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      <WhoItsForSection />
 
       {/* Problèmes → Solutions Section (remplace l'ancienne liste de
           fonctionnalités : on part de ce que vit un dirigeant, pas d'un
@@ -201,6 +208,10 @@ export default function HomePage() {
         </div>
       </section>
 
+      <MultiStoreSection />
+
+      <HowItWorksSection />
+
       {/* Pricing Section */}
       <section id="pricing" className="py-20 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -303,49 +314,39 @@ export default function HomePage() {
         </div>
       </section>
 
+      <SetupServiceSection />
+
+      <FaqSection />
+
       {/* Témoignages — n'affiche rien tant que TESTIMONIALS est vide, voir
           components/landing/testimonials-section.tsx */}
       <TestimonialsSection testimonials={TESTIMONIALS} />
 
-      {/* Parrainage Section */}
-      <section id="parrainage" className="py-20 bg-white">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="rounded-2xl bg-gradient-to-br from-pink-50 to-primary-50 border border-pink-100 p-8 md:p-12 text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-pink-100 mb-6">
-              <Gift className="h-8 w-8 text-pink-600" />
-            </div>
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              Parrainez un commerçant, gagnez du temps
-            </h2>
-            <p className="text-xl text-gray-500 max-w-2xl mx-auto mb-8">
-              Chaque client Kafora a son propre lien de parrainage. Vous
-              recevez {REFERRAL_REFERRER_BONUS_DAYS} jours offerts sur votre
-              abonnement dès le premier paiement de la personne que vous
-              parrainez, et elle profite immédiatement de{" "}
-              {REFERRAL_REFEREE_BONUS_DAYS} jours d&apos;essai en plus.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button
-                size="lg"
-                className="bg-primary-600 text-white hover:bg-primary-700 h-14 px-8 text-lg"
-                onClick={() => router.push("/login")}
-              >
-                Voir mon lien de parrainage
-                <ArrowRight className="ml-2 h-5 w-5" />
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                className="h-14 px-8 text-lg"
-                onClick={() => router.push("/setup")}
-              >
-                Devenir client Kafora
-              </Button>
-            </div>
-            <p className="text-sm text-gray-400 mt-4">
-              Déjà client ? Retrouvez votre lien dans Réglages → Parrainage.
-            </p>
+      {/* Parrainage — volontairement discret ici : ce n'est pas un argument
+          de vente pour un premier visiteur, juste une information utile
+          avant le contact/CTA final. Voir l'audit landing du 2026-08-29
+          (section 18 de la mission : moins central que produit/tarifs/démo). */}
+      <section id="parrainage" className="py-10 bg-gray-50 border-y border-gray-100">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
+          <div className="h-10 w-10 rounded-xl bg-pink-100 flex items-center justify-center flex-shrink-0">
+            <Gift className="h-5 w-5 text-pink-600" />
           </div>
+          <p className="text-sm text-gray-600 flex-1 text-center sm:text-left">
+            <strong className="text-gray-900">Programme de parrainage.</strong>{" "}
+            Recevez {REFERRAL_REFERRER_BONUS_DAYS} jours offerts sur votre
+            abonnement quand la personne que vous parrainez effectue son
+            premier paiement — elle profite immédiatement de{" "}
+            {REFERRAL_REFEREE_BONUS_DAYS} jours d&apos;essai en plus. Déjà
+            client ? Retrouvez votre lien dans Réglages → Parrainage.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-shrink-0"
+            onClick={() => router.push("/login")}
+          >
+            Voir mon lien
+          </Button>
         </div>
       </section>
 
@@ -353,18 +354,17 @@ export default function HomePage() {
       <section className="py-20 bg-primary-900">
         <div className="max-w-4xl mx-auto px-4 text-center">
           <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-            Prêt à transformer votre entreprise ?
+            Prêt à reprendre le contrôle de votre entreprise ?
           </h2>
           <p className="text-xl text-primary-200 mb-8">
-            Rejoignez des centaines d&apos;entreprises qui font confiance à KAFORA
-            ERP
+            Créez votre compte en quelques minutes, sans engagement.
           </p>
           <Button
             size="lg"
             className="bg-white text-primary-900 hover:bg-gray-100 h-14 px-8 text-lg"
             onClick={() => router.push("/setup")}
           >
-            Démarrer maintenant
+            Commencer avec Kafora
             <ArrowRight className="ml-2 h-5 w-5" />
           </Button>
         </div>
