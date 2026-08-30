@@ -5,6 +5,7 @@ import { LandingLayout } from "@/components/landing/landing-layout";
 import { TestimonialsSection, TESTIMONIALS } from "@/components/landing/testimonials-section";
 import { WhoItsForSection } from "@/components/landing/who-its-for-section";
 import { ProductShowcaseSection } from "@/components/landing/product-showcase-section";
+import { OfflineSection } from "@/components/landing/offline-section";
 import { MultiStoreSection } from "@/components/landing/multi-store-section";
 import { HowItWorksSection } from "@/components/landing/how-it-works-section";
 import { SetupServiceSection } from "@/components/landing/setup-service-section";
@@ -209,6 +210,8 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      <OfflineSection />
 
       <MultiStoreSection />
 

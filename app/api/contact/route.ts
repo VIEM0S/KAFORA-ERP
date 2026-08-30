@@ -20,8 +20,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { name, email, message }: { name?: string; email?: string; message?: string } =
-      await request.json();
+    const {
+      name, email, message, company, phone, storeCount,
+    }: {
+      name?: string; email?: string; message?: string;
+      company?: string; phone?: string; storeCount?: string;
+    } = await request.json();
 
     if (!name?.trim() || !email?.trim() || !message?.trim()) {
       return NextResponse.json({ error: 'Nom, email et message sont requis' }, { status: 400 });
@@ -39,12 +43,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Champs de qualification B2B, tous optionnels : on ne les affiche dans
+    // l'email que s'ils ont été renseignés, pour ne pas alourdir le message
+    // pour un simple particulier qui n'a rempli que l'essentiel.
+    const optionalRows = [
+      company?.trim() && `<p><strong>Entreprise :</strong> ${escapeHtml(company.trim())}</p>`,
+      phone?.trim() && `<p><strong>Téléphone :</strong> ${escapeHtml(phone.trim())}</p>`,
+      storeCount?.trim() && `<p><strong>Nombre de boutiques :</strong> ${escapeHtml(storeCount.trim())}</p>`,
+    ].filter(Boolean).join('\n        ');
+
     const result = await sendEmail({
       to: toEmail,
       subject: `[Kafora] Nouveau message de contact — ${name.trim()}`,
       html: `
         <p><strong>Nom :</strong> ${escapeHtml(name.trim())}</p>
         <p><strong>Email :</strong> ${escapeHtml(email.trim())}</p>
+        ${optionalRows}
         <p><strong>Message :</strong></p>
         <p>${escapeHtml(message.trim()).replace(/\n/g, '<br/>')}</p>
       `,
