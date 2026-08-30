@@ -35,7 +35,10 @@ const PUBLIC_PATHS = [
 // secteur (quincaillerie, épicerie...) — publiques par nature, en préfixe
 // plutôt qu'une entrée par page pour que chaque nouveau secteur ajouté
 // (voir lib/utils/vertical-pages.ts) reste public sans y retoucher.
-const PUBLIC_PREFIXES = ['/_next', '/favicon', '/images', '/icons', '/fonts', '/solutions'];
+// '/screenshots' : captures produit affichées sur la landing (section
+// "Découvrez Kafora en action") — sans ça, un visiteur non connecté se
+// faisait rediriger au lieu de charger l'image.
+const PUBLIC_PREFIXES = ['/_next', '/favicon', '/images', '/icons', '/fonts', '/solutions', '/screenshots'];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

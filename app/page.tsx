@@ -4,6 +4,7 @@ import { ContactSection } from "@/components/landing/contact-section";
 import { LandingLayout } from "@/components/landing/landing-layout";
 import { TestimonialsSection, TESTIMONIALS } from "@/components/landing/testimonials-section";
 import { WhoItsForSection } from "@/components/landing/who-its-for-section";
+import { ProductShowcaseSection } from "@/components/landing/product-showcase-section";
 import { MultiStoreSection } from "@/components/landing/multi-store-section";
 import { HowItWorksSection } from "@/components/landing/how-it-works-section";
 import { SetupServiceSection } from "@/components/landing/setup-service-section";
@@ -212,6 +213,8 @@ export default function HomePage() {
       <MultiStoreSection />
 
       <HowItWorksSection />
+
+      <ProductShowcaseSection />
 
       {/* Pricing Section */}
       <section id="pricing" className="py-20 bg-gray-50">
