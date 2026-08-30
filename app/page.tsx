@@ -7,6 +7,7 @@ import { WhoItsForSection } from "@/components/landing/who-its-for-section";
 import { MultiStoreSection } from "@/components/landing/multi-store-section";
 import { HowItWorksSection } from "@/components/landing/how-it-works-section";
 import { SetupServiceSection } from "@/components/landing/setup-service-section";
+import { SecuritySection } from "@/components/landing/security-section";
 import { FaqSection } from "@/components/landing/faq-section";
 import { Button } from "@/components/ui/button";
 import { PLAN_DISPLAY_LIST } from "@/lib/utils/plan-display";
@@ -315,6 +316,8 @@ export default function HomePage() {
       </section>
 
       <SetupServiceSection />
+
+      <SecuritySection />
 
       <FaqSection />
 
