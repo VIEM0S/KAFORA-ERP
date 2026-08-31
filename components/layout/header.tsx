@@ -1,9 +1,10 @@
 'use client';
 
-import { Bell, Search, Settings, Store, X, ChevronDown, CheckCircle2, PanelLeft, Menu } from 'lucide-react';
+import { Bell, Search, Settings, Store, X, ChevronDown, CheckCircle2, PanelLeft, Menu, MessageSquareWarning } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils/helpers';
+import { FeedbackDialog } from '@/components/feedback/feedback-dialog';
 import { useAuthStore, useUIStore } from '@/hooks/store';
 import { supabase } from '@/lib/supabase/client';
 // watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
@@ -20,6 +21,7 @@ export function Header() {
   const [searchQuery, setSearchQuery] = useState('');
   const [storeDropdownOpen, setStoreDropdownOpen] = useState(false);
   const [alertCount, setAlertCount] = useState(0);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   // Badge live — stock faible + crédits en retard + vraies alertes
   // (demandes de suppression, conflits de synchro offline...). Fix : ce badge
@@ -202,6 +204,16 @@ export function Header() {
             <Search className="h-5 w-5" />
           </button>
         )}
+
+        {/* Signaler un problème — canal de retour client, voir
+            components/feedback/feedback-dialog.tsx. Dans le header plutôt
+            que la sidebar : c'est le seul emplacement visible depuis
+            absolument toutes les pages du dashboard. */}
+        <button onClick={() => setFeedbackOpen(true)} title="Signaler un problème"
+          className="p-2.5 rounded-xl text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors">
+          <MessageSquareWarning className="h-5 w-5" />
+        </button>
+        <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
 
         {/* Notifications avec badge */}
         <Link href="/notifications"
