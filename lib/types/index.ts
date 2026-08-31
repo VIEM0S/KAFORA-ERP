@@ -339,6 +339,11 @@ export interface Credit {
   payments: CreditPayment[];
   createdAt: Date;
   updatedAt: Date;
+  // Horodatage de la dernière relance WhatsApp envoyée par le commerçant —
+  // voir buildWhatsAppReminderLink() dans app/(dashboard)/credits/page.tsx.
+  // Ne reflète pas un envoi automatique : personne ne l'écrit tant que le
+  // commerçant n'a pas cliqué lui-même sur "Relancer".
+  lastReminderSentAt: Date | null;
 }
 
 export type CreditStatus = 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'CANCELLED' | 'WRITTEN_OFF';

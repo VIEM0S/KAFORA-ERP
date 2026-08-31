@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import {
   CreditCard, Search, X, Plus, RefreshCw,
   AlertTriangle, Clock, CheckCircle2, ChevronRight,
-  User, Calendar, TrendingDown, Banknote
+  User, Calendar, TrendingDown, Banknote, MessageCircle
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout';
 import { Card, CardContent } from '@/components/ui/card';
@@ -52,10 +52,36 @@ function isEnRetard(dueDate: Date, status: string): boolean {
   return dueDate.getTime() < Date.now();
 }
 
+// Relance "semi-automatique" : Kafora repère le crédit en retard et prépare
+// le message, mais c'est le commerçant qui clique pour l'envoyer via son
+// propre WhatsApp — aucune API SMS/WhatsApp payante n'est intégrée (voir
+// docs/enterprise-pricing-guide.md pour le contexte de cette décision).
+// Retourne null si aucun téléphone n'est enregistré pour ce client.
+function buildWhatsAppReminderLink(credit: Credit, tenantName: string): string | null {
+  if (!credit.customerPhone) return null;
+
+  // Numéros maliens : 8 chiffres locaux, indicatif 223. On accepte la saisie
+  // telle quelle (espaces, tirets, +, 00) et on la ramène à un format
+  // international sans "+" ni espaces, celui attendu par wa.me.
+  let digits = credit.customerPhone.replace(/\D/g, '');
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (!digits.startsWith('223') && digits.length === 8) digits = `223${digits}`;
+  if (digits.length < 10) return null; // trop court pour être un numéro exploitable
+
+  const firstName = (credit.customerName || 'cher client').split(' ')[0];
+  const message =
+    `Bonjour ${firstName}, un rappel amical : vous avez un solde de ` +
+    `${formatCurrency(credit.remainingAmount)} en cours chez ${tenantName}, ` +
+    `échéance le ${formatDate(credit.dueDate)}. Merci de votre confiance !`;
+
+  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CreditsPage() {
   const { tenant, user, currentStore } = useAuthStore();
+  const [relanceError, setRelanceError] = useState<string | null>(null);
   const tenantId = tenant?.id;
   const canManageCredits = user?.role
     ? Boolean(ROLE_PERMISSIONS[user.role as keyof typeof ROLE_PERMISSIONS]?.canManageCredits)
@@ -174,6 +200,31 @@ export default function CreditsPage() {
       console.error(e);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // ─── Relance WhatsApp ───────────────────────────────────────────────────────
+
+  const handleRelance = async (credit: Credit) => {
+    setRelanceError(null);
+    const link = buildWhatsAppReminderLink(credit, tenant?.name || 'Kafora');
+    if (!link) {
+      setRelanceError('Aucun téléphone exploitable pour ce client.');
+      return;
+    }
+    // On ouvre d'abord WhatsApp : même si l'enregistrement de l'horodatage
+    // échoue ensuite, le commerçant a déjà son message prêt à envoyer.
+    window.open(link, '_blank', 'noopener,noreferrer');
+
+    if (!canManageCredits) return; // horodatage réservé aux managers (policy credits_update)
+    const now = new Date();
+    const { error } = await supabase
+      .from('credits')
+      .update({ last_reminder_sent_at: now.toISOString() })
+      .eq('id', credit.id);
+    if (!error) {
+      setCredits(prev => prev.map(c => c.id === credit.id ? { ...c, lastReminderSentAt: now } : c));
+      setSelected(prev => prev && prev.id === credit.id ? { ...prev, lastReminderSentAt: now } : prev);
     }
   };
 
@@ -317,7 +368,7 @@ export default function CreditsPage() {
                     return (
                       <TableRow key={c.id}
                         className={`hover:bg-gray-50 cursor-pointer ${selected?.id === c.id ? 'bg-primary-50' : ''}`}
-                        onClick={() => { setSelected(c); setMontantVersement(''); setVersementError(null); }}>
+                        onClick={() => { setSelected(c); setMontantVersement(''); setVersementError(null); setRelanceError(null); }}>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">
@@ -344,7 +395,21 @@ export default function CreditsPage() {
                           </span>
                         </TableCell>
                         <TableCell><StatusBadge status={c.status} /></TableCell>
-                        <TableCell><ChevronRight className="h-4 w-4 text-gray-400" /></TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2 justify-end">
+                            {(proche || c.status === 'OVERDUE') && (
+                              <button
+                                title={c.customerPhone ? 'Relancer par WhatsApp' : 'Aucun téléphone enregistré'}
+                                disabled={!c.customerPhone}
+                                onClick={(e) => { e.stopPropagation(); handleRelance(c); }}
+                                className="text-green-600 hover:text-green-700 disabled:text-gray-300 disabled:cursor-not-allowed"
+                              >
+                                <MessageCircle className="h-4 w-4" />
+                              </button>
+                            )}
+                            <ChevronRight className="h-4 w-4 text-gray-400" />
+                          </div>
+                        </TableCell>
                       </TableRow>
                     );
                   })}
@@ -369,11 +434,35 @@ export default function CreditsPage() {
                   <div className="h-10 w-10 rounded-full bg-primary-100 flex items-center justify-center font-bold text-primary-700">
                     {(selected.customerName || '?')[0]}
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <p className="font-bold text-gray-900">{selected.customerName || 'Client supprimé'}</p>
                     {selected.customerPhone && <p className="text-sm text-gray-400">{selected.customerPhone}</p>}
                   </div>
+                  {['PENDING', 'PARTIALLY_PAID', 'OVERDUE'].includes(selected.status) && (
+                    <div className="text-right">
+                      <Button
+                        variant="outline" size="sm"
+                        disabled={!selected.customerPhone}
+                        onClick={() => handleRelance(selected)}
+                        className="border-green-300 text-green-700 hover:bg-green-50"
+                      >
+                        <MessageCircle className="h-4 w-4 mr-1.5" />
+                        Relancer
+                      </Button>
+                      {selected.lastReminderSentAt && (
+                        <p className="text-xs text-gray-400 mt-1">
+                          Relancé le {formatDateTime(selected.lastReminderSentAt)}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
+
+                {relanceError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700 mb-4">
+                    {relanceError}
+                  </div>
+                )}
 
                 {/* Infos montants */}
                 <div className="grid grid-cols-2 gap-3 mb-4 text-sm">

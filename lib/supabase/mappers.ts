@@ -144,6 +144,7 @@ export function mapCredit(r: Row<'credits'>, payments: CreditPayment[] = []): Cr
     remainingAmount: r.remaining_amount, dueDate: toDate(r.due_date),
     status: r.status, penaltyRate: r.penalty_rate ?? 0, penaltyAmount: r.penalty_amount ?? 0,
     notes: r.notes, payments, createdAt: toDate(r.created_at), updatedAt: toDate(r.updated_at),
+    lastReminderSentAt: toDateOrNull(r.last_reminder_sent_at),
   };
 }
 

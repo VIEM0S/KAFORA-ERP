@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.17"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -392,6 +392,7 @@ export type Database = {
           customer_phone: string | null
           due_date: string | null
           id: string
+          last_reminder_sent_at: string | null
           notes: string | null
           paid_amount: number
           penalty_amount: number | null
@@ -412,6 +413,7 @@ export type Database = {
           customer_phone?: string | null
           due_date?: string | null
           id?: string
+          last_reminder_sent_at?: string | null
           notes?: string | null
           paid_amount?: number
           penalty_amount?: number | null
@@ -432,6 +434,7 @@ export type Database = {
           customer_phone?: string | null
           due_date?: string | null
           id?: string
+          last_reminder_sent_at?: string | null
           notes?: string | null
           paid_amount?: number
           penalty_amount?: number | null
@@ -2465,6 +2468,11 @@ export type Database = {
           p_tenant_id: string
         }
         Returns: Json
+      }
+      aggregate_daily_stats: { Args: { p_days?: number }; Returns: Json }
+      aggregate_daily_stats_for_day: {
+        Args: { p_date: string }
+        Returns: number
       }
       auth_role: { Args: never; Returns: string }
       auth_store_ids: { Args: never; Returns: string[] }
