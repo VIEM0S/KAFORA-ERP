@@ -176,8 +176,13 @@ function SidebarBody({
 }) {
   return (
     <>
-      {/* Logo */}
-      <div className={cn('flex items-center h-16 px-4 border-b border-gray-100 flex-shrink-0', collapsed ? 'justify-center' : 'gap-3')}>
+      {/* Logo — cliquable vers le tableau de bord, comme dans la plupart des
+          apps. Auparavant une simple div sans lien : un clic ne faisait
+          rien, ce qui surprenait un utilisateur habitué à cette convention. */}
+      <Link
+        href="/dashboard"
+        className={cn('flex items-center h-16 px-4 border-b border-gray-100 flex-shrink-0 hover:bg-gray-50 transition-colors', collapsed ? 'justify-center' : 'gap-3')}
+      >
         <div className="h-9 w-9 bg-primary-600 rounded-xl flex items-center justify-center shadow-sm flex-shrink-0">
           <Store className="h-5 w-5 text-white" />
         </div>
@@ -187,7 +192,7 @@ function SidebarBody({
             <p className="text-xs text-gray-400 leading-tight">ERP</p>
           </div>
         )}
-      </div>
+      </Link>
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-0.5">
