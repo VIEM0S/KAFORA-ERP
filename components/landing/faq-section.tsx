@@ -73,6 +73,11 @@ const FAQ_ITEMS: { question: string; answer: string }[] = [
     question: 'Puis-je demander une démonstration ?',
     answer: 'Oui, via le formulaire de contact ci-dessous — nous revenons vers vous rapidement.',
   },
+  {
+    question: 'Que se passe-t-il si je décide d\'arrêter Kafora ?',
+    answer:
+      "Vos données vous appartiennent. Vous pouvez en demander une copie exploitable (CSV ou JSON) à tout moment, y compris après résiliation : elles restent disponibles 90 jours avant suppression définitive.",
+  },
 ];
 
 export function FaqSection() {

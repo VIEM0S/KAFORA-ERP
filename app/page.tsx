@@ -97,7 +97,14 @@ export default function HomePage() {
                 Demander une démo
               </Button>
             </div>
-            <p className="mt-8 text-sm text-primary-300 tracking-wide">
+            {/* Reprend exactement l'article 2 du CGV (app/cgv/page.tsx) : 14
+                jours, sans moyen de paiement requis, sans engagement — lever
+                cette objection tôt plutôt que de laisser le visiteur la
+                découvrir seul dans /setup. */}
+            <p className="mt-4 text-sm text-primary-300">
+              14 jours gratuits · Sans carte bancaire · Sans engagement
+            </p>
+            <p className="mt-4 text-sm text-primary-300 tracking-wide">
               Stocks · POS · Multi-boutiques · Crédits · Analytics · Paiements
             </p>
           </div>

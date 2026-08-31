@@ -10,10 +10,14 @@ export const PLAN_ORDER: PlanId[] = ['STARTER', 'BUSINESS', 'ENTERPRISE'];
 // voir app/api/admin/subscription/route.ts) — seul l'AFFICHAGE public change.
 export const CUSTOM_PRICING_PLANS: PlanId[] = ['ENTERPRISE'];
 
+// "24/7" retiré pour Enterprise : aucune astreinte réelle derrière cette
+// promesse aujourd'hui, et le CGV lui-même reste prudent ("moyens
+// raisonnables", voir app/cgv/page.tsx art. 8) — ne pas afficher une
+// garantie que le CGV ne tient pas.
 const SUPPORT_LABEL: Record<PlanId, string> = {
   STARTER: 'Support email',
   BUSINESS: 'Support prioritaire',
-  ENTERPRISE: 'Support dédié 24/7',
+  ENTERPRISE: 'Support dédié prioritaire',
 };
 
 // Avantages purement marketing, sans équivalent en "feature flag" dans
