@@ -248,17 +248,23 @@ export default function HomePage() {
                 )}
                 <h3 className="text-2xl font-bold mb-2">{plan.name}</h3>
                 <div className="mb-4">
-                  <span className="text-4xl font-bold">
-                    {plan.price.toLocaleString("fr-FR")}
-                  </span>
-                  <span
-                    className={
-                      plan.popular ? "text-primary-200" : "text-gray-500"
-                    }
-                  >
-                    {" "}
-                    FCFA/mois
-                  </span>
+                  {plan.isCustomPricing ? (
+                    <span className="text-4xl font-bold">Sur devis</span>
+                  ) : (
+                    <>
+                      <span className="text-4xl font-bold">
+                        {plan.price.toLocaleString("fr-FR")}
+                      </span>
+                      <span
+                        className={
+                          plan.popular ? "text-primary-200" : "text-gray-500"
+                        }
+                      >
+                        {" "}
+                        FCFA/mois
+                      </span>
+                    </>
+                  )}
                 </div>
                 <p
                   className={`mb-6 ${plan.popular ? "text-primary-200" : "text-gray-500"}`}
@@ -303,6 +309,11 @@ export default function HomePage() {
                 >
                   {plan.cta}
                 </Button>
+                {plan.isCustomPricing && (
+                  <p className={`mt-3 text-xs text-center ${plan.popular ? "text-primary-200" : "text-gray-400"}`}>
+                    Calculé selon le nombre de boutiques, d&apos;utilisateurs et vos besoins de formation ou d&apos;accompagnement.
+                  </p>
+                )}
               </div>
             ))}
           </div>
@@ -313,8 +324,11 @@ export default function HomePage() {
             <h3 className="text-xl font-bold text-gray-900 mb-1 text-center">
               Coût cumulé sur 5 ans
             </h3>
-            <p className="text-gray-500 text-center mb-6">
+            <p className="text-gray-500 text-center mb-1">
               Visualisez votre engagement financier réel, forfait par forfait
+            </p>
+            <p className="text-xs text-gray-400 text-center mb-6">
+              Enterprise étant sur devis, il n&apos;a pas de montant fixe à projeter ici.
             </p>
             <CostComparisonChart />
           </div>

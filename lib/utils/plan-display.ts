@@ -2,6 +2,14 @@ import { SUBSCRIPTION_PLANS, PlanId } from '@/lib/constants';
 
 export const PLAN_ORDER: PlanId[] = ['STARTER', 'BUSINESS', 'ENTERPRISE'];
 
+// Enterprise n'a pas de prix fixe affiché : les besoins (boutiques,
+// utilisateurs, intégrations, formation) varient trop d'une entreprise à
+// l'autre pour un tarif catalogue unique. SUBSCRIPTION_PLANS.ENTERPRISE.price
+// reste néanmoins un vrai nombre en interne (utilisé comme référence par
+// défaut dans la console admin lors de la saisie manuelle d'un paiement,
+// voir app/api/admin/subscription/route.ts) — seul l'AFFICHAGE public change.
+export const CUSTOM_PRICING_PLANS: PlanId[] = ['ENTERPRISE'];
+
 const SUPPORT_LABEL: Record<PlanId, string> = {
   STARTER: 'Support email',
   BUSINESS: 'Support prioritaire',
@@ -33,7 +41,7 @@ const PLAN_DESCRIPTION: Record<PlanId, string> = {
 const PLAN_CTA: Record<PlanId, string> = {
   STARTER: 'Commencer',
   BUSINESS: 'Commencer',
-  ENTERPRISE: 'Nous contacter',
+  ENTERPRISE: 'Demander un devis',
 };
 
 /**
@@ -63,6 +71,7 @@ export function getPlanDisplay(planId: PlanId) {
     id: planId,
     name: SUBSCRIPTION_PLANS[planId].name,
     price: SUBSCRIPTION_PLANS[planId].price,
+    isCustomPricing: CUSTOM_PRICING_PLANS.includes(planId),
     description: PLAN_DESCRIPTION[planId],
     cta: PLAN_CTA[planId],
     popular: planId === 'BUSINESS',

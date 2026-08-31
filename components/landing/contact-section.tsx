@@ -6,7 +6,10 @@ import { Button } from '@/components/ui/button';
 
 type Status = 'idle' | 'submitting' | 'success' | 'error';
 
-const STORE_COUNT_OPTIONS = ['1', '2 à 5', '6 à 10', 'Plus de 10'];
+// Alignés sur les paliers réels des forfaits (voir SUBSCRIPTION_PLANS,
+// lib/constants) : 1 = Starter, 2-3 = Business (max 3 magasins), au-delà =
+// Enterprise. Sans ça, le menu suggérait des paliers qui n'existent pas.
+const STORE_COUNT_OPTIONS = ['1', '2 à 3', '4 à 10', 'Plus de 10'];
 
 export function ContactSection() {
   const [name, setName] = useState('');

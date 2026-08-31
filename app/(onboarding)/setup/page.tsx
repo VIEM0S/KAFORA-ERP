@@ -311,7 +311,11 @@ export default function SetupPage() {
                     )}
                     <p className="font-bold text-gray-900">{p.name}</p>
                     <p className="text-2xl font-bold text-primary-600 mt-1">
-                      {p.price.toLocaleString('fr-FR')} <span className="text-sm font-normal text-gray-500">FCFA/mois</span>
+                      {p.isCustomPricing ? (
+                        'Sur devis'
+                      ) : (
+                        <>{p.price.toLocaleString('fr-FR')} <span className="text-sm font-normal text-gray-500">FCFA/mois</span></>
+                      )}
                     </p>
                     <ul className="mt-3 space-y-1">
                       {p.features.map(f => (

@@ -4,17 +4,22 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import { SUBSCRIPTION_PLANS } from '@/lib/constants';
-import { PLAN_ORDER } from '@/lib/utils/plan-display';
+import { PLAN_ORDER, CUSTOM_PRICING_PLANS } from '@/lib/utils/plan-display';
 import { formatCurrency } from '@/lib/utils/helpers';
 
 /**
- * Coût cumulé réel des 3 forfaits Kafora sur 5 ans — calculé directement
- * depuis SUBSCRIPTION_PLANS (même source que la page Tarifs et l'assistant
- * d'inscription), aucun chiffre recopié à la main. Pas de comparaison à un
- * concurrent ou à une estimation de "coût sans logiciel" : on n'a aucune
- * donnée fiable là-dessus, mieux vaut ne rien avancer que d'inventer un
- * chiffre présenté comme un fait.
+ * Coût cumulé réel des forfaits Kafora à prix fixe sur 5 ans — calculé
+ * directement depuis SUBSCRIPTION_PLANS (même source que la page Tarifs et
+ * l'assistant d'inscription), aucun chiffre recopié à la main. Pas de
+ * comparaison à un concurrent ou à une estimation de "coût sans logiciel" :
+ * on n'a aucune donnée fiable là-dessus, mieux vaut ne rien avancer que
+ * d'inventer un chiffre présenté comme un fait.
+ *
+ * Enterprise (CUSTOM_PRICING_PLANS) est exclu : "Sur devis" n'a pas de
+ * montant fixe à projeter sur 5 ans, et l'afficher comme les autres
+ * laisserait croire à un prix catalogue qui n'existe plus.
  */
+const CHART_PLAN_ORDER = PLAN_ORDER.filter((id) => !CUSTOM_PRICING_PLANS.includes(id));
 
 const PLAN_COLORS: Record<string, string> = {
   STARTER: '#2563eb',
@@ -30,7 +35,7 @@ interface YearPoint { year: string; [planName: string]: string | number }
 function buildCostData(): YearPoint[] {
   return [1, 2, 3, 4, 5].map((year) => {
     const point: YearPoint = { year: `An ${year}` };
-    for (const planId of PLAN_ORDER) {
+    for (const planId of CHART_PLAN_ORDER) {
       const plan = SUBSCRIPTION_PLANS[planId];
       point[plan.name] = plan.price * 12 * year;
     }
@@ -73,7 +78,7 @@ export function CostComparisonChart() {
         <YAxis tick={{ fontSize: 11, fill: '#6b7280' }} axisLine={false} tickLine={false} tickFormatter={shortFcfa} />
         <Tooltip content={<CustomTooltip />} />
         <Legend iconType="circle" iconSize={10} />
-        {PLAN_ORDER.map((planId) => (
+        {CHART_PLAN_ORDER.map((planId) => (
           <Line
             key={planId}
             type="monotone"
