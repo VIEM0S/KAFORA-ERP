@@ -74,6 +74,11 @@ const FAQ_ITEMS: { question: string; answer: string }[] = [
     answer: 'Oui, via le formulaire de contact ci-dessous — nous revenons vers vous rapidement.',
   },
   {
+    question: 'Qui répond quand je contacte le support ?',
+    answer:
+      "Aujourd'hui, c'est le fondateur de Kafora qui répond personnellement à chaque demande — par téléphone, WhatsApp ou email. Comptez une réponse sous 24h ouvrées (lundi-vendredi).",
+  },
+  {
     question: 'Que se passe-t-il si je décide d\'arrêter Kafora ?',
     answer:
       "Vos données vous appartiennent. Vous pouvez en demander une copie exploitable (CSV ou JSON) à tout moment, y compris après résiliation : elles restent disponibles 90 jours avant suppression définitive.",
