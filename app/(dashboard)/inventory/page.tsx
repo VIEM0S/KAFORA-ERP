@@ -40,6 +40,13 @@ export default function InventoryPage() {
   const [adjType, setAdjType] = useState<'add' | 'remove' | 'set'>('add');
   const [adjQty, setAdjQty] = useState('');
   const [adjNote, setAdjNote] = useState('');
+  // Péremption (track_expiry) : date requise sur une entrée de stock, crée
+  // un lot en plus du total. Série (track_serial) : liste de numéros à la
+  // place d'une quantité — la réception ne fait sens qu'en entrée, voir
+  // handleAdjust.
+  const [adjExpiryDate, setAdjExpiryDate] = useState('');
+  const [adjSerials, setAdjSerials] = useState('');
+  const [adjError, setAdjError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -84,11 +91,23 @@ export default function InventoryPage() {
 
   const lowCount = products.filter((p) => p.trackInventory && estEnAlerte(getStock(p.id), seuilDe(p.id, p.alertThreshold))).length;
 
+  // Numéros de série saisis (un par ligne), nettoyés et dédupliqués.
+  const parsedSerials = Array.from(new Set(
+    adjSerials.split('\n').map((s) => s.trim()).filter(Boolean)
+  ));
+
   const handleAdjust = async () => {
-    if (!tenantId || !storeId || !adjProduct || !adjQty) return;
+    if (!tenantId || !storeId || !adjProduct) return;
+    const isSerialEntry = adjProduct.trackSerial;
+    const qty = isSerialEntry ? parsedSerials.length : Number(adjQty);
+    if (!qty) return;
+    if (adjProduct.trackExpiry && adjType === 'add' && !adjExpiryDate) {
+      setAdjError('La date de péremption est requise pour une entrée de stock.');
+      return;
+    }
     setIsSaving(true);
+    setAdjError(null);
     try {
-      const qty = Number(adjQty);
       const currentQty = getStock(adjProduct.id);
       const newQty = adjType === 'add' ? currentQty + qty : adjType === 'remove' ? Math.max(0, currentQty - qty) : qty;
       const minQuantity = adjSeuil.trim() === '' ? null : Number(adjSeuil);
@@ -107,6 +126,29 @@ export default function InventoryPage() {
           min_quantity: minQuantity,
         });
       }
+
+      // Ventilation additionnelle (lots ou séries), en plus du total
+      // inventory.quantity déjà à jour ci-dessus — voir migration 041.
+      // Seule l'ENTRÉE de stock crée un lot/des séries : une sortie ou une
+      // correction manuelle ne sait pas quel lot/exemplaire précis retirer
+      // (ça, c'est le rôle de la vente POS pour la série, et de "Marquer
+      // périmé" pour un lot).
+      if (adjType === 'add' && adjProduct.trackExpiry) {
+        const { error } = await supabase.from('product_lots').insert({
+          tenant_id: tenantId, product_id: adjProduct.id, store_id: storeId,
+          quantity: qty, expiry_date: adjExpiryDate, notes: adjNote || null,
+        });
+        if (error) throw error;
+      }
+      if (adjType === 'add' && isSerialEntry) {
+        const { error } = await supabase.from('product_serials').insert(
+          parsedSerials.map((serial_number) => ({
+            tenant_id: tenantId, product_id: adjProduct.id, store_id: storeId, serial_number,
+          }))
+        );
+        if (error) throw error;
+      }
+
       // type ADJUSTMENT pour les deux sens (entrée/sortie manuelle) — même
       // valeur d'enum que l'annulation de vente (cancel_sale), qui restocke
       // aussi sous ADJUSTMENT ; le sens se lit dans le signe de `quantity`,
@@ -120,8 +162,16 @@ export default function InventoryPage() {
         previous_quantity: currentQty, new_quantity: newQty,
         reason: adjNote || 'Ajustement manuel',
       });
-      setAdjProduct(null); setAdjQty(''); setAdjNote(''); setAdjSeuil('');
-    } catch (e) { console.error(e); }
+      setAdjProduct(null); setAdjQty(''); setAdjNote(''); setAdjSeuil(''); setAdjExpiryDate(''); setAdjSerials('');
+    } catch (e) {
+      const code = (e as { code?: string })?.code;
+      setAdjError(
+        code === '23505'
+          ? 'Un ou plusieurs numéros de série sont déjà enregistrés pour ce produit.'
+          : "Erreur lors de l'enregistrement. Réessayez."
+      );
+      console.error(e);
+    }
     finally { setIsSaving(false); }
   };
 
@@ -209,6 +259,7 @@ export default function InventoryPage() {
                       <TableCell>
                         <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => {
                           setAdjProduct(p); setAdjType('add'); setAdjQty(''); setAdjNote('');
+                          setAdjExpiryDate(''); setAdjSerials(''); setAdjError(null);
                           // Pré-remplir le seuil existant : sans cela, chaque
                           // ajustement de stock l'aurait silencieusement effacé.
                           const inv = inventory.find(i => i.productId === p.id && i.storeId === storeId);
@@ -233,21 +284,55 @@ export default function InventoryPage() {
             <div className="bg-gray-50 rounded-lg p-3 text-sm">
               Stock actuel : <strong>{adjProduct ? getStock(adjProduct.id) : 0} {adjProduct?.unit}</strong>
             </div>
-            <div className="space-y-2">
-              <Label>Type d&apos;ajustement</Label>
-              <Select value={adjType} onValueChange={(v) => setAdjType(v as 'add' | 'remove' | 'set')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="add">➕ Entrée de stock</SelectItem>
-                  <SelectItem value="remove">➖ Sortie de stock</SelectItem>
-                  <SelectItem value="set">🎯 Définir la quantité exacte</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Quantité *</Label>
-              <Input type="number" placeholder="0" min="0" value={adjQty} onChange={(e) => setAdjQty(e.target.value)} />
-            </div>
+
+            {adjError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700">{adjError}</div>
+            )}
+
+            {/* Un produit à numéro de série ne se reçoit qu'en entrée : retirer
+                un exemplaire précis se fait à la vente, pas ici. */}
+            {adjProduct?.trackSerial ? (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-700">
+                Réception de nouveaux exemplaires — un numéro de série par ligne ci-dessous.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Type d&apos;ajustement</Label>
+                <Select value={adjType} onValueChange={(v) => setAdjType(v as 'add' | 'remove' | 'set')}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="add">➕ Entrée de stock</SelectItem>
+                    <SelectItem value="remove">➖ Sortie de stock</SelectItem>
+                    <SelectItem value="set">🎯 Définir la quantité exacte</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {adjProduct?.trackSerial ? (
+              <div className="space-y-2">
+                <Label>Numéros de série / IMEI *</Label>
+                <Textarea
+                  placeholder={'Un numéro par ligne\nex: 359123456789012'}
+                  value={adjSerials} onChange={(e) => setAdjSerials(e.target.value)} rows={5}
+                />
+                <p className="text-xs text-gray-500">{parsedSerials.length} numéro{parsedSerials.length !== 1 ? 's' : ''} détecté{parsedSerials.length !== 1 ? 's' : ''}</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Quantité *</Label>
+                <Input type="number" placeholder="0" min="0" value={adjQty} onChange={(e) => setAdjQty(e.target.value)} />
+              </div>
+            )}
+
+            {adjProduct?.trackExpiry && adjType === 'add' && (
+              <div className="space-y-2">
+                <Label>Date de péremption *</Label>
+                <Input type="date" value={adjExpiryDate} onChange={(e) => setAdjExpiryDate(e.target.value)} />
+                <p className="text-xs text-gray-500">Ce lot sera vendu en priorité si sa date est la plus proche (FEFO).</p>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label>Seuil d&apos;alerte pour ce magasin</Label>
               <Input
@@ -264,10 +349,11 @@ export default function InventoryPage() {
               <Label>Motif</Label>
               <Textarea placeholder="ex: Réception commande fournisseur, inventaire physique..." value={adjNote} onChange={(e) => setAdjNote(e.target.value)} rows={2} />
             </div>
-            {adjQty && adjProduct && (
+            {adjProduct && (adjQty || parsedSerials.length > 0) && (
               <div className="bg-blue-50 rounded-lg p-3 text-sm text-blue-700">
                 Nouveau stock : <strong>
-                  {adjType === 'add' ? getStock(adjProduct.id) + Number(adjQty)
+                  {adjProduct.trackSerial ? getStock(adjProduct.id) + parsedSerials.length
+                   : adjType === 'add' ? getStock(adjProduct.id) + Number(adjQty)
                    : adjType === 'remove' ? Math.max(0, getStock(adjProduct.id) - Number(adjQty))
                    : Number(adjQty)} {adjProduct.unit}
                 </strong>
@@ -276,7 +362,11 @@ export default function InventoryPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAdjProduct(null)}>Annuler</Button>
-            <Button onClick={handleAdjust} disabled={isSaving || !adjQty} className="bg-primary-600 hover:bg-primary-700">
+            <Button
+              onClick={handleAdjust}
+              disabled={isSaving || (adjProduct?.trackSerial ? parsedSerials.length === 0 : !adjQty)}
+              className="bg-primary-600 hover:bg-primary-700"
+            >
               {isSaving ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Enregistrement...</> : 'Confirmer'}
             </Button>
           </DialogFooter>

@@ -64,6 +64,11 @@ interface CartState {
   // laisserait le devis marqué converti sans vente correspondante.
   sourceQuoteId: string | null;
   addItem: (product: Product, quantity?: number) => void;
+  // Produit à suivi de série (product.trackSerial) : un numéro choisi au
+  // POS = un exemplaire ajouté. Pas de addItem(quantity) classique, chaque
+  // exemplaire est distinct — voir components/pos/serial-picker-dialog.tsx.
+  addSerialItem: (product: Product, serial: string) => void;
+  removeSerialFromItem: (productId: string, serial: string) => void;
   removeItem: (productId: string) => void;
   updateItemQuantity: (productId: string, quantity: number) => void;
   updateItemPrice: (productId: string, price: number) => void;
@@ -119,6 +124,49 @@ export const useCartStore = create<CartState>()(
             total: quantity * product.sellingPrice * (1 + product.taxRate / 100),
           };
           set({ items: [...items, newItem] });
+        }
+      },
+
+      addSerialItem: (product, serial) => {
+        const items = get().items;
+        const existing = items.find((i) => i.product.id === product.id);
+        if (existing) {
+          if ((existing.serials || []).includes(serial)) return; // déjà dans le panier
+          const serials = [...(existing.serials || []), serial];
+          set({
+            items: items.map((i) =>
+              i.product.id === product.id
+                ? { ...i, serials, quantity: serials.length,
+                    total: serials.length * i.unitPrice * (1 - i.discount / 100) * (1 + i.tax / 100) }
+                : i
+            ),
+          });
+        } else {
+          const newItem: CartItem = {
+            product, quantity: 1, unitPrice: product.sellingPrice, discount: 0, tax: product.taxRate,
+            total: product.sellingPrice * (1 + product.taxRate / 100),
+            serials: [serial],
+          };
+          set({ items: [...items, newItem] });
+        }
+      },
+
+      removeSerialFromItem: (productId, serial) => {
+        const items = get().items;
+        const existing = items.find((i) => i.product.id === productId);
+        if (!existing) return;
+        const serials = (existing.serials || []).filter((s) => s !== serial);
+        if (serials.length === 0) {
+          set({ items: items.filter((i) => i.product.id !== productId) });
+        } else {
+          set({
+            items: items.map((i) =>
+              i.product.id === productId
+                ? { ...i, serials, quantity: serials.length,
+                    total: serials.length * i.unitPrice * (1 - i.discount / 100) * (1 + i.tax / 100) }
+                : i
+            ),
+          });
         }
       },
 

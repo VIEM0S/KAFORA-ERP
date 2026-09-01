@@ -30,14 +30,14 @@ interface ProductForm {
   sku: string; barcode: string; name: string; description: string;
   categoryId: string; unit: string;
   purchasePrice: string; sellingPrice: string; taxRate: string; alertThreshold: string;
-  isActive: boolean; trackInventory: boolean;
+  isActive: boolean; trackInventory: boolean; trackExpiry: boolean; trackSerial: boolean;
 }
 const EMPTY_FORM: ProductForm = {
   sku: '', barcode: '', name: '', description: '',
   categoryId: '', unit: 'piece',
   purchasePrice: '', sellingPrice: '',
   taxRate: '0', alertThreshold: '10',
-  isActive: true, trackInventory: true,
+  isActive: true, trackInventory: true, trackExpiry: false, trackSerial: false,
 };
 
 interface ProductFormDialogProps {
@@ -70,6 +70,8 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
         alertThreshold: String(editingProduct.alertThreshold),
         isActive: editingProduct.isActive,
         trackInventory: editingProduct.trackInventory,
+        trackExpiry: editingProduct.trackExpiry,
+        trackSerial: editingProduct.trackSerial,
       });
     } else {
       setForm(EMPTY_FORM);
@@ -132,6 +134,8 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
       alert_threshold: Number(form.alertThreshold) || 10,
       is_active: form.isActive,
       track_inventory: form.trackInventory,
+      track_expiry: form.trackExpiry,
+      track_serial: form.trackSerial,
       image_data: null,
     };
 
@@ -254,6 +258,31 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
               <p className="text-xs text-gray-500">Décrémenter le stock lors des ventes</p>
             </div>
             <Switch checked={form.trackInventory} onCheckedChange={(v) => f('trackInventory', v)} />
+          </div>
+          {/* Mutuellement exclusifs — un produit est soit "normal", soit à
+              péremption, soit à numéro de série, jamais deux à la fois (voir
+              chk_products_track_exclusive côté base). Activer l'un désactive
+              l'autre ici, en plus de la contrainte SQL qui protège contre un
+              contournement. */}
+          <div className="col-span-2 flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+            <div>
+              <p className="text-sm font-medium">Suivi de péremption (FEFO)</p>
+              <p className="text-xs text-gray-500">Chaque entrée en stock demande une date de péremption ; les plus proches sont vendues en premier</p>
+            </div>
+            <Switch
+              checked={form.trackExpiry}
+              onCheckedChange={(v) => setForm((prev) => ({ ...prev, trackExpiry: v, trackSerial: v ? false : prev.trackSerial }))}
+            />
+          </div>
+          <div className="col-span-2 flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+            <div>
+              <p className="text-sm font-medium">Suivi par numéro de série / IMEI</p>
+              <p className="text-xs text-gray-500">Chaque exemplaire est identifié individuellement, choisi au moment de la vente</p>
+            </div>
+            <Switch
+              checked={form.trackSerial}
+              onCheckedChange={(v) => setForm((prev) => ({ ...prev, trackSerial: v, trackExpiry: v ? false : prev.trackExpiry }))}
+            />
           </div>
         </div>
 

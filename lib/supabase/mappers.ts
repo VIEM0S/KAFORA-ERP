@@ -4,7 +4,7 @@ import type {
   Sale, SaleItem, Payment, Credit, CreditPayment, Quote, QuoteItem,
   PurchaseOrder, PurchaseOrderItem, Transfer, TransferLine,
   Alert, Notification, SaleReturn, SaleReturnItem, CashRegisterSession,
-  Tenant, Subscription, User, DailyStat,
+  Tenant, Subscription, User, DailyStat, ProductLot, ProductSerial,
 } from '@/lib/types';
 
 /**
@@ -51,6 +51,7 @@ export function mapProduct(r: Row<'products'>): Product {
     unit: r.unit ?? 'unité', purchasePrice: r.purchase_price, sellingPrice: r.selling_price,
     taxRate: r.tax_rate, alertThreshold: r.alert_threshold ?? 0, imageData: r.image_data,
     isActive: r.is_active, trackInventory: r.track_inventory,
+    trackExpiry: r.track_expiry, trackSerial: r.track_serial,
     createdAt: toDate(r.created_at), updatedAt: toDate(r.updated_at),
   };
 }
@@ -61,6 +62,23 @@ export function mapInventory(r: Row<'inventory'>): Inventory {
     quantity: r.quantity, minQuantity: r.min_quantity ?? undefined,
     maxQuantity: r.max_quantity, reorderPoint: r.reorder_point,
     lastStockCheck: toDateOrNull(r.last_stock_check),
+  };
+}
+
+export function mapProductLot(r: Row<'product_lots'>): ProductLot {
+  return {
+    id: r.id, tenantId: r.tenant_id, productId: r.product_id, storeId: r.store_id,
+    quantity: r.quantity, expiryDate: toDate(r.expiry_date),
+    receivedAt: toDate(r.received_at), purchaseOrderId: r.purchase_order_id, notes: r.notes,
+  };
+}
+
+export function mapProductSerial(r: Row<'product_serials'>): ProductSerial {
+  return {
+    id: r.id, tenantId: r.tenant_id, productId: r.product_id, storeId: r.store_id,
+    serialNumber: r.serial_number, status: r.status as ProductSerial['status'],
+    saleId: r.sale_id, soldAt: toDateOrNull(r.sold_at), receivedAt: toDate(r.received_at),
+    purchaseOrderId: r.purchase_order_id,
   };
 }
 
@@ -107,6 +125,7 @@ export function mapSaleItem(r: Row<'sale_items'>): SaleItem {
     productSku: r.product_sku ?? '', quantity: r.quantity, unitPrice: r.unit_price,
     purchasePrice: r.purchase_price ?? 0, discountPercent: r.discount_percent,
     taxRate: r.tax_rate, total: r.total, returnedQuantity: r.returned_quantity,
+    serialNumber: r.serial_number,
   };
 }
 

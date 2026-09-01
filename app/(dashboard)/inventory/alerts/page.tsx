@@ -17,7 +17,23 @@ import { useRouter } from 'next/navigation';
 import { estEnAlerte, seuilAlerte } from '@/lib/inventory/alert-threshold';
 import { ShoppingCart } from 'lucide-react';
 import { PO_REORDER_SUGGESTION_KEY, type ReorderSuggestionLine } from '@/lib/purchase-orders/reorder-suggestion';
-import type { Product, Inventory } from '@/lib/types';
+import { mapProductLot } from '@/lib/supabase/mappers';
+import { formatDate } from '@/lib/utils/helpers';
+import { CalendarClock } from 'lucide-react';
+import type { Product, Inventory, ProductLot } from '@/lib/types';
+
+const EXPIRY_WARNING_DAYS = 30;
+
+// Date.now() en dehors du composant : un appel direct dans le corps du
+// composant est refusé par la règle react-hooks/purity (même via useMemo,
+// qui s'exécute encore au rendu) — même motif que isEcheanceProche() /
+// isEnRetard() dans app/(dashboard)/credits/page.tsx.
+function isLotExpired(expiryDate: Date): boolean {
+  return expiryDate.getTime() < Date.now();
+}
+function daysUntilExpiry(expiryDate: Date): number {
+  return (expiryDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000);
+}
 
 export default function AlertsPage() {
   const { tenant, currentStore } = useAuthStore();
@@ -28,6 +44,8 @@ export default function AlertsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [inventory, setInventory] = useState<Inventory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [lots, setLots] = useState<ProductLot[]>([]);
+  const [expiringLotId, setExpiringLotId] = useState<string | null>(null); // en cours d'écriture
 
   useEffect(() => {
     if (!tenantId) return;
@@ -51,8 +69,49 @@ export default function AlertsPage() {
     );
   }, [tenantId, storeId]);
 
+  useEffect(() => {
+    if (!tenantId || !storeId) return;
+    return watch(
+      'product_lots',
+      () => supabase.from('product_lots').select('*').eq('tenant_id', tenantId).eq('store_id', storeId)
+        .gt('quantity', 0).order('expiry_date', { ascending: true }),
+      rows => setLots(rows.map(mapProductLot)),
+      undefined,
+      `tenant_id=eq.${tenantId}`
+    );
+  }, [tenantId, storeId]);
+
   const getStock = (productId: string) =>
     inventory.find(i => i.productId === productId && i.storeId === storeId)?.quantity ?? 0;
+
+  const productById = (id: string) => products.find(p => p.id === id);
+  const expiredLots = lots.filter(l => isLotExpired(l.expiryDate));
+  const soonLots = lots.filter(l => {
+    const days = daysUntilExpiry(l.expiryDate);
+    return days >= 0 && days <= EXPIRY_WARNING_DAYS;
+  });
+
+  // Écrit le lot comme périmé : remet sa quantité à 0 et décrémente le
+  // total inventory.quantity d'autant, avec un mouvement ADJUSTMENT tracé —
+  // même esprit qu'un ajustement manuel de stock (inventory/page.tsx).
+  const handleMarkExpired = async (lot: ProductLot) => {
+    if (!tenantId) return;
+    const product = productById(lot.productId);
+    setExpiringLotId(lot.id);
+    try {
+      await supabase.from('product_lots').update({ quantity: 0 }).eq('id', lot.id);
+      const inv = inventory.find(i => i.productId === lot.productId && i.storeId === lot.storeId);
+      const currentQty = inv?.quantity ?? 0;
+      const newQty = Math.max(0, currentQty - lot.quantity);
+      if (inv) await supabase.from('inventory').update({ quantity: newQty }).eq('id', inv.id);
+      await supabase.from('inventory_movements').insert({
+        tenant_id: tenantId, product_id: lot.productId, product_name: product?.name || 'Produit',
+        store_id: lot.storeId, type: 'ADJUSTMENT', quantity: -lot.quantity,
+        previous_quantity: currentQty, new_quantity: newQty, reason: 'Péremption',
+      });
+    } catch (e) { console.error(e); }
+    finally { setExpiringLotId(null); }
+  };
 
   // Fix multi-store : getStock filtre déjà par storeId via inventory.find(i => i.storeId === storeId)
   const ruptures = products.filter(p => p.trackInventory && getStock(p.id) === 0);
@@ -184,6 +243,59 @@ export default function AlertsPage() {
               </TableBody>
             </Table>
           </CardContent></Card>
+        )}
+
+        {/* Péremption — voir migration 041 (product_lots). Même principe
+            visuel que le bandeau "Échéances proches" de la page Crédits :
+            une requête au chargement, pas de cron pour ce MVP. */}
+        {(expiredLots.length > 0 || soonLots.length > 0) && (
+          <div className="space-y-3">
+            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              <CalendarClock className="h-5 w-5 text-red-500" />Péremption
+            </h2>
+            <Card><CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Produit</TableHead>
+                    <TableHead className="text-right">Quantité</TableHead>
+                    <TableHead>Péremption</TableHead>
+                    <TableHead className="text-center">État</TableHead>
+                    <TableHead className="w-32" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {[...expiredLots, ...soonLots].map(lot => {
+                    const product = productById(lot.productId);
+                    const expired = isLotExpired(lot.expiryDate);
+                    return (
+                      <TableRow key={lot.id} className={`hover:bg-gray-50 ${expired ? 'bg-red-50/40' : 'bg-amber-50/30'}`}>
+                        <TableCell className="font-medium text-sm">{product?.name || 'Produit supprimé'}</TableCell>
+                        <TableCell className="text-right text-sm">{lot.quantity} {product?.unit}</TableCell>
+                        <TableCell className="text-sm">{formatDate(lot.expiryDate)}</TableCell>
+                        <TableCell className="text-center">
+                          {expired ? (
+                            <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 font-medium">Périmé</span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-medium">Bientôt</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="outline" size="sm" className="h-7 text-xs"
+                            disabled={expiringLotId === lot.id}
+                            onClick={() => handleMarkExpired(lot)}
+                          >
+                            Marquer périmé
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent></Card>
+          </div>
         )}
       </div>
     </DashboardLayout>

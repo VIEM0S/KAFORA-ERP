@@ -192,9 +192,48 @@ export interface Product {
   imageData: string | null;
   isActive: boolean;
   trackInventory: boolean;
+  // Suivi de péremption (FEFO, voir ProductLot) et suivi par numéro de
+  // série/IMEI (voir ProductSerial) — mutuellement exclusifs, imposé côté
+  // base par chk_products_track_exclusive. Un produit "normal" a les deux
+  // à false et se comporte exactement comme avant l'ajout de ces suivis.
+  trackExpiry: boolean;
+  trackSerial: boolean;
   createdAt: Date;
   updatedAt: Date;
   inventory?: Inventory[];
+}
+
+// Ventilation par lot d'un produit à suivi de péremption (track_expiry) —
+// inventory.quantity reste la somme de ces lots pour (produit, magasin),
+// consommée en FEFO (le plus proche de la péremption d'abord) par
+// pos_checkout(). Voir supabase/migrations (migration 041).
+export interface ProductLot {
+  id: string;
+  tenantId: string;
+  productId: string;
+  storeId: string;
+  quantity: number;
+  expiryDate: Date;
+  receivedAt: Date;
+  purchaseOrderId: string | null;
+  notes: string | null;
+}
+
+// Une ligne par exemplaire physique d'un produit à suivi de série
+// (track_serial) — inventory.quantity reste le nombre de lignes IN_STOCK
+// pour (produit, magasin). Vendu = passé à SOLD par pos_checkout(), jamais
+// supprimé (traçabilité SAV).
+export interface ProductSerial {
+  id: string;
+  tenantId: string;
+  productId: string;
+  storeId: string;
+  serialNumber: string;
+  status: 'IN_STOCK' | 'SOLD';
+  saleId: string | null;
+  soldAt: Date | null;
+  receivedAt: Date;
+  purchaseOrderId: string | null;
 }
 
 export interface Inventory {
@@ -305,6 +344,9 @@ export interface SaleItem {
   taxRate: number;
   total: number;
   returnedQuantity: number;
+  // Rempli par pos_checkout() uniquement pour un produit à suivi de série
+  // (track_serial) — visible sur le ticket et l'historique pour la garantie/SAV.
+  serialNumber: string | null;
 }
 
 export interface Payment {
@@ -542,6 +584,10 @@ export interface CartItem {
   discount: number;
   tax: number;
   total: number;
+  // Uniquement pour un produit à suivi de série (product.trackSerial) : les
+  // numéros choisis au POS, un par exemplaire. quantity === serials.length
+  // toujours pour ce type de ligne — voir components/pos/serial-picker-dialog.tsx.
+  serials?: string[];
 }
 
 export interface Cart {

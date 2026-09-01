@@ -13,7 +13,7 @@ interface CartPanelProps {
 
 export function CartPanel({ inventory, onOpenCustomerPicker, onPay }: CartPanelProps) {
   const {
-    items, removeItem, updateItemQuantity, clearCart, setCustomer, customer,
+    items, removeItem, updateItemQuantity, removeSerialFromItem, clearCart, setCustomer, customer,
     getSubtotal, getTax, getTotal, getItemCount, discountPercent, setDiscount,
   } = useCartStore();
 
@@ -65,24 +65,43 @@ export function CartPanel({ inventory, onOpenCustomerPicker, onPay }: CartPanelP
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
             </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => item.quantity > 1 ? updateItemQuantity(item.product.id, item.quantity - 1) : removeItem(item.product.id)}
-                  className="h-7 w-7 rounded-lg bg-white border border-gray-200 hover:bg-gray-100 flex items-center justify-center">
-                  <Minus className="h-3 w-3" />
-                </button>
-                <span className="w-8 text-center text-sm font-bold">{item.quantity}</span>
-                <button
-                  onClick={() => {
-                    const stockLeft = (inventory[item.product.id] ?? 0) - item.quantity;
-                    if (item.product.trackInventory && stockLeft <= 0) return;
-                    updateItemQuantity(item.product.id, item.quantity + 1);
-                  }}
-                  className="h-7 w-7 rounded-lg bg-white border border-gray-200 hover:bg-gray-100 flex items-center justify-center">
-                  <Plus className="h-3 w-3" />
-                </button>
+            {item.product.trackSerial ? (
+              // Chaque exemplaire est distinct : pas de +/- quantité, un
+              // numéro se retire individuellement — en ajouter se fait via
+              // le picker de série, pas depuis le panier.
+              <div className="flex flex-wrap gap-1 mb-2">
+                {(item.serials || []).map((s) => (
+                  <span key={s} className="inline-flex items-center gap-1 text-xs bg-white border border-gray-200 rounded-full pl-2 pr-1 py-0.5">
+                    {s}
+                    <button onClick={() => removeSerialFromItem(item.product.id, s)} className="text-gray-300 hover:text-red-500">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
               </div>
+            ) : null}
+            <div className="flex items-center justify-between">
+              {item.product.trackSerial ? (
+                <span className="text-xs text-gray-500">{item.quantity} exemplaire{item.quantity !== 1 ? 's' : ''}</span>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => item.quantity > 1 ? updateItemQuantity(item.product.id, item.quantity - 1) : removeItem(item.product.id)}
+                    className="h-7 w-7 rounded-lg bg-white border border-gray-200 hover:bg-gray-100 flex items-center justify-center">
+                    <Minus className="h-3 w-3" />
+                  </button>
+                  <span className="w-8 text-center text-sm font-bold">{item.quantity}</span>
+                  <button
+                    onClick={() => {
+                      const stockLeft = (inventory[item.product.id] ?? 0) - item.quantity;
+                      if (item.product.trackInventory && stockLeft <= 0) return;
+                      updateItemQuantity(item.product.id, item.quantity + 1);
+                    }}
+                    className="h-7 w-7 rounded-lg bg-white border border-gray-200 hover:bg-gray-100 flex items-center justify-center">
+                    <Plus className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
               <p className="text-sm font-bold text-primary-600">{formatCurrency(item.total)}</p>
             </div>
             <p className="text-xs text-gray-400 mt-1">{formatCurrency(item.unitPrice)} / {item.product.unit}</p>

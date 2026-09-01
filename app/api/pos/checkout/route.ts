@@ -7,6 +7,10 @@ interface CheckoutItem {
   productId: string;
   quantity: number;
   discount?: number; // % de remise ligne, optionnel (ex. négociation manager)
+  // Numéros de série/IMEI choisis au POS pour un produit à suivi de série
+  // (voir migration 041 et components/pos/serial-picker-dialog.tsx) —
+  // quantity doit alors être égal à serials.length.
+  serials?: string[];
 }
 
 export async function POST(request: NextRequest) {
@@ -82,10 +86,25 @@ export async function POST(request: NextRequest) {
     const productById = new Map((products ?? []).map((p) => [p.id, p]));
 
     // ── Calcul des totaux côté serveur (jamais depuis le client) ────────────
+    // Un produit à suivi de série se vend par numéros choisis, pas par
+    // quantité libre : la quantité réelle est TOUJOURS recalculée depuis
+    // serials.length côté serveur, jamais depuis it.quantity (qui ne sert
+    // plus qu'à valider que le panier envoyé par le client est cohérent).
+    for (const it of items) {
+      const p = productById.get(it.productId)!;
+      if (p.track_serial) {
+        const serials = Array.isArray(it.serials) ? it.serials.filter(Boolean) : [];
+        if (serials.length === 0) {
+          return NextResponse.json({ error: `Choisissez au moins un numéro de série pour "${p.name}"` }, { status: 400 });
+        }
+      }
+    }
+
     const lines = items.map((it) => {
       const p = productById.get(it.productId)!;
       const discount = Math.min(Math.max(Number(it.discount) || 0, 0), 100); // clamp 0-100%
-      const quantity = Math.max(1, Math.floor(Number(it.quantity) || 0));
+      const serials = p.track_serial && Array.isArray(it.serials) ? it.serials.filter(Boolean) : undefined;
+      const quantity = serials ? serials.length : Math.max(1, Math.floor(Number(it.quantity) || 0));
       const unitPrice = p.selling_price;
       const tax = p.tax_rate || 0;
       // Arrondi À L'UNITÉ, pas au centime : le franc CFA n'a pas de
@@ -93,7 +112,7 @@ export async function POST(request: NextRequest) {
       // Firebase de ce fichier pour le raisonnement complet (accumulation
       // d'écarts sur crédits/caisse/agrégats mensuels sinon).
       const lineTotal = Math.round(quantity * unitPrice * (1 - discount / 100) * (1 + tax / 100));
-      return { product: p, quantity, discount, unitPrice, tax, lineTotal };
+      return { product: p, quantity, discount, unitPrice, tax, lineTotal, serials };
     });
 
     const subtotal = Math.round(lines.reduce((s, l) => s + l.quantity * l.unitPrice * (1 - l.discount / 100), 0));
@@ -154,6 +173,9 @@ export async function POST(request: NextRequest) {
         tax_rate: l.tax,
         total: l.lineTotal,
         track_inventory: l.product.track_inventory,
+        track_expiry: l.product.track_expiry,
+        track_serial: l.product.track_serial,
+        serials: l.serials,
       })),
     });
 
@@ -166,8 +188,8 @@ export async function POST(request: NextRequest) {
     const msg = error instanceof Error ? error.message : 'Erreur interne';
     // pos_checkout() préfixe ses erreurs métier connues pour qu'on puisse les
     // distinguer d'une erreur technique — l'utilisateur doit savoir pourquoi.
-    const isKnownBusinessError = msg.includes('STOCK_INSUFFICIENT') || msg.includes('CREDIT_LIMIT_EXCEEDED');
-    const cleanMsg = msg.replace(/^.*(STOCK_INSUFFICIENT|CREDIT_LIMIT_EXCEEDED):\s*/, '');
+    const isKnownBusinessError = msg.includes('STOCK_INSUFFICIENT') || msg.includes('CREDIT_LIMIT_EXCEEDED') || msg.includes('SERIAL_UNAVAILABLE');
+    const cleanMsg = msg.replace(/^.*(STOCK_INSUFFICIENT|CREDIT_LIMIT_EXCEEDED|SERIAL_UNAVAILABLE):\s*/, '');
     return NextResponse.json(
       { error: isKnownBusinessError ? cleanMsg : 'Erreur lors de la finalisation de la vente' },
       { status: isKnownBusinessError ? 409 : 500 }

@@ -57,6 +57,10 @@ export default function PurchaseOrdersPage() {
 
   const [receiveTarget, setReceiveTarget] = useState<PurchaseOrder | null>(null);
   const [receiveQty, setReceiveQty] = useState<Record<string, string>>({});
+  // Péremption/série (voir migration 041) : capturés uniquement pour les
+  // produits concernés, indexés par productId comme receiveQty.
+  const [receiveExpiry, setReceiveExpiry] = useState<Record<string, string>>({});
+  const [receiveSerials, setReceiveSerials] = useState<Record<string, string>>({});
   const [receiveError, setReceiveError] = useState<string | null>(null);
   const [isReceiving, setIsReceiving] = useState(false);
 
@@ -193,6 +197,8 @@ export default function PurchaseOrdersPage() {
     const initial: Record<string, string> = {};
     po.items.forEach(it => { initial[it.productId] = String(Math.max(0, it.quantityOrdered - it.quantityReceived)); });
     setReceiveQty(initial);
+    setReceiveExpiry({});
+    setReceiveSerials({});
   };
 
   const handleReceive = async () => {
@@ -202,12 +208,34 @@ export default function PurchaseOrdersPage() {
       .filter(l => l.quantityReceivedNow > 0);
     if (lines.length === 0) { setReceiveError('Indique au moins une quantité à réceptionner'); return; }
 
+    for (const l of lines) {
+      const product = products.find(p => p.id === l.productId);
+      if (product?.trackExpiry && !receiveExpiry[l.productId]) {
+        setReceiveError(`Date de péremption requise pour "${product.name}"`); return;
+      }
+      if (product?.trackSerial) {
+        const serials = (receiveSerials[l.productId] || '').split('\n').map(s => s.trim()).filter(Boolean);
+        if (serials.length !== l.quantityReceivedNow) {
+          setReceiveError(`"${product.name}" : ${serials.length} numéro(s) de série saisi(s) pour ${l.quantityReceivedNow} reçu(s)`);
+          return;
+        }
+      }
+    }
+
+    const linesWithTracking = lines.map(l => ({
+      ...l,
+      expiryDate: receiveExpiry[l.productId] || undefined,
+      serials: receiveSerials[l.productId]
+        ? receiveSerials[l.productId].split('\n').map(s => s.trim()).filter(Boolean)
+        : undefined,
+    }));
+
     setIsReceiving(true); setReceiveError(null);
     try {
       const res = await fetch('/api/purchase-orders/receive', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenantId, purchaseOrderId: receiveTarget.id, lines }),
+        body: JSON.stringify({ tenantId, purchaseOrderId: receiveTarget.id, lines: linesWithTracking }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur lors de la réception');
@@ -414,19 +442,44 @@ export default function PurchaseOrdersPage() {
           <div className="space-y-3 py-2">
             {receiveTarget?.items.map(it => {
               const remaining = it.quantityOrdered - it.quantityReceived;
+              const product = products.find(p => p.id === it.productId);
               return (
-                <div key={it.productId} className="flex items-center justify-between gap-3 border-b pb-2 last:border-0">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{it.productName}</p>
-                    <p className="text-xs text-gray-500">
-                      {it.quantityReceived}/{it.quantityOrdered} déjà reçu · reste {remaining}
-                    </p>
+                <div key={it.productId} className="border-b pb-3 last:border-0 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{it.productName}</p>
+                      <p className="text-xs text-gray-500">
+                        {it.quantityReceived}/{it.quantityOrdered} déjà reçu · reste {remaining}
+                      </p>
+                    </div>
+                    <Input
+                      type="number" min={0} max={remaining} className="w-24"
+                      value={receiveQty[it.productId] ?? ''}
+                      onChange={e => setReceiveQty(prev => ({ ...prev, [it.productId]: e.target.value }))}
+                    />
                   </div>
-                  <Input
-                    type="number" min={0} max={remaining} className="w-24"
-                    value={receiveQty[it.productId] ?? ''}
-                    onChange={e => setReceiveQty(prev => ({ ...prev, [it.productId]: e.target.value }))}
-                  />
+                  {/* Péremption/série (voir migration 041) — uniquement pour
+                      les produits qui ont ce suivi activé. */}
+                  {product?.trackExpiry && (
+                    <div className="pl-1">
+                      <Label className="text-xs">Date de péremption de ce lot *</Label>
+                      <Input
+                        type="date" className="mt-1"
+                        value={receiveExpiry[it.productId] ?? ''}
+                        onChange={e => setReceiveExpiry(prev => ({ ...prev, [it.productId]: e.target.value }))}
+                      />
+                    </div>
+                  )}
+                  {product?.trackSerial && (
+                    <div className="pl-1">
+                      <Label className="text-xs">Numéros de série / IMEI (un par ligne) *</Label>
+                      <Textarea
+                        className="mt-1" rows={3}
+                        value={receiveSerials[it.productId] ?? ''}
+                        onChange={e => setReceiveSerials(prev => ({ ...prev, [it.productId]: e.target.value }))}
+                      />
+                    </div>
+                  )}
                 </div>
               );
             })}

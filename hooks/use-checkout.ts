@@ -65,7 +65,7 @@ export function useCheckout({ tenantId, storeId, refreshQueue, setIsOnline }: Us
 
     const checkoutPayload = {
       tenantId, storeId,
-      items: items.map(i => ({ productId: i.product.id, quantity: i.quantity, discount: i.discount })),
+      items: items.map(i => ({ productId: i.product.id, quantity: i.quantity, discount: i.discount, serials: i.serials })),
       customerId: customer?.id || null,
       paymentMethod,
       amountReceived: Number(amountReceived) || undefined,

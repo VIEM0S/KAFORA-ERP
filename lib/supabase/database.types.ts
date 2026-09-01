@@ -928,6 +928,152 @@ export type Database = {
           },
         ]
       }
+      product_lots: {
+        Row: {
+          created_at: string
+          expiry_date: string
+          id: string
+          notes: string | null
+          product_id: string
+          purchase_order_id: string | null
+          quantity: number
+          received_at: string
+          store_id: string
+          tenant_id: string
+        }
+        Insert: {
+          created_at?: string
+          expiry_date: string
+          id?: string
+          notes?: string | null
+          product_id: string
+          purchase_order_id?: string | null
+          quantity?: number
+          received_at?: string
+          store_id: string
+          tenant_id: string
+        }
+        Update: {
+          created_at?: string
+          expiry_date?: string
+          id?: string
+          notes?: string | null
+          product_id?: string
+          purchase_order_id?: string | null
+          quantity?: number
+          received_at?: string
+          store_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_lots_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_lots_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_lots_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_lots_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_serials: {
+        Row: {
+          created_at: string
+          id: string
+          product_id: string
+          purchase_order_id: string | null
+          received_at: string
+          sale_id: string | null
+          serial_number: string
+          sold_at: string | null
+          status: string
+          store_id: string
+          tenant_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          product_id: string
+          purchase_order_id?: string | null
+          received_at?: string
+          sale_id?: string | null
+          serial_number: string
+          sold_at?: string | null
+          status?: string
+          store_id: string
+          tenant_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          product_id?: string
+          purchase_order_id?: string | null
+          received_at?: string
+          sale_id?: string | null
+          serial_number?: string
+          sold_at?: string | null
+          status?: string
+          store_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_serials_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_serials_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_serials_sale_id_fkey"
+            columns: ["sale_id"]
+            isOneToOne: false
+            referencedRelation: "sales"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_serials_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_serials_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       products: {
         Row: {
           alert_threshold: number | null
@@ -945,7 +1091,9 @@ export type Database = {
           sku: string | null
           tax_rate: number
           tenant_id: string
+          track_expiry: boolean
           track_inventory: boolean
+          track_serial: boolean
           unit: string | null
           updated_at: string
         }
@@ -965,7 +1113,9 @@ export type Database = {
           sku?: string | null
           tax_rate?: number
           tenant_id: string
+          track_expiry?: boolean
           track_inventory?: boolean
+          track_serial?: boolean
           unit?: string | null
           updated_at?: string
         }
@@ -985,7 +1135,9 @@ export type Database = {
           sku?: string | null
           tax_rate?: number
           tenant_id?: string
+          track_expiry?: boolean
           track_inventory?: boolean
+          track_serial?: boolean
           unit?: string | null
           updated_at?: string
         }
@@ -1462,6 +1614,7 @@ export type Database = {
           quantity: number
           returned_quantity: number
           sale_id: string
+          serial_number: string | null
           tax_rate: number
           tenant_id: string
           total: number
@@ -1479,6 +1632,7 @@ export type Database = {
           quantity: number
           returned_quantity?: number
           sale_id: string
+          serial_number?: string | null
           tax_rate?: number
           tenant_id: string
           total: number
@@ -1496,6 +1650,7 @@ export type Database = {
           quantity?: number
           returned_quantity?: number
           sale_id?: string
+          serial_number?: string | null
           tax_rate?: number
           tenant_id?: string
           total?: number

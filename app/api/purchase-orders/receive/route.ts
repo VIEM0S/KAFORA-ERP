@@ -5,6 +5,10 @@ import { getSessionClaims } from '@/lib/api/session';
 interface ReceiveLine {
   productId: string;
   quantityReceivedNow: number; // quantité reçue lors de CETTE réception (peut être partielle)
+  // Péremption/série (voir migration 041) — fournis uniquement pour les
+  // produits qui ont ce suivi activé, validés côté UI avant envoi.
+  expiryDate?: string;
+  serials?: string[];
 }
 
 // Réceptionne tout ou partie d'un bon de commande fournisseur. Toute la
@@ -34,7 +38,10 @@ export async function POST(request: NextRequest) {
       p_tenant_id: tenantId,
       p_po_id: purchaseOrderId,
       p_caller_id: session.uid,
-      p_lines: lines.map((l) => ({ product_id: l.productId, quantity_received_now: l.quantityReceivedNow })),
+      p_lines: lines.map((l) => ({
+        product_id: l.productId, quantity_received_now: l.quantityReceivedNow,
+        expiry_date: l.expiryDate, serials: l.serials,
+      })),
     });
     if (rpcError) throw rpcError;
 

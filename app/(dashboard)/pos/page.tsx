@@ -12,6 +12,7 @@ import { CartPanel } from '@/components/pos/cart-panel';
 import { PaymentDialog } from '@/components/pos/payment-dialog';
 import { CustomerPickerDialog } from '@/components/pos/customer-picker-dialog';
 import { SuccessDialog } from '@/components/pos/success-dialog';
+import { SerialPickerDialog } from '@/components/pos/serial-picker-dialog';
 import type { Product } from '@/lib/types';
 import { supabase } from '@/lib/supabase/client';
 // watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
@@ -33,6 +34,7 @@ export default function POSPage() {
   const checkout = useCheckout({ tenantId, storeId, refreshQueue, setIsOnline });
 
   const [showCustomerPicker, setShowCustomerPicker] = useState(false);
+  const [serialPickerProduct, setSerialPickerProduct] = useState<Product | null>(null);
 
   // ─── État de la caisse ───────────────────────────────────────────────────
   //
@@ -59,6 +61,9 @@ export default function POSPage() {
 
   // ─── Ajout au panier avec vérification stock ─────────────────────────────
   const handleAddItem = (p: Product) => {
+    // Suivi de série (migration 041) : chaque exemplaire est distinct, on ne
+    // peut pas juste "ajouter 1" — le picker fait choisir lequel.
+    if (p.trackSerial) { setSerialPickerProduct(p); return; }
     if (!p.trackInventory) { addItem(p); return; }
     const cartQty = items.find(i => i.product.id === p.id)?.quantity || 0;
     const stockDisponible = (inventory[p.id] ?? 0) - cartQty;
@@ -155,6 +160,12 @@ export default function POSPage() {
         checkoutError={checkout.checkoutError}
         isProcessing={checkout.isProcessing}
         onConfirm={checkout.handleCheckout}
+      />
+
+      <SerialPickerDialog
+        product={serialPickerProduct}
+        storeId={storeId}
+        onClose={() => setSerialPickerProduct(null)}
       />
 
       <CustomerPickerDialog
