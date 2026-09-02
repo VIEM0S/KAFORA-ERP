@@ -10,7 +10,7 @@ import { supabase } from '@/lib/supabase/client';
 // watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
 // (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
 import { watch } from '@/lib/supabase/watch';
-import { isManagerPlus as isManagerPlusRole, isOwnerOrAdmin as isOwnerOrAdminRole } from '@/lib/auth/roles';
+import { isManagerPlus as isManagerPlusRole } from '@/lib/auth/roles';
 import { estEnAlerte } from '@/lib/inventory/alert-threshold';
 import { SUBSCRIPTION_PLANS, PlanId } from '@/lib/constants';
 
@@ -226,13 +226,16 @@ export function Header() {
           )}
         </Link>
 
-        {/* Settings (Owner/Admin seulement) */}
-        {isOwnerOrAdminRole(user?.role) && (
-          <Link href="/settings"
-            className="p-2.5 rounded-xl text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors">
-            <Settings className="h-5 w-5" />
-          </Link>
-        )}
+        {/* Réglages : visible à tous, pas seulement Owner/Admin — la page
+            elle-même limite désormais les blocs entreprise/abonnement/
+            parrainage à Owner/Admin (voir settings/page.tsx), mais reste le
+            SEUL moyen d'accès à "Mon profil"/"Sécurité" (mot de passe) pour
+            les autres rôles : le masquer ici les privait de tout accès
+            libre-service à leur propre compte. */}
+        <Link href="/settings"
+          className="p-2.5 rounded-xl text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors">
+          <Settings className="h-5 w-5" />
+        </Link>
 
         {/* Profil utilisateur */}
         <div className="flex items-center gap-2.5 ml-2 pl-2 border-l border-gray-100">

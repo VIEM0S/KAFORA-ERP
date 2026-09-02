@@ -18,6 +18,7 @@ import { supabase } from '@/lib/supabase/client';
 import { watch } from '@/lib/supabase/watch';
 import { SUBSCRIPTION_PLANS, type PlanId } from '@/lib/constants';
 import { getSubscriptionState, daysUntilFullBlock } from '@/lib/subscription/status';
+import { isOwnerOrAdmin as isOwnerOrAdminRole } from '@/lib/auth/roles';
 
 // Pays de la zone UEMOA, tous en franc CFA (XOF). La Guinée et la
 // Mauritanie en ont été retirées : elles utilisent le franc guinéen et
@@ -39,6 +40,20 @@ export default function SettingsPage() {
   // enregistrements échoueraient. Seul le changement de mot de passe, qui
   // passe par Firebase Auth, reste pertinent.
   const isPublisher = !tenantId && user?.role === 'SUPER_ADMIN';
+
+  // Infos entreprise / Abonnement / Parrainage : réservés à Owner/Admin —
+  // c'est déjà l'intention du header (l'icône Réglages n'est montrée qu'à
+  // eux, voir components/layout/header.tsx), mais rien ne l'appliquait sur
+  // cette page elle-même : un Manager/Caissier qui tapait /settings dans la
+  // barre d'adresse voyait ces trois blocs quand même. L'écriture réelle
+  // des infos entreprise était déjà bloquée côté RLS (tenants_update exige
+  // is_owner_or_admin()), donc pas une brèche de données — mais rien ne
+  // devrait laisser croire à un rôle qu'il peut modifier ça, ni exposer le
+  // lien de parrainage/le forfait à quelqu'un qui n'a pas à s'en soucier.
+  // "Mon profil" et "Sécurité" (mot de passe) restent visibles à tous :
+  // c'est leur SEUL moyen d'accès en libre-service, /settings n'ayant pas
+  // d'équivalent "mon compte" séparé pour les rôles non-admin.
+  const canManageCompany = isOwnerOrAdminRole(user?.role);
 
   // ─── Infos entreprise ───────────────────────────────────────────────────────
   const [company, setCompany] = useState({
@@ -223,7 +238,7 @@ export default function SettingsPage() {
         )}
 
         {/* Infos entreprise */}
-        {!isPublisher && (
+        {!isPublisher && canManageCompany && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Building2 className="h-5 w-5 text-primary-600" />Informations entreprise</CardTitle>
@@ -373,7 +388,7 @@ export default function SettingsPage() {
         </Card>
 
         {/* Abonnement */}
-        {tenant && (() => {
+        {tenant && canManageCompany && (() => {
           const sub = tenant.subscription;
           const planId = sub?.plan as PlanId | undefined;
           const planName = planId && SUBSCRIPTION_PLANS[planId] ? SUBSCRIPTION_PLANS[planId].name : 'Aucun forfait enregistré';
@@ -416,7 +431,7 @@ export default function SettingsPage() {
         })()}
 
         {/* Parrainage */}
-        {tenant?.referralCode && (
+        {tenant?.referralCode && canManageCompany && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><Gift className="h-5 w-5 text-pink-600" />Parrainage</CardTitle>
