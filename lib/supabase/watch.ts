@@ -67,6 +67,13 @@ export type Unsubscribe = () => void;
  *   toute façon le filtre exact, ça ne fait que déclencher quelques
  *   rafraîchissements en plus pour des changements hors-périmètre.
  */
+// Délais de nouvelle tentative après une coupure de canal (CHANNEL_ERROR /
+// TIMED_OUT) — fréquentes en 4G/réseau mobile faible, pas seulement en cas
+// de vraie panne. Croissant, plafonné à 30s : réessayer immédiatement en
+// boucle sur un réseau durablement mauvais n'aiderait pas et gaspillerait
+// de la batterie/donnée mobile.
+const RETRY_DELAYS_MS = [2000, 5000, 10000, 20000, 30000];
+
 export function watch<T>(
   table: string,
   fetcher: Fetcher<T>,
@@ -77,6 +84,12 @@ export function watch<T>(
   const key = labelOf(table);
   let closed = false;
   let refetchTimer: ReturnType<typeof setTimeout> | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let retryAttempt = 0;
+  let hadError = false;
+  let channel: ReturnType<typeof supabase.channel> | null = null;
+
+  useDataErrors.getState().registerWatcher(key);
 
   const runFetch = async () => {
     const { data, error } = await fetcher();
@@ -100,8 +113,6 @@ export function watch<T>(
     }, 150);
   };
 
-  runFetch();
-
   const channelConfig: {
     event: '*';
     schema: 'public';
@@ -110,20 +121,49 @@ export function watch<T>(
   } = { event: '*', schema: 'public', table };
   if (realtimeFilter) channelConfig.filter = realtimeFilter;
 
-  const channel = supabase
-    .channel(`watch:${table}:${realtimeFilter ?? 'all'}:${Math.random().toString(36).slice(2)}`)
-    .on('postgres_changes', channelConfig, () => scheduleRefetch())
-    .subscribe(status => {
-      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        const err = new Error('Connexion temps réel interrompue');
-        useDataErrors.getState().reportError(key, err);
-        onError?.(err);
-      }
-    });
+  const openChannel = () => {
+    if (closed) return;
+    channel = supabase
+      .channel(`watch:${table}:${realtimeFilter ?? 'all'}:${Math.random().toString(36).slice(2)}`)
+      .on('postgres_changes', channelConfig, () => scheduleRefetch())
+      .subscribe(status => {
+        if (closed) return;
+
+        if (status === 'SUBSCRIBED') {
+          retryAttempt = 0;
+          // Une reconnexion après coupure a pu manquer des changements
+          // survenus entre-temps — on rattrape en rejouant la requête
+          // complète plutôt que de faire confiance au dernier état affiché.
+          if (hadError) { hadError = false; runFetch(); }
+          useDataErrors.getState().clearError(key);
+          return;
+        }
+
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          hadError = true;
+          const err = new Error('Connexion temps réel interrompue');
+          useDataErrors.getState().reportError(key, err);
+          onError?.(err);
+
+          // Nouvelle tentative avec délai croissant plutôt que d'abandonner
+          // définitivement après un seul raté — courant en 4G/réseau
+          // mobile faible, sans être une vraie panne durable.
+          if (channel) { supabase.removeChannel(channel); channel = null; }
+          const delay = RETRY_DELAYS_MS[Math.min(retryAttempt, RETRY_DELAYS_MS.length - 1)];
+          retryAttempt++;
+          retryTimer = setTimeout(openChannel, delay);
+        }
+      });
+  };
+
+  runFetch();
+  openChannel();
 
   return () => {
     closed = true;
     if (refetchTimer) clearTimeout(refetchTimer);
-    supabase.removeChannel(channel);
+    if (retryTimer) clearTimeout(retryTimer);
+    if (channel) supabase.removeChannel(channel);
+    useDataErrors.getState().unregisterWatcher(key);
   };
 }

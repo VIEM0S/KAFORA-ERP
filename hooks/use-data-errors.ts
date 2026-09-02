@@ -20,14 +20,28 @@ import { describeSupabaseError, type ReadableError } from '@/lib/utils/supabase-
 
 interface DataErrorState {
   errors: Record<string, ReadableError>;
+  // Plusieurs écoutes peuvent partager la même clé lisible (ex. "Crédits"
+  // pour credits ET credit_payments, ou une écoute globale dans le header
+  // en plus de celle d'une page précise) — voir registerWatcher plus bas.
+  activeWatchers: Record<string, number>;
   /** Enregistre l'échec d'une écoute. */
   reportError: (key: string, err: unknown) => void;
   /** Efface l'erreur d'une écoute qui refonctionne. */
   clearError: (key: string) => void;
+  /** Une écoute démarre — voir lib/supabase/watch.ts. */
+  registerWatcher: (key: string) => void;
+  /**
+   * Une écoute s'arrête (page quittée). Efface l'erreur SEULEMENT si plus
+   * aucune autre écoute active ne partage cette clé — sinon quitter une
+   * page effacerait à tort l'erreur d'une écoute globale (le badge du
+   * header par exemple) encore bien réelle sur une autre.
+   */
+  unregisterWatcher: (key: string) => void;
 }
 
 export const useDataErrors = create<DataErrorState>((set) => ({
   errors: {},
+  activeWatchers: {},
 
   reportError: (key, err) =>
     set(state => {
@@ -43,6 +57,20 @@ export const useDataErrors = create<DataErrorState>((set) => ({
       const next = { ...state.errors };
       delete next[key];
       return { errors: next };
+    }),
+
+  registerWatcher: (key) =>
+    set(state => ({ activeWatchers: { ...state.activeWatchers, [key]: (state.activeWatchers[key] ?? 0) + 1 } })),
+
+  unregisterWatcher: (key) =>
+    set(state => {
+      const count = (state.activeWatchers[key] ?? 1) - 1;
+      const activeWatchers = { ...state.activeWatchers };
+      if (count > 0) activeWatchers[key] = count; else delete activeWatchers[key];
+      if (count > 0 || !state.errors[key]) return { activeWatchers };
+      const errors = { ...state.errors };
+      delete errors[key];
+      return { activeWatchers, errors };
     }),
 }));
 
