@@ -23,6 +23,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { useAuthStore } from '@/hooks/store';
+import { isManagerPlus } from '@/lib/auth/roles';
 import { supabase } from '@/lib/supabase/client';
 import { checkPlanLimitClient } from '@/lib/supabase/plan-limits-client';
 import {
@@ -46,8 +47,12 @@ type ImportStep = 'input' | 'preview' | 'importing' | 'done';
 
 export default function ProductImportPage() {
   const router = useRouter();
-  const { tenant, stores, currentStore } = useAuthStore();
+  const { tenant, stores, currentStore, user } = useAuthStore();
   const tenantId = tenant?.id;
+  // products_write (RLS) exige is_manager() — cette page entière n'écrit
+  // que des produits, donc un garde de page complet plutôt qu'un simple
+  // masquage de bouton (contrairement à /products, accessible en lecture).
+  const canManage = isManagerPlus(user?.role);
 
   const [step, setStep] = useState<ImportStep>('input');
   const [pasteText, setPasteText] = useState('');
@@ -245,6 +250,15 @@ export default function ProductImportPage() {
           <h1 className="text-xl font-bold text-gray-900">Importer des produits en masse</h1>
         </div>
 
+        {!canManage ? (
+          <Card>
+            <CardContent className="p-10 text-center text-gray-500">
+              <p className="font-medium text-gray-700">Accès réservé</p>
+              <p className="text-sm mt-1">Seuls les responsables et le siège peuvent importer des produits en masse.</p>
+            </CardContent>
+          </Card>
+        ) : (
+        <>
         {/* ── Étape 1 : saisie ──────────────────────────────────────────── */}
         {step === 'input' && (
           <Card>
@@ -432,6 +446,8 @@ export default function ProductImportPage() {
               </div>
             </CardContent>
           </Card>
+        )}
+        </>
         )}
       </div>
     </DashboardLayout>

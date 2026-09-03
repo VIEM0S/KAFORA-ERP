@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ChevronDown } from 'lucide-react';
 import { useAuthStore } from '@/hooks/store';
+import { isManagerPlus } from '@/lib/auth/roles';
 import { supabase } from '@/lib/supabase/client';
 // watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
 // (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
@@ -47,8 +48,11 @@ interface CatForm { name: string; description: string; isActive: boolean; }
 const EMPTY: CatForm = { name: '', description: '', isActive: true };
 
 export default function CategoriesPage() {
-  const { tenant } = useAuthStore();
+  const { tenant, user } = useAuthStore();
   const tenantId = tenant?.id;
+  // categories_write (RLS) exige is_manager() — décision d'affichage
+  // seulement, la vraie barrière reste la policy.
+  const canManage = isManagerPlus(user?.role);
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -146,9 +150,11 @@ export default function CategoriesPage() {
             <h1 className="text-2xl font-bold text-gray-900">Catégories</h1>
             <p className="text-sm text-gray-500 mt-1">{categories.length} catégorie{categories.length !== 1 ? 's' : ''}</p>
           </div>
-          <Button onClick={openAdd} className="bg-primary-600 hover:bg-primary-700">
-            <Plus className="h-4 w-4 mr-2" />Nouvelle catégorie
-          </Button>
+          {canManage && (
+            <Button onClick={openAdd} className="bg-primary-600 hover:bg-primary-700">
+              <Plus className="h-4 w-4 mr-2" />Nouvelle catégorie
+            </Button>
+          )}
         </div>
 
         <Card>
@@ -176,7 +182,7 @@ export default function CategoriesPage() {
               <div className="flex flex-col items-center justify-center py-16 text-gray-400">
                 <Tag className="h-12 w-12 mb-4 opacity-30" />
                 <p className="font-medium">Aucune catégorie trouvée</p>
-                {categories.length === 0 && (
+                {categories.length === 0 && canManage && (
                   <Button onClick={openAdd} variant="outline" className="mt-4">
                     <Plus className="h-4 w-4 mr-2" />Créer votre première catégorie
                   </Button>
@@ -204,25 +210,27 @@ export default function CategoriesPage() {
                         {c.description || '—'}
                       </TableCell>
                       <TableCell className="text-center">
-                        <Switch checked={c.isActive} onCheckedChange={() => toggleActive(c)} />
+                        <Switch checked={c.isActive} onCheckedChange={() => toggleActive(c)} disabled={!canManage} />
                       </TableCell>
                       <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <ChevronDown className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => openEdit(c)}>
-                              <Edit className="h-4 w-4 mr-2" />Modifier
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => setDeleteTarget(c)} className="text-red-600 focus:text-red-600">
-                              <Trash2 className="h-4 w-4 mr-2" />Supprimer
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {canManage && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <ChevronDown className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => openEdit(c)}>
+                                <Edit className="h-4 w-4 mr-2" />Modifier
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => setDeleteTarget(c)} className="text-red-600 focus:text-red-600">
+                                <Trash2 className="h-4 w-4 mr-2" />Supprimer
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}

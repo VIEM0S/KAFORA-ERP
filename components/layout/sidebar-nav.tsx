@@ -50,15 +50,22 @@ const NAV_ITEMS: NavItem[] = [
       { title: 'Devis', href: '/quotes', icon: FileText },
     ],
   },
+  // Catalogue/stock/fournisseurs : ROLE_PERMISSIONS (lib/constants) marque
+  // canManageProducts/canManageInventory/canManageSuppliers à false pour
+  // CASHIER, seul rôle exclu ici — cohérent avec ce que RLS bloque déjà
+  // réellement en écriture (products_write/inventory_write/suppliers_write
+  // exigent tous is_manager()). Un caissier n'a pas besoin de ces écrans de
+  // gestion : son interaction produit passe par le POS, pas par l'admin
+  // catalogue/stock (même principe que Square/Lightspeed/Odoo).
   {
-    title: 'Produits', href: '/products', icon: Package,
+    title: 'Produits', href: '/products', icon: Package, roles: ['OWNER', 'ADMIN', 'REGIONAL_MANAGER', 'MANAGER'],
     children: [
       { title: 'Catalogue', href: '/products', icon: Package },
       { title: 'Catégories', href: '/products/categories', icon: Tag },
     ],
   },
   {
-    title: 'Stock', href: '/inventory', icon: Warehouse,
+    title: 'Stock', href: '/inventory', icon: Warehouse, roles: ['OWNER', 'ADMIN', 'REGIONAL_MANAGER', 'MANAGER'],
     children: [
       { title: 'Inventaire', href: '/inventory', icon: Warehouse },
       { title: 'Mouvements', href: '/inventory/movements', icon: History },
@@ -67,9 +74,15 @@ const NAV_ITEMS: NavItem[] = [
       { title: 'Transferts', href: '/transfers', icon: ArrowRightLeft, roles: ['OWNER', 'ADMIN', 'MANAGER'], feature: 'multiStoreEnabled' },
     ],
   },
+  // Clients/Crédits restent visibles à tous : la lecture est intentionnellement
+  // ouverte à toute l'entreprise (modèle "agence bancaire", migration 044 —
+  // servir un client ou consulter son crédit doit marcher depuis n'importe
+  // quel magasin/rôle). Seules les actions d'écriture (Nouveau client,
+  // Modifier, Annuler un crédit...) sont gérées au cas par cas dans chaque
+  // page, pas ici.
   { title: 'Clients', href: '/customers', icon: Users },
   { title: 'Crédits', href: '/credits', icon: CreditCard, badgeKey: 'overdueCredits' },
-  { title: 'Fournisseurs', href: '/suppliers', icon: Truck },
+  { title: 'Fournisseurs', href: '/suppliers', icon: Truck, roles: ['OWNER', 'ADMIN', 'REGIONAL_MANAGER', 'MANAGER'] },
   { title: 'Caisse', href: '/cash-register', icon: DollarSign },
   { title: 'Factures', href: '/invoices', icon: FileText },
   { title: 'Analytics', href: '/analytics', icon: BarChart3, roles: ['OWNER', 'ADMIN', 'REGIONAL_MANAGER', 'MANAGER'], feature: 'analyticsEnabled' },

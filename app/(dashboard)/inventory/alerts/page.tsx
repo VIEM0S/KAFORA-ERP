@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatCurrency } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
+import { isManagerPlus } from '@/lib/auth/roles';
 import { supabase } from '@/lib/supabase/client';
 // watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
 // (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
@@ -36,7 +37,10 @@ function daysUntilExpiry(expiryDate: Date): number {
 }
 
 export default function AlertsPage() {
-  const { tenant, currentStore } = useAuthStore();
+  const { tenant, currentStore, user } = useAuthStore();
+  // inventory_write (RLS) exige is_manager() — décision d'affichage
+  // seulement, la vraie barrière reste la policy.
+  const canManage = isManagerPlus(user?.role);
   const tenantId = tenant?.id;
   const storeId = currentStore?.id;
   const router = useRouter();
@@ -281,13 +285,15 @@ export default function AlertsPage() {
                           )}
                         </TableCell>
                         <TableCell>
-                          <Button
-                            variant="outline" size="sm" className="h-7 text-xs"
-                            disabled={expiringLotId === lot.id}
-                            onClick={() => handleMarkExpired(lot)}
-                          >
-                            Marquer périmé
-                          </Button>
+                          {canManage && (
+                            <Button
+                              variant="outline" size="sm" className="h-7 text-xs"
+                              disabled={expiringLotId === lot.id}
+                              onClick={() => handleMarkExpired(lot)}
+                            >
+                              Marquer périmé
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     );

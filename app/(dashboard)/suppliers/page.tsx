@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useAuthStore } from '@/hooks/store';
+import { isManagerPlus } from '@/lib/auth/roles';
 import { supabase } from '@/lib/supabase/client';
 // watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
 // (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
@@ -39,7 +40,10 @@ const EMPTY: SupplierForm = {
 };
 
 export default function SuppliersPage() {
-  const { tenant } = useAuthStore();
+  const { tenant, user } = useAuthStore();
+  // suppliers_write (RLS) exige is_manager() — décision d'affichage
+  // seulement, la vraie barrière reste la policy.
+  const canManage = isManagerPlus(user?.role);
   const tenantId = tenant?.id;
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -139,9 +143,11 @@ export default function SuppliersPage() {
             <h1 className="text-2xl font-bold text-gray-900">Fournisseurs</h1>
             <p className="text-sm text-gray-500 mt-1">{suppliers.filter(s => s.isActive).length} fournisseur{suppliers.filter(s => s.isActive).length !== 1 ? 's' : ''} actif{suppliers.filter(s => s.isActive).length !== 1 ? 's' : ''}</p>
           </div>
-          <Button onClick={openAdd} className="bg-primary-600 hover:bg-primary-700">
-            <Plus className="h-4 w-4 mr-2" />Nouveau fournisseur
-          </Button>
+          {canManage && (
+            <Button onClick={openAdd} className="bg-primary-600 hover:bg-primary-700">
+              <Plus className="h-4 w-4 mr-2" />Nouveau fournisseur
+            </Button>
+          )}
         </div>
 
         <Card><CardContent className="p-4">
@@ -159,7 +165,7 @@ export default function SuppliersPage() {
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <Truck className="h-12 w-12 mb-4 opacity-30" />
               <p className="font-medium">Aucun fournisseur</p>
-              {suppliers.length === 0 && <Button onClick={openAdd} variant="outline" className="mt-4"><Plus className="h-4 w-4 mr-2" />Ajouter votre premier fournisseur</Button>}
+              {suppliers.length === 0 && canManage && <Button onClick={openAdd} variant="outline" className="mt-4"><Plus className="h-4 w-4 mr-2" />Ajouter votre premier fournisseur</Button>}
             </div>
           ) : (
             <Table>
@@ -211,16 +217,18 @@ export default function SuppliersPage() {
                       </span>
                     </TableCell>
                     <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8"><ChevronDown className="h-4 w-4" /></Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openEdit(s)}><Edit className="h-4 w-4 mr-2" />Modifier</DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => setDeleteTarget(s)} className="text-red-600 focus:text-red-600"><Trash2 className="h-4 w-4 mr-2" />Supprimer</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      {canManage && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8"><ChevronDown className="h-4 w-4" /></Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => openEdit(s)}><Edit className="h-4 w-4 mr-2" />Modifier</DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => setDeleteTarget(s)} className="text-red-600 focus:text-red-600"><Trash2 className="h-4 w-4 mr-2" />Supprimer</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

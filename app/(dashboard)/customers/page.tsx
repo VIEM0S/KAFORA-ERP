@@ -32,7 +32,7 @@ import {
 } from '@/components/ui/select';
 import { formatCurrency } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
-import { canManageCustomerRecord } from '@/lib/auth/roles';
+import { canManageCustomerRecord, isManagerPlus } from '@/lib/auth/roles';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 // watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
@@ -207,7 +207,12 @@ export default function CustomersPage() {
   // (cas normal et attendu). Étiquette neutre plutôt que "supprimé", qui
   // laisserait croire à une perte de données.
   const storeName = (id: string | null) => id ? (stores.find(s => s.id === id)?.name ?? 'Autre magasin') : 'Siège';
-  const canManage = (c: Customer) => canManageCustomerRecord(user?.storeIds, c.registeredStoreId);
+  // customers_insert/update/delete (RLS) exigent tous is_manager() en plus
+  // du cloisonnement par magasin — canManageCustomerRecord() ne vérifie que
+  // le magasin, pas le rôle, donc un CASHIER de ce même magasin voyait
+  // Modifier/Supprimer sans pouvoir jamais réussir l'écriture (trouvé en
+  // auditant les boutons visibles par un compte Caissier réel).
+  const canManage = (c: Customer) => isManagerPlus(user?.role) && canManageCustomerRecord(user?.storeIds, c.registeredStoreId);
 
   const handleDelete = async () => {
     if (!tenantId || !deleteTarget) return;
@@ -234,9 +239,11 @@ export default function CustomersPage() {
               {totalCreditUsed > 0 && <span className="ml-2">· {formatCurrency(totalCreditUsed)} en crédit en cours</span>}
             </p>
           </div>
-          <Button onClick={openAdd} className="bg-primary-600 hover:bg-primary-700">
-            <Plus className="h-4 w-4 mr-2" />Nouveau client
-          </Button>
+          {isManagerPlus(user?.role) && (
+            <Button onClick={openAdd} className="bg-primary-600 hover:bg-primary-700">
+              <Plus className="h-4 w-4 mr-2" />Nouveau client
+            </Button>
+          )}
         </div>
 
         {/* Stats */}
@@ -291,7 +298,7 @@ export default function CustomersPage() {
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <User className="h-12 w-12 mb-4 opacity-30" />
               <p className="font-medium">Aucun client trouvé</p>
-              {customers.length === 0 && <Button onClick={openAdd} variant="outline" className="mt-4"><Plus className="h-4 w-4 mr-2" />Ajouter votre premier client</Button>}
+              {customers.length === 0 && isManagerPlus(user?.role) && <Button onClick={openAdd} variant="outline" className="mt-4"><Plus className="h-4 w-4 mr-2" />Ajouter votre premier client</Button>}
             </div>
           ) : (
             <Table>

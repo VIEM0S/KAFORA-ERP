@@ -20,10 +20,15 @@ interface ProductsTableProps {
   onOpenAdd: () => void;
   onEdit: (p: Product) => void;
   onDelete: (p: Product) => void;
+  // products_write (RLS) exige is_manager() — un CASHIER ne peut de toute
+  // façon pas écrire, mais lui montrer Modifier/Supprimer/le Switch actif
+  // produirait un échec silencieux ou confus au clic. Décision d'affichage
+  // uniquement (voir lib/auth/roles.ts) : la vraie barrière reste RLS.
+  canManage: boolean;
 }
 
 export function ProductsTable({
-  tenantId, products, filtered, categories, isLoading, searchQuery, onOpenAdd, onEdit, onDelete,
+  tenantId, products, filtered, categories, isLoading, searchQuery, onOpenAdd, onEdit, onDelete, canManage,
 }: ProductsTableProps) {
   const catName = (id: string | null) => categories.find((c) => c.id === id)?.name ?? '—';
 
@@ -50,7 +55,7 @@ export function ProductsTable({
           <div className="flex flex-col items-center justify-center py-16 text-gray-400">
             <Package className="h-12 w-12 mb-4 opacity-30" />
             <p className="font-medium">Aucun produit trouvé</p>
-            {!searchQuery && products.length === 0 && (
+            {!searchQuery && products.length === 0 && canManage && (
               <Button onClick={onOpenAdd} variant="outline" className="mt-4">
                 <Plus className="h-4 w-4 mr-2" />
                 Ajouter votre premier produit
@@ -116,27 +121,29 @@ export function ProductsTable({
                       ) : <span className="text-xs text-gray-400">—</span>}
                     </TableCell>
                     <TableCell className="text-center">
-                      <Switch checked={p.isActive} onCheckedChange={() => toggleStatus(p)} />
+                      <Switch checked={p.isActive} onCheckedChange={() => toggleStatus(p)} disabled={!canManage} />
                     </TableCell>
                     <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <ChevronDown className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => onEdit(p)}>
-                            <Edit className="h-4 w-4 mr-2" />
-                            Modifier
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => onDelete(p)} className="text-red-600 focus:text-red-600">
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Supprimer
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      {canManage && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <ChevronDown className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => onEdit(p)}>
+                              <Edit className="h-4 w-4 mr-2" />
+                              Modifier
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => onDelete(p)} className="text-red-600 focus:text-red-600">
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Supprimer
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

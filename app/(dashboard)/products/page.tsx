@@ -11,11 +11,14 @@ import { ProductsFilters } from '@/components/products/products-filters';
 import { ProductsTable } from '@/components/products/products-table';
 import { ProductFormDialog } from '@/components/products/product-form-dialog';
 import { DeleteProductDialog } from '@/components/products/delete-product-dialog';
+import { isManagerPlus } from '@/lib/auth/roles';
 import type { Product } from '@/lib/types';
 
 function ProductsPageInner() {
-  const { tenant } = useAuthStore();
+  const { tenant, user } = useAuthStore();
   const tenantId = tenant?.id;
+  // products_write (RLS) exige is_manager() — voir components/products/products-table.tsx.
+  const canManage = isManagerPlus(user?.role);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -68,14 +71,16 @@ function ProductsPageInner() {
               {lowStock > 0 && <span className="ml-2 text-amber-600 font-medium">· {lowStock} en stock faible</span>}
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => router.push('/products/import')}>
-              <Upload className="h-4 w-4 mr-2" />Importer en masse
-            </Button>
-            <Button onClick={openAdd} className="bg-primary-600 hover:bg-primary-700">
-              <Plus className="h-4 w-4 mr-2" />Nouveau produit
-            </Button>
-          </div>
+          {canManage && (
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => router.push('/products/import')}>
+                <Upload className="h-4 w-4 mr-2" />Importer en masse
+              </Button>
+              <Button onClick={openAdd} className="bg-primary-600 hover:bg-primary-700">
+                <Plus className="h-4 w-4 mr-2" />Nouveau produit
+              </Button>
+            </div>
+          )}
         </div>
 
         <ProductsFilters
@@ -95,6 +100,7 @@ function ProductsPageInner() {
           onOpenAdd={openAdd}
           onEdit={openEdit}
           onDelete={setDeleteTarget}
+          canManage={canManage}
         />
       </div>
 

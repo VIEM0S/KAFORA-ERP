@@ -33,7 +33,7 @@ import { supabase } from '@/lib/supabase/client';
 import { watch } from '@/lib/supabase/watch';
 import { mapCredit, mapCreditPayment, mapAuditLog } from '@/lib/supabase/mappers';
 import { ROLE_PERMISSIONS } from '@/lib/constants';
-import { canManageCustomerRecord, isOwnerOrAdmin } from '@/lib/auth/roles';
+import { canManageCustomerRecord, isOwnerOrAdmin, isManagerPlus } from '@/lib/auth/roles';
 import type { Credit, CreditPayment, CreditStatus, AuditLogEntry } from '@/lib/types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -760,7 +760,13 @@ export default function CreditsPage() {
                     seuil de gouvernance, la demande passe par le siège
                     (migration 045) — voir le bloc de validation en haut de
                     page. */}
+                {/* write_off_credit() (RLS/RPC) exige is_manager() en plus du
+                    cloisonnement par magasin — canManageCustomerRecord() ne
+                    vérifie que le magasin, pas le rôle, donc un CASHIER du
+                    magasin d'inscription voyait ce bouton sans pouvoir
+                    jamais réussir l'annulation. */}
                 {!['PAID', 'WRITTEN_OFF', 'CANCELLED'].includes(selected.status) &&
+                  isManagerPlus(user?.role) &&
                   canManageCustomerRecord(user?.storeIds, selectedCustomerStoreId) && (
                   <div className="mb-5 pt-4 border-t">
                     {selected.writeOffStatus === 'PENDING' ? (

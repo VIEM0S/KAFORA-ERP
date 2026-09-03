@@ -18,6 +18,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils/helpers';
 import { useAuthStore, useCartStore } from '@/hooks/store';
+import { isManagerPlus } from '@/lib/auth/roles';
 import { supabase } from '@/lib/supabase/client';
 // watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
 // (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
@@ -50,6 +51,9 @@ export default function QuotesPage() {
   const { tenant, user, currentStore } = useAuthStore();
   const { addItem, updateItemPrice, setCustomer, clearCart, setNotes, setSourceQuoteId } = useCartStore();
   const tenantId = tenant?.id;
+  // quotes_insert/update (RLS) exigent is_manager() — décision d'affichage
+  // seulement, la vraie barrière reste la policy.
+  const canManage = isManagerPlus(user?.role);
   const router = useRouter();
 
   const [quotes, setQuotes] = useState<Quote[]>([]);
@@ -243,9 +247,11 @@ export default function QuotesPage() {
             <h1 className="text-2xl font-bold text-gray-900">Devis</h1>
             <p className="text-sm text-gray-500 mt-1">{quotes.length} devis au total</p>
           </div>
-          <Button onClick={() => setShowNewQuote(true)} className="bg-primary-600 hover:bg-primary-700">
-            <Plus className="h-4 w-4 mr-2" />Nouveau devis
-          </Button>
+          {canManage && (
+            <Button onClick={() => setShowNewQuote(true)} className="bg-primary-600 hover:bg-primary-700">
+              <Plus className="h-4 w-4 mr-2" />Nouveau devis
+            </Button>
+          )}
         </div>
 
         {/* Filtres statut */}
@@ -268,7 +274,7 @@ export default function QuotesPage() {
               <div className="flex flex-col items-center justify-center py-16 text-gray-400">
                 <FileText className="h-12 w-12 mb-4 opacity-30" />
                 <p className="font-medium">Aucun devis</p>
-                <Button onClick={() => setShowNewQuote(true)} variant="outline" className="mt-4"><Plus className="h-4 w-4 mr-2" />Créer un devis</Button>
+                {canManage && <Button onClick={() => setShowNewQuote(true)} variant="outline" className="mt-4"><Plus className="h-4 w-4 mr-2" />Créer un devis</Button>}
               </div>
             ) : (
               <Table>
@@ -328,8 +334,8 @@ export default function QuotesPage() {
                 </div>
               )}
 
-              {/* Actions */}
-              {selected.status === 'PENDING' && (
+              {/* Actions — quotes_update (RLS) exige is_manager(). */}
+              {canManage && selected.status === 'PENDING' && (
                 <div className="flex flex-col gap-2">
                   <Button onClick={() => setConvertTarget(selected)} className="bg-green-600 hover:bg-green-700">
                     <ShoppingCart className="h-4 w-4 mr-2" />Convertir en vente (POS)
@@ -344,7 +350,7 @@ export default function QuotesPage() {
                   </div>
                 </div>
               )}
-              {selected.status === 'ACCEPTED' && (
+              {canManage && selected.status === 'ACCEPTED' && (
                 <Button onClick={() => setConvertTarget(selected)} className="w-full bg-green-600 hover:bg-green-700">
                   <ShoppingCart className="h-4 w-4 mr-2" />Convertir en vente (POS)
                 </Button>

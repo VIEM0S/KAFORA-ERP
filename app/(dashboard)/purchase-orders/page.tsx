@@ -37,6 +37,10 @@ interface DraftLine { productId: string; quantityOrdered: string; unitCost: stri
 
 export default function PurchaseOrdersPage() {
   const { tenant, user, currentStore } = useAuthStore();
+  // Même liste que app/api/purchase-orders/create/route.ts (pas isManagerPlus :
+  // REGIONAL_MANAGER en est volontairement exclu ici, contrairement au reste
+  // de l'app — cohérence UI/API, pas une nouvelle restriction).
+  const canManage = ['OWNER', 'ADMIN', 'MANAGER'].includes(user?.role || '');
   const tenantId = tenant?.id;
 
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
@@ -270,9 +274,11 @@ export default function PurchaseOrdersPage() {
             >
               Exporter CSV
             </Button>
-            <Button onClick={openCreate} className="bg-primary-600 hover:bg-primary-700">
-              <Plus className="h-4 w-4 mr-2" />Nouveau bon de commande
-            </Button>
+            {canManage && (
+              <Button onClick={openCreate} className="bg-primary-600 hover:bg-primary-700">
+                <Plus className="h-4 w-4 mr-2" />Nouveau bon de commande
+              </Button>
+            )}
           </div>
         </div>
 
@@ -302,7 +308,7 @@ export default function PurchaseOrdersPage() {
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <PackagePlus className="h-12 w-12 mb-4 opacity-30" />
               <p className="font-medium">Aucun bon de commande</p>
-              {orders.length === 0 && <Button onClick={openCreate} variant="outline" className="mt-4"><Plus className="h-4 w-4 mr-2" />Créer le premier bon de commande</Button>}
+              {orders.length === 0 && canManage && <Button onClick={openCreate} variant="outline" className="mt-4"><Plus className="h-4 w-4 mr-2" />Créer le premier bon de commande</Button>}
             </div>
           ) : (
             <Table>

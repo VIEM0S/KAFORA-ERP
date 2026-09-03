@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { formatCurrency } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
+import { isManagerPlus } from '@/lib/auth/roles';
 import { supabase } from '@/lib/supabase/client';
 // watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
 // (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
@@ -22,7 +23,10 @@ import type { Product, Inventory } from '@/lib/types';
 import { estEnAlerte, seuilAlerte } from '@/lib/inventory/alert-threshold';
 
 export default function InventoryPage() {
-  const { tenant, currentStore } = useAuthStore();
+  const { tenant, currentStore, user } = useAuthStore();
+  // inventory_write (RLS) exige is_manager() — décision d'affichage
+  // seulement, la vraie barrière reste la policy.
+  const canManage = isManagerPlus(user?.role);
   const tenantId = tenant?.id;
   const storeId = currentStore?.id;
 
@@ -257,16 +261,18 @@ export default function InventoryPage() {
                         </span>
                       </TableCell>
                       <TableCell>
-                        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => {
-                          setAdjProduct(p); setAdjType('add'); setAdjQty(''); setAdjNote('');
-                          setAdjExpiryDate(''); setAdjSerials(''); setAdjError(null);
-                          // Pré-remplir le seuil existant : sans cela, chaque
-                          // ajustement de stock l'aurait silencieusement effacé.
-                          const inv = inventory.find(i => i.productId === p.id && i.storeId === storeId);
-                          setAdjSeuil(inv?.minQuantity == null ? '' : String(inv.minQuantity));
-                        }}>
-                          Ajuster
-                        </Button>
+                        {canManage && (
+                          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => {
+                            setAdjProduct(p); setAdjType('add'); setAdjQty(''); setAdjNote('');
+                            setAdjExpiryDate(''); setAdjSerials(''); setAdjError(null);
+                            // Pré-remplir le seuil existant : sans cela, chaque
+                            // ajustement de stock l'aurait silencieusement effacé.
+                            const inv = inventory.find(i => i.productId === p.id && i.storeId === storeId);
+                            setAdjSeuil(inv?.minQuantity == null ? '' : String(inv.minQuantity));
+                          }}>
+                            Ajuster
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
