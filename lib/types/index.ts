@@ -52,6 +52,27 @@ export interface Tenant {
   transferSettings?: TransferSettings;
   referralCode?: string | null;
   referredByTenantId?: string | null;
+  // Gouvernance des crédits (migration 045) : au-delà de ce montant, une
+  // annulation de crédit demande une seconde validation du siège au lieu
+  // de s'appliquer immédiatement. Réglable par le Propriétaire/Admin.
+  writeOffApprovalThreshold: number;
+}
+
+// Piste d'audit immuable (migration 045) — alimentée uniquement par les
+// RPC write_off_credit/approve_credit_write_off/reject_credit_write_off/
+// set_credit_limit. Jamais écrite depuis le client.
+export interface AuditLogEntry {
+  id: string;
+  tenantId: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  actorId: string | null;
+  actorName: string | null;
+  actorRole: string | null;
+  storeId: string | null;
+  details: Record<string, unknown>;
+  createdAt: Date;
 }
 
 /**
@@ -284,6 +305,13 @@ export interface Customer {
   creditUsed: number;
   notes: string | null;
   isActive: boolean;
+  // Magasin d'inscription (modèle "agence bancaire", voir migration 044) —
+  // null = ouvert à tous les managers (clients existants avant cette
+  // fonctionnalité, ou créés depuis le siège). Vendre à ce client ou
+  // encaisser un remboursement reste ouvert à tous les magasins quel que
+  // soit ce champ ; seules la modification/suppression de la fiche et
+  // l'annulation d'un crédit y sont réservées.
+  registeredStoreId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -386,6 +414,16 @@ export interface Credit {
   // Ne reflète pas un envoi automatique : personne ne l'écrit tant que le
   // commerçant n'a pas cliqué lui-même sur "Relancer".
   lastReminderSentAt: Date | null;
+  // Demande d'annulation en attente de validation du siège (gouvernance,
+  // voir migration 045) — distinct de `status` : le crédit garde son statut
+  // normal (PENDING/PARTIALLY_PAID/OVERDUE) tant que la demande n'est pas
+  // tranchée, seule write_off_status bascule.
+  writeOffStatus: 'NONE' | 'PENDING' | 'REJECTED';
+  writeOffRequestedBy: string | null;
+  writeOffRequestedByName: string | null;
+  writeOffRequestedAt: Date | null;
+  writeOffReason: string | null;
+  writeOffRejectedReason: string | null;
 }
 
 export type CreditStatus = 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'CANCELLED' | 'WRITTEN_OFF';
@@ -482,7 +520,7 @@ export interface Alert {
   createdAt: Date;
 }
 
-export type AlertType = 'LOW_STOCK' | 'OUT_OF_STOCK' | 'OVERDUE_CREDIT' | 'LARGE_DISCOUNT' | 'REFUND' | 'CASH_VARIANCE' | 'FAILED_PAYMENT' | 'SUSPICIOUS_ACTIVITY' | 'OFFLINE_SYNC_CONFLICT' | 'USER_DELETION_REQUEST' | 'USER_DELETION_RESOLVED';
+export type AlertType = 'LOW_STOCK' | 'OUT_OF_STOCK' | 'OVERDUE_CREDIT' | 'LARGE_DISCOUNT' | 'REFUND' | 'CASH_VARIANCE' | 'FAILED_PAYMENT' | 'SUSPICIOUS_ACTIVITY' | 'OFFLINE_SYNC_CONFLICT' | 'USER_DELETION_REQUEST' | 'USER_DELETION_RESOLVED' | 'CREDIT_WRITTEN_OFF' | 'CREDIT_WRITE_OFF_PENDING' | 'CREDIT_LIMIT_CHANGED';
 export type AlertSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
 export interface Notification {

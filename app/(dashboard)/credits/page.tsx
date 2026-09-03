@@ -4,13 +4,15 @@ import { useState, useEffect } from 'react';
 import {
   CreditCard, Search, X, Plus, RefreshCw,
   AlertTriangle, Clock, CheckCircle2, ChevronRight,
-  User, Calendar, TrendingDown, Banknote, MessageCircle
+  User, Calendar, TrendingDown, Banknote, MessageCircle, Ban,
+  ShieldAlert, ThumbsUp, ThumbsDown, History
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
@@ -29,9 +31,10 @@ import { supabase } from '@/lib/supabase/client';
 // watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
 // (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
 import { watch } from '@/lib/supabase/watch';
-import { mapCredit, mapCreditPayment } from '@/lib/supabase/mappers';
+import { mapCredit, mapCreditPayment, mapAuditLog } from '@/lib/supabase/mappers';
 import { ROLE_PERMISSIONS } from '@/lib/constants';
-import type { Credit, CreditPayment, CreditStatus } from '@/lib/types';
+import { canManageCustomerRecord, isOwnerOrAdmin } from '@/lib/auth/roles';
+import type { Credit, CreditPayment, CreditStatus, AuditLogEntry } from '@/lib/types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -40,6 +43,17 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof
   PARTIALLY_PAID: { label: 'Partiel',       color: 'bg-blue-100 text-blue-700',    icon: TrendingDown },
   PAID:           { label: 'Soldé',         color: 'bg-green-100 text-green-700',  icon: CheckCircle2 },
   OVERDUE:        { label: 'En retard',     color: 'bg-red-100 text-red-700',      icon: AlertTriangle },
+  WRITTEN_OFF:    { label: 'Annulé',        color: 'bg-gray-100 text-gray-600',    icon: Ban },
+};
+
+// Piste d'audit (migration 045) — libellés lisibles pour les actions
+// enregistrées par les RPC de gouvernance.
+const AUDIT_ACTION_LABELS: Record<string, string> = {
+  CREDIT_WRITE_OFF_REQUESTED: "Demande d'annulation soumise",
+  CREDIT_WRITTEN_OFF: 'Crédit annulé',
+  CREDIT_WRITE_OFF_APPROVED: "Demande d'annulation validée",
+  CREDIT_WRITE_OFF_REJECTED: "Demande d'annulation refusée",
+  CREDIT_LIMIT_CHANGED: 'Limite de crédit modifiée',
 };
 
 function isEcheanceProche(dueDate: Date): boolean {
@@ -99,6 +113,26 @@ export default function CreditsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [versementError, setVersementError] = useState<string | null>(null);
 
+  // Annulation de crédit (modèle "agence bancaire", migration 044) —
+  // réservée au magasin d'inscription du client. registeredStoreId n'est
+  // pas dénormalisé sur credits (pas de raison de retoucher pos_checkout
+  // une 3e fois cette session pour un champ qui ne sert qu'à l'affichage
+  // d'un bouton) : résolu par une petite requête séparée à la sélection.
+  const [selectedCustomerStoreId, setSelectedCustomerStoreId] = useState<string | null | undefined>(undefined);
+  const [showWriteOff, setShowWriteOff] = useState(false);
+  const [writeOffReason, setWriteOffReason] = useState('');
+  const [isWritingOff, setIsWritingOff] = useState(false);
+  const [writeOffError, setWriteOffError] = useState<string | null>(null);
+
+  // Gouvernance (migration 045) : seuil, double validation siège, refus
+  // motivé, piste d'audit affichée pour le crédit sélectionné.
+  const canApprove = isOwnerOrAdmin(user?.role);
+  const [rejectTarget, setRejectTarget] = useState<Credit | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [decisionError, setDecisionError] = useState<string | null>(null);
+  const [processingCreditId, setProcessingCreditId] = useState<string | null>(null);
+  const [auditTrail, setAuditTrail] = useState<AuditLogEntry[]>([]);
+
   // ─── Listeners ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -133,6 +167,31 @@ export default function CreditsPage() {
       `credit_id=eq.${selected.id}`
     );
   }, [tenantId, selected?.id]);
+
+  // Résout le magasin d'inscription du client, uniquement pour décider si
+  // le bouton "Annuler ce crédit" doit s'afficher — undefined = pas encore
+  // chargé (bouton masqué par prudence le temps du fetch).
+  useEffect(() => {
+    setSelectedCustomerStoreId(undefined);
+    if (!selected?.customerId) { setSelectedCustomerStoreId(null); return; }
+    let cancelled = false;
+    supabase.from('customers').select('registered_store_id').eq('id', selected.customerId).maybeSingle()
+      .then(({ data }) => { if (!cancelled) setSelectedCustomerStoreId(data?.registered_store_id ?? null); });
+    return () => { cancelled = true; };
+  }, [selected?.customerId]);
+
+  // Piste d'audit du crédit sélectionné (migration 045) — lecture seule,
+  // alimentée uniquement par les RPC de gouvernance (jamais par le client).
+  useEffect(() => {
+    if (!selected?.id) { setAuditTrail([]); return; }
+    return watch(
+      'audit_log',
+      () => supabase.from('audit_log').select('*').eq('entity_type', 'credit').eq('entity_id', selected.id).order('created_at', { ascending: false }),
+      rows => setAuditTrail(rows.map(mapAuditLog)),
+      undefined,
+      `entity_id=eq.${selected.id}`
+    );
+  }, [selected?.id]);
 
   // ─── Filtres ────────────────────────────────────────────────────────────────
 
@@ -228,6 +287,91 @@ export default function CreditsPage() {
     }
   };
 
+  // ─── Annulation de crédit ───────────────────────────────────────────────────
+
+  // Passe par une route API (pas un appel RPC direct) : au-dessus du seuil
+  // de gouvernance, le siège doit être notifié (alerte + email), ce qui
+  // exige un contexte serveur que write_off_credit() en SQL ne peut pas
+  // atteindre seul — voir app/api/credits/write-off/route.ts.
+  const handleWriteOff = async () => {
+    if (!selected) return;
+    if (!writeOffReason.trim()) { setWriteOffError('Le motif est obligatoire.'); return; }
+    setIsWritingOff(true);
+    setWriteOffError(null);
+    try {
+      const res = await fetch('/api/credits/write-off', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ creditId: selected.id, reason: writeOffReason.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erreur lors de l'annulation");
+
+      if (data.status === 'PENDING_APPROVAL') {
+        setSelected(prev => prev ? { ...prev, writeOffStatus: 'PENDING', writeOffReason: writeOffReason.trim() } : null);
+      } else {
+        setSelected(prev => prev ? { ...prev, status: 'WRITTEN_OFF', remainingAmount: 0 } : null);
+      }
+      setShowWriteOff(false);
+      setWriteOffReason('');
+    } catch (e) {
+      setWriteOffError(e instanceof Error ? e.message : "Erreur lors de l'annulation");
+      console.error(e);
+    } finally {
+      setIsWritingOff(false);
+    }
+  };
+
+  // ─── Validation / refus par le siège ───────────────────────────────────────
+
+  const handleApprove = async (credit: Credit) => {
+    setProcessingCreditId(credit.id);
+    setDecisionError(null);
+    try {
+      const res = await fetch('/api/credits/write-off/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ creditId: credit.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erreur lors de la validation');
+      if (selected?.id === credit.id) {
+        setSelected(prev => prev ? { ...prev, status: 'WRITTEN_OFF', writeOffStatus: 'NONE', remainingAmount: 0 } : null);
+      }
+    } catch (e) {
+      setDecisionError(e instanceof Error ? e.message : 'Erreur lors de la validation');
+    } finally {
+      setProcessingCreditId(null);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!rejectTarget) return;
+    if (!rejectReason.trim()) { setDecisionError('Le motif du refus est obligatoire.'); return; }
+    setProcessingCreditId(rejectTarget.id);
+    setDecisionError(null);
+    try {
+      const res = await fetch('/api/credits/write-off/reject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ creditId: rejectTarget.id, reason: rejectReason.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erreur lors du refus');
+      if (selected?.id === rejectTarget.id) {
+        setSelected(prev => prev ? { ...prev, writeOffStatus: 'REJECTED', writeOffRejectedReason: rejectReason.trim() } : null);
+      }
+      setRejectTarget(null);
+      setRejectReason('');
+    } catch (e) {
+      setDecisionError(e instanceof Error ? e.message : 'Erreur lors du refus');
+    } finally {
+      setProcessingCreditId(null);
+    }
+  };
+
+  const pendingWriteOffs = credits.filter(c => c.writeOffStatus === 'PENDING');
+
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   const StatusBadge = ({ status }: { status: Credit['status'] }) => {
@@ -273,6 +417,61 @@ export default function CreditsPage() {
             Exporter CSV
           </Button>
         </div>
+
+        {/* Demandes d'annulation en attente — siège uniquement (gouvernance,
+            migration 045). Un Responsable ne voit jamais ce bloc : il n'a
+            pas le pouvoir de trancher, même pour sa propre demande. */}
+        {canApprove && pendingWriteOffs.length > 0 && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <ShieldAlert className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-red-800">
+                  {pendingWriteOffs.length} demande{pendingWriteOffs.length > 1 ? 's' : ''} d&apos;annulation en attente de votre validation
+                </p>
+                <p className="text-xs text-red-700 mt-1">
+                  Au-dessus du seuil de {formatCurrency(tenant?.writeOffApprovalThreshold || 0)} — une décision du siège est requise.
+                </p>
+              </div>
+            </div>
+            {decisionError && (
+              <div className="bg-white border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700">{decisionError}</div>
+            )}
+            <div className="space-y-2">
+              {pendingWriteOffs.map(c => (
+                <div key={c.id} className="bg-white rounded-lg p-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{c.customerName || 'Client supprimé'}</p>
+                    <p className="text-xs text-gray-500">
+                      {formatCurrency(c.remainingAmount)} · demandé par {c.writeOffRequestedByName || '—'} le {c.writeOffRequestedAt ? formatDate(c.writeOffRequestedAt) : '—'}
+                    </p>
+                    <p className="text-xs text-gray-400 italic truncate">« {c.writeOffReason} »</p>
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0">
+                    <Button
+                      size="sm" variant="outline"
+                      disabled={processingCreditId === c.id}
+                      onClick={() => { setRejectTarget(c); setRejectReason(''); setDecisionError(null); }}
+                      className="border-gray-300 text-gray-600 hover:bg-gray-50"
+                    >
+                      <ThumbsDown className="h-3.5 w-3.5 mr-1" />Refuser
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={processingCreditId === c.id}
+                      onClick={() => handleApprove(c)}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      {processingCreditId === c.id
+                        ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        : <><ThumbsUp className="h-3.5 w-3.5 mr-1" />Valider</>}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Alerte échéances proches */}
         {echeancesProches.length > 0 && (
@@ -394,7 +593,16 @@ export default function CreditsPage() {
                             {formatDate(c.dueDate)}{proche && ' ⚠️'}
                           </span>
                         </TableCell>
-                        <TableCell><StatusBadge status={c.status} /></TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
+                            <StatusBadge status={c.status} />
+                            {c.writeOffStatus === 'PENDING' && (
+                              <span title="Demande d'annulation en attente de validation du siège">
+                                <ShieldAlert className="h-3.5 w-3.5 text-amber-500" />
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2 justify-end">
                             {(proche || c.status === 'OVERDUE') && (
@@ -545,6 +753,46 @@ export default function CreditsPage() {
                   </div>
                 )}
 
+                {/* Annulation — réservée au magasin d'inscription du client
+                    (modèle "agence bancaire", migration 044), pas au magasin
+                    où la vente a eu lieu : c'est une décision sur la
+                    relation client, pas une transaction. Au-dessus du
+                    seuil de gouvernance, la demande passe par le siège
+                    (migration 045) — voir le bloc de validation en haut de
+                    page. */}
+                {!['PAID', 'WRITTEN_OFF', 'CANCELLED'].includes(selected.status) &&
+                  canManageCustomerRecord(user?.storeIds, selectedCustomerStoreId) && (
+                  <div className="mb-5 pt-4 border-t">
+                    {selected.writeOffStatus === 'PENDING' ? (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-sm text-amber-800 flex items-center gap-2">
+                        <ShieldAlert className="h-4 w-4 flex-shrink-0" />
+                        Demande d&apos;annulation envoyée le {selected.writeOffRequestedAt ? formatDateTime(selected.writeOffRequestedAt) : ''} — en attente de validation du siège.
+                      </div>
+                    ) : (
+                      <>
+                        {selected.writeOffStatus === 'REJECTED' && (
+                          <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700 mb-2">
+                            Demande précédente refusée : {selected.writeOffRejectedReason}
+                          </div>
+                        )}
+                        <Button
+                          variant="outline" size="sm"
+                          onClick={() => { setShowWriteOff(true); setWriteOffReason(''); setWriteOffError(null); }}
+                          className="border-gray-300 text-gray-600 hover:bg-gray-50 hover:text-red-600 hover:border-red-200"
+                        >
+                          <Ban className="h-4 w-4 mr-1.5" />Annuler ce crédit
+                        </Button>
+                        <p className="text-xs text-gray-400 mt-1.5">
+                          Passe ce crédit en perte — action réservée au magasin d&apos;inscription du client.
+                          {tenant?.writeOffApprovalThreshold != null && (
+                            <> Au-dessus de {formatCurrency(tenant.writeOffApprovalThreshold)}, une validation du siège sera demandée.</>
+                          )}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 {/* Historique versements */}
                 <div>
                   <p className="text-sm font-medium text-gray-900 mb-3">Historique des versements</p>
@@ -567,11 +815,95 @@ export default function CreditsPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Piste d'audit — visible aux managers+ (policy audit_log_select),
+                    jamais modifiable depuis le client (migration 045). */}
+                {auditTrail.length > 0 && (
+                  <div className="mt-5 pt-4 border-t">
+                    <p className="text-sm font-medium text-gray-900 mb-3 flex items-center gap-2">
+                      <History className="h-4 w-4" />Journal d&apos;audit
+                    </p>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {auditTrail.map(entry => (
+                        <div key={entry.id} className="bg-gray-50 rounded-lg px-3 py-2 text-xs">
+                          <p className="font-medium text-gray-700">{AUDIT_ACTION_LABELS[entry.action] || entry.action}</p>
+                          <p className="text-gray-400">{formatDateTime(entry.createdAt)} · {entry.actorName || '—'} ({entry.actorRole || '—'})</p>
+                          {typeof entry.details?.reason === 'string' && entry.details.reason && (
+                            <p className="text-gray-500 italic mt-0.5">« {entry.details.reason as string} »</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
         </div>
       </div>
+
+      {/* Refus d'une demande d'annulation — motif obligatoire, siège uniquement */}
+      <Dialog open={!!rejectTarget} onOpenChange={(o) => { if (!o) setRejectTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Refuser l&apos;annulation — {rejectTarget?.customerName || 'Client supprimé'}</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            {decisionError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700">{decisionError}</div>
+            )}
+            <div className="space-y-2">
+              <Label>Motif du refus *</Label>
+              <Textarea
+                rows={3}
+                placeholder="ex: Client toujours joignable, relance à retenter d'abord..."
+                value={rejectReason}
+                onChange={e => { setRejectReason(e.target.value); setDecisionError(null); }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectTarget(null)} disabled={processingCreditId === rejectTarget?.id}>Annuler</Button>
+            <Button onClick={handleReject} disabled={processingCreditId === rejectTarget?.id || !rejectReason.trim()} className="bg-gray-700 hover:bg-gray-800">
+              {processingCreditId === rejectTarget?.id ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Traitement...</> : 'Confirmer le refus'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showWriteOff} onOpenChange={(o) => { if (!o) setShowWriteOff(false); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Annuler ce crédit — {selected?.customerName || 'Client supprimé'}</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-sm text-amber-800">
+              Solde de <strong>{selected ? formatCurrency(selected.remainingAmount) : ''}</strong> passé en perte —
+              il ne sera plus réclamé et n&apos;apparaîtra plus dans les montants dus.
+            </div>
+            {selected && tenant && selected.remainingAmount > tenant.writeOffApprovalThreshold && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-700 flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4 flex-shrink-0" />
+                Au-dessus du seuil de {formatCurrency(tenant.writeOffApprovalThreshold)} : ceci créera une demande, effective seulement après validation du siège.
+              </div>
+            )}
+            {writeOffError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700">{writeOffError}</div>
+            )}
+            <div className="space-y-2">
+              <Label>Motif *</Label>
+              <Textarea
+                rows={3}
+                placeholder="ex: Client introuvable, créance jugée irrécouvrable..."
+                value={writeOffReason}
+                onChange={e => { setWriteOffReason(e.target.value); setWriteOffError(null); }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowWriteOff(false)} disabled={isWritingOff}>Annuler</Button>
+            <Button onClick={handleWriteOff} disabled={isWritingOff || !writeOffReason.trim()} className="bg-red-600 hover:bg-red-700">
+              {isWritingOff ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Traitement...</> : 'Confirmer l\'annulation'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

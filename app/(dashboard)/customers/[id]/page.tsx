@@ -15,8 +15,14 @@ import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils/helpers'
 import { useAuthStore } from '@/hooks/store';
 import { useDataErrors } from '@/hooks/use-data-errors';
 import { supabase } from '@/lib/supabase/client';
-import { mapCustomer, mapSale, mapCredit, mapQuote } from '@/lib/supabase/mappers';
-import type { Customer, Sale, Credit, Quote } from '@/lib/types';
+import { mapCustomer, mapSale, mapCredit, mapQuote, mapAuditLog } from '@/lib/supabase/mappers';
+import type { Customer, Sale, Credit, Quote, AuditLogEntry } from '@/lib/types';
+
+// Piste d'audit (migration 045) — ce qui alimente cet onglet pour un
+// client : uniquement les changements de limite de crédit aujourd'hui.
+const AUDIT_ACTION_LABELS: Record<string, string> = {
+  CREDIT_LIMIT_CHANGED: 'Limite de crédit modifiée',
+};
 
 const CREDIT_STATUS: Record<string, { label: string; color: string }> = {
   PENDING:        { label: 'En cours',  color: 'bg-amber-100 text-amber-700' },
@@ -46,8 +52,9 @@ export default function CustomerDetailPage() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [credits, setCredits] = useState<Credit[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [auditTrail, setAuditTrail] = useState<AuditLogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [tab, setTab] = useState<'sales' | 'credits' | 'quotes'>('sales');
+  const [tab, setTab] = useState<'sales' | 'credits' | 'quotes' | 'audit'>('sales');
 
   useEffect(() => {
     if (!tenantId || !id) return;
@@ -96,6 +103,15 @@ export default function CustomerDetailPage() {
         clearError('Devis');
         setQuotes((data ?? []).map(r => mapQuote(r)));
       });
+
+    // Piste d'audit du client (migration 045) — lecture seule (policy
+    // audit_log_select réservée aux managers+), échec silencieux pour un
+    // Caissier plutôt qu'une erreur qui n'a pas lieu d'être visible.
+    supabase.from('audit_log').select('*').eq('entity_type', 'customer').eq('entity_id', id).order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (error) return;
+        setAuditTrail((data ?? []).map(mapAuditLog));
+      });
   }, [tenantId, id, router]);
 
   if (isLoading) return (
@@ -123,6 +139,7 @@ export default function CustomerDetailPage() {
     { key: 'sales',   label: `Ventes (${sales.length})` },
     { key: 'credits', label: `Crédits (${credits.length})` },
     { key: 'quotes',  label: `Devis (${quotes.length})` },
+    { key: 'audit',   label: `Historique (${auditTrail.length})` },
   ];
 
   return (
@@ -191,7 +208,7 @@ export default function CustomerDetailPage() {
         <div>
           <div className="flex border-b border-gray-200 mb-4">
             {TABS.map(t => (
-              <button key={t.key} onClick={() => setTab(t.key as 'sales' | 'credits' | 'quotes')}
+              <button key={t.key} onClick={() => setTab(t.key as 'sales' | 'credits' | 'quotes' | 'audit')}
                 className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                   tab === t.key ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
                 {t.label}
@@ -306,6 +323,47 @@ export default function CustomerDetailPage() {
                         </TableRow>
                       );
                     })}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent></Card>
+          )}
+
+          {/* Historique — piste d'audit (migration 045), aujourd'hui limitée
+              aux changements de limite de crédit. */}
+          {tab === 'audit' && (
+            <Card><CardContent className="p-0">
+              {auditTrail.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                  <CreditCard className="h-10 w-10 mb-3 opacity-30" />
+                  <p className="text-sm">Aucun changement enregistré pour ce client</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Action</TableHead>
+                      <TableHead>Par</TableHead>
+                      <TableHead>Détail</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {auditTrail.map(entry => (
+                      <TableRow key={entry.id}>
+                        <TableCell className="text-sm text-gray-500">{formatDateTime(entry.createdAt)}</TableCell>
+                        <TableCell className="text-sm font-medium">{AUDIT_ACTION_LABELS[entry.action] || entry.action}</TableCell>
+                        <TableCell className="text-sm text-gray-500">{entry.actorName || '—'}</TableCell>
+                        <TableCell className="text-sm text-gray-500">
+                          {typeof entry.details?.previous_limit === 'number' && typeof entry.details?.new_limit === 'number'
+                            ? `${formatCurrency(entry.details.previous_limit as number)} → ${formatCurrency(entry.details.new_limit as number)}`
+                            : '—'}
+                          {typeof entry.details?.reason === 'string' && entry.details.reason && (
+                            <span className="text-gray-400 italic"> · « {entry.details.reason as string} »</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
               )}

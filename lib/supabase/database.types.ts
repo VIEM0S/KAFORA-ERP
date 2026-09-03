@@ -76,6 +76,63 @@ export type Database = {
           },
         ]
       }
+      audit_log: {
+        Row: {
+          action: string
+          actor_id: string | null
+          actor_name: string | null
+          actor_role: Database["public"]["Enums"]["user_role"] | null
+          created_at: string
+          details: Json
+          entity_id: string
+          entity_type: string
+          id: string
+          store_id: string | null
+          tenant_id: string
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          actor_name?: string | null
+          actor_role?: Database["public"]["Enums"]["user_role"] | null
+          created_at?: string
+          details?: Json
+          entity_id: string
+          entity_type: string
+          id?: string
+          store_id?: string | null
+          tenant_id: string
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          actor_name?: string | null
+          actor_role?: Database["public"]["Enums"]["user_role"] | null
+          created_at?: string
+          details?: Json
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          store_id?: string | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_log_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_log_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_logs: {
         Row: {
           action: string
@@ -404,6 +461,12 @@ export type Database = {
           tenant_id: string
           total_amount: number
           updated_at: string
+          write_off_reason: string | null
+          write_off_rejected_reason: string | null
+          write_off_requested_at: string | null
+          write_off_requested_by: string | null
+          write_off_requested_by_name: string | null
+          write_off_status: string
         }
         Insert: {
           cancellation_reason?: string | null
@@ -425,6 +488,12 @@ export type Database = {
           tenant_id: string
           total_amount: number
           updated_at?: string
+          write_off_reason?: string | null
+          write_off_rejected_reason?: string | null
+          write_off_requested_at?: string | null
+          write_off_requested_by?: string | null
+          write_off_requested_by_name?: string | null
+          write_off_status?: string
         }
         Update: {
           cancellation_reason?: string | null
@@ -446,6 +515,12 @@ export type Database = {
           tenant_id?: string
           total_amount?: number
           updated_at?: string
+          write_off_reason?: string | null
+          write_off_rejected_reason?: string | null
+          write_off_requested_at?: string | null
+          write_off_requested_by?: string | null
+          write_off_requested_by_name?: string | null
+          write_off_status?: string
         }
         Relationships: [
           {
@@ -488,6 +563,7 @@ export type Database = {
           last_name: string | null
           notes: string | null
           phone: string | null
+          registered_store_id: string | null
           search_name: string | null
           tenant_id: string
           updated_at: string
@@ -508,6 +584,7 @@ export type Database = {
           last_name?: string | null
           notes?: string | null
           phone?: string | null
+          registered_store_id?: string | null
           search_name?: string | null
           tenant_id: string
           updated_at?: string
@@ -528,11 +605,19 @@ export type Database = {
           last_name?: string | null
           notes?: string | null
           phone?: string | null
+          registered_store_id?: string | null
           search_name?: string | null
           tenant_id?: string
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "customers_registered_store_id_fkey"
+            columns: ["registered_store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "customers_tenant_id_fkey"
             columns: ["tenant_id"]
@@ -2279,6 +2364,7 @@ export type Database = {
           timezone: string
           transfer_settings: Json | null
           updated_at: string
+          write_off_approval_threshold: number
         }
         Insert: {
           address?: string | null
@@ -2303,6 +2389,7 @@ export type Database = {
           timezone?: string
           transfer_settings?: Json | null
           updated_at?: string
+          write_off_approval_threshold?: number
         }
         Update: {
           address?: string | null
@@ -2327,6 +2414,7 @@ export type Database = {
           timezone?: string
           transfer_settings?: Json | null
           updated_at?: string
+          write_off_approval_threshold?: number
         }
         Relationships: [
           {
@@ -2629,6 +2717,10 @@ export type Database = {
         Args: { p_date: string }
         Returns: number
       }
+      approve_credit_write_off: {
+        Args: { p_credit_id: string; p_user_name: string }
+        Returns: Json
+      }
       auth_role: { Args: never; Returns: string }
       auth_store_ids: { Args: never; Returns: string[] }
       auth_tenant_id: { Args: never; Returns: string }
@@ -2790,11 +2882,24 @@ export type Database = {
         }
         Returns: Json
       }
+      reject_credit_write_off: {
+        Args: { p_credit_id: string; p_reason: string; p_user_name: string }
+        Returns: Json
+      }
       repay_credit: {
         Args: {
           p_amount: number
           p_credit_id: string
           p_store_id: string
+          p_user_name: string
+        }
+        Returns: Json
+      }
+      set_credit_limit: {
+        Args: {
+          p_customer_id: string
+          p_new_limit: number
+          p_reason: string
           p_user_name: string
         }
         Returns: Json
@@ -2817,6 +2922,10 @@ export type Database = {
         Returns: Json
       }
       subscription_active: { Args: { tid: string }; Returns: boolean }
+      write_off_credit: {
+        Args: { p_credit_id: string; p_reason: string; p_user_name: string }
+        Returns: Json
+      }
     }
     Enums: {
       alert_severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
@@ -2832,6 +2941,9 @@ export type Database = {
         | "OFFLINE_SYNC_CONFLICT"
         | "USER_DELETION_REQUEST"
         | "USER_DELETION_RESOLVED"
+        | "CREDIT_WRITTEN_OFF"
+        | "CREDIT_WRITE_OFF_PENDING"
+        | "CREDIT_LIMIT_CHANGED"
       credit_status:
         | "PENDING"
         | "PARTIALLY_PAID"
@@ -2916,12 +3028,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2945,11 +3057,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2970,11 +3082,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2995,11 +3107,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3012,11 +3124,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3041,6 +3153,9 @@ export const Constants = {
         "OFFLINE_SYNC_CONFLICT",
         "USER_DELETION_REQUEST",
         "USER_DELETION_RESOLVED",
+        "CREDIT_WRITTEN_OFF",
+        "CREDIT_WRITE_OFF_PENDING",
+        "CREDIT_LIMIT_CHANGED",
       ],
       credit_status: [
         "PENDING",

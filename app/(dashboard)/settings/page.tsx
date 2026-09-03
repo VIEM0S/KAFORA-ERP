@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
   Building2, Globe, Phone, Mail, FileText,
-  RefreshCw, CheckCircle2, AlertCircle, Lock, Eye, EyeOff, User, Gift, Copy, Check
+  RefreshCw, CheckCircle2, AlertCircle, Lock, Eye, EyeOff, User, Gift, Copy, Check, ShieldCheck
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -69,6 +69,36 @@ export default function SettingsPage() {
   });
   const [savingCompany, setSavingCompany] = useState(false);
   const [companyMsg, setCompanyMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // ─── Gouvernance des crédits (migration 045) ─────────────────────────────────
+  // Au-delà de ce seuil, une annulation de crédit demande une seconde
+  // validation (Propriétaire/Admin) au lieu de s'appliquer immédiatement —
+  // voir write_off_credit() et app/(dashboard)/credits/page.tsx.
+  const [writeOffThreshold, setWriteOffThreshold] = useState(String(tenant?.writeOffApprovalThreshold ?? 100000));
+  const [savingThreshold, setSavingThreshold] = useState(false);
+  const [thresholdMsg, setThresholdMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleSaveThreshold = async () => {
+    if (!tenantId) return;
+    const value = Number(writeOffThreshold);
+    if (!Number.isFinite(value) || value < 0) {
+      setThresholdMsg({ type: 'error', text: 'Montant invalide' });
+      return;
+    }
+    setSavingThreshold(true); setThresholdMsg(null);
+    try {
+      const { error } = await supabase.from('tenants').update({ write_off_approval_threshold: value }).eq('id', tenantId);
+      if (error) throw error;
+      setTenant({ ...tenant!, writeOffApprovalThreshold: value });
+      setThresholdMsg({ type: 'success', text: 'Seuil mis à jour' });
+    } catch (e) {
+      setThresholdMsg({ type: 'error', text: 'Erreur lors de la sauvegarde' });
+      console.error(e);
+    } finally {
+      setSavingThreshold(false);
+      setTimeout(() => setThresholdMsg(null), 3000);
+    }
+  };
 
   // ─── Mot de passe ───────────────────────────────────────────────────────────
   const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
@@ -386,6 +416,34 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Gouvernance des crédits — Owner/Admin uniquement, comme le reste
+            de ce bloc (canManageCompany). */}
+        {canManageCompany && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-red-600" />Gouvernance des crédits</CardTitle>
+              <CardDescription>
+                Au-delà de ce montant, une annulation de crédit demande votre validation (ou celle d&apos;un Administrateur) avant de s&apos;appliquer.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Msg msg={thresholdMsg} />
+              <div className="space-y-2">
+                <Label>Seuil d&apos;approbation (FCFA)</Label>
+                <Input type="number" min="0" value={writeOffThreshold} onChange={e => setWriteOffThreshold(e.target.value)} />
+                <p className="text-xs text-gray-500">
+                  En dessous, le magasin d&apos;inscription du client peut annuler un crédit directement.
+                </p>
+              </div>
+              <div className="flex justify-end">
+                <Button onClick={handleSaveThreshold} disabled={savingThreshold} className="bg-primary-600 hover:bg-primary-700">
+                  {savingThreshold ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Enregistrement...</> : 'Enregistrer'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Abonnement */}
         {tenant && canManageCompany && (() => {

@@ -4,7 +4,7 @@ import type {
   Sale, SaleItem, Payment, Credit, CreditPayment, Quote, QuoteItem,
   PurchaseOrder, PurchaseOrderItem, Transfer, TransferLine,
   Alert, Notification, SaleReturn, SaleReturnItem, CashRegisterSession,
-  Tenant, Subscription, User, DailyStat, ProductLot, ProductSerial,
+  Tenant, Subscription, User, DailyStat, ProductLot, ProductSerial, AuditLogEntry,
 } from '@/lib/types';
 
 /**
@@ -98,7 +98,8 @@ export function mapCustomer(r: Row<'customers'>): Customer {
     lastName: r.last_name, companyName: r.company_name, email: r.email, phone: r.phone,
     address: r.address, city: r.city, customerType: r.customer_type,
     creditLimit: r.credit_limit, creditUsed: r.credit_used, notes: r.notes,
-    isActive: r.is_active, createdAt: toDate(r.created_at), updatedAt: toDate(r.updated_at),
+    isActive: r.is_active, registeredStoreId: r.registered_store_id,
+    createdAt: toDate(r.created_at), updatedAt: toDate(r.updated_at),
   };
 }
 
@@ -164,6 +165,12 @@ export function mapCredit(r: Row<'credits'>, payments: CreditPayment[] = []): Cr
     status: r.status, penaltyRate: r.penalty_rate ?? 0, penaltyAmount: r.penalty_amount ?? 0,
     notes: r.notes, payments, createdAt: toDate(r.created_at), updatedAt: toDate(r.updated_at),
     lastReminderSentAt: toDateOrNull(r.last_reminder_sent_at),
+    writeOffStatus: r.write_off_status as Credit['writeOffStatus'],
+    writeOffRequestedBy: r.write_off_requested_by,
+    writeOffRequestedByName: r.write_off_requested_by_name,
+    writeOffRequestedAt: toDateOrNull(r.write_off_requested_at),
+    writeOffReason: r.write_off_reason,
+    writeOffRejectedReason: r.write_off_rejected_reason,
   };
 }
 
@@ -283,6 +290,15 @@ export function mapTenant(r: Row<'tenants'>): Tenant {
     isActive: r.is_active, createdAt: toDate(r.created_at), updatedAt: toDate(r.updated_at),
     transferSettings: (r.transfer_settings as unknown as Tenant['transferSettings']) ?? undefined,
     referralCode: r.referral_code, referredByTenantId: r.referred_by_tenant_id,
+    writeOffApprovalThreshold: r.write_off_approval_threshold,
+  };
+}
+
+export function mapAuditLog(r: Row<'audit_log'>): AuditLogEntry {
+  return {
+    id: r.id, tenantId: r.tenant_id, action: r.action, entityType: r.entity_type, entityId: r.entity_id,
+    actorId: r.actor_id, actorName: r.actor_name, actorRole: r.actor_role, storeId: r.store_id,
+    details: (r.details as Record<string, unknown>) ?? {}, createdAt: toDate(r.created_at),
   };
 }
 

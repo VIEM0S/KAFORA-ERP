@@ -40,3 +40,24 @@ export function isManagerPlus(role: string | null | undefined): boolean {
 export function canManageUsers(role: string | null | undefined): boolean {
   return isOwnerOrAdmin(role) || role === 'REGIONAL_MANAGER';
 }
+
+/**
+ * Modèle "agence bancaire" (voir migration 044, Customer.registeredStoreId) :
+ * un client est inscrit dans un magasin, mais vendre/encaisser un
+ * remboursement reste ouvert à tous — seules la fiche client elle-même
+ * (modifier/supprimer, limite de crédit) et l'annulation d'un crédit sont
+ * réservées à son magasin d'inscription. `null` des deux côtés = ouvert
+ * (siège, ou client créé avant cette fonctionnalité).
+ *
+ * Décision d'AFFICHAGE uniquement — la vraie barrière est RLS
+ * (customers_update/delete, write_off_credit), ce helper garde juste l'UI
+ * cohérente avec ce que le serveur autorisera de toute façon.
+ */
+export function canManageCustomerRecord(
+  userStoreIds: string[] | null | undefined,
+  registeredStoreId: string | null | undefined
+): boolean {
+  if (!userStoreIds) return true; // siège
+  if (!registeredStoreId) return true; // client non rattaché
+  return userStoreIds.includes(registeredStoreId);
+}

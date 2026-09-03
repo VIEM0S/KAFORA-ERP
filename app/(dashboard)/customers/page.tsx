@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
   Plus, Search, Edit, Trash2, User, Building2, Eye,
-  Phone, Mail, CreditCard, RefreshCw, X, ChevronDown
+  Phone, Mail, CreditCard, RefreshCw, X, ChevronDown, ShieldCheck
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout';
 import { Card, CardContent } from '@/components/ui/card';
@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/select';
 import { formatCurrency } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
+import { canManageCustomerRecord } from '@/lib/auth/roles';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 // watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
@@ -60,7 +61,7 @@ function genCode(customers: Customer[]) {
 }
 
 export default function CustomersPage() {
-  const { tenant } = useAuthStore();
+  const { tenant, user, currentStore, stores } = useAuthStore();
   const router = useRouter();
   const tenantId = tenant?.id;
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -75,6 +76,36 @@ export default function CustomersPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Limite de crédit — action distincte du formulaire générique depuis la
+  // migration 045 (gouvernance : colonne protégée, chaque changement tracé).
+  const [limitTarget, setLimitTarget] = useState<Customer | null>(null);
+  const [newLimit, setNewLimit] = useState('');
+  const [limitReason, setLimitReason] = useState('');
+  const [isSavingLimit, setIsSavingLimit] = useState(false);
+  const [limitError, setLimitError] = useState<string | null>(null);
+
+  const handleSaveCreditLimit = async () => {
+    if (!limitTarget) return;
+    if (newLimit === '' || Number(newLimit) < 0) { setLimitError('Limite invalide.'); return; }
+    if (!limitReason.trim()) { setLimitError('Le motif est obligatoire.'); return; }
+    setIsSavingLimit(true);
+    setLimitError(null);
+    try {
+      const res = await fetch('/api/customers/credit-limit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerId: limitTarget.id, newLimit: Number(newLimit), reason: limitReason.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erreur lors de la mise à jour');
+      setLimitTarget(null);
+    } catch (e) {
+      setLimitError(e instanceof Error ? e.message : 'Erreur lors de la mise à jour');
+    } finally {
+      setIsSavingLimit(false);
+    }
+  };
 
   useEffect(() => {
     if (!tenantId) return;
@@ -132,6 +163,13 @@ export default function CustomersPage() {
     // colonne GÉNÉRÉE côté Postgres (generated always as ... stored) — plus
     // besoin de la calculer côté client comme avec Firestore, et l'écrire
     // serait d'ailleurs refusé par la base.
+    // credit_limit n'est PAS dans ce payload : la colonne est protégée
+    // depuis la migration 045 (revoke update (credit_limit) — même un
+    // Owner ne peut plus la changer par un update direct), seule
+    // set_credit_limit() le peut, pour que chaque changement soit tracé
+    // dans audit_log. Envoyer credit_limit ici ferait échouer TOUT
+    // l'update (violation de privilège colonne), pas seulement ce champ —
+    // voir handleSaveCreditLimit pour la limite d'un client existant.
     const payload = {
       tenant_id: tenantId, code: form.code.trim() || genCode(customers),
       first_name: form.customerType === 'INDIVIDUAL' ? form.firstName.trim() : null,
@@ -139,19 +177,37 @@ export default function CustomersPage() {
       company_name: form.customerType === 'BUSINESS' ? form.companyName.trim() : null,
       email: form.email.trim() || null, phone: form.phone.trim() || null,
       address: form.address.trim() || null, city: form.city.trim() || null,
-      customer_type: form.customerType, credit_limit: Number(form.creditLimit) || 0,
-      credit_used: editing?.creditUsed || 0,
+      customer_type: form.customerType,
       notes: form.notes.trim() || null, is_active: form.isActive,
     };
     try {
       const { error } = editing
         ? await supabase.from('customers').update(payload).eq('id', editing.id)
-        : await supabase.from('customers').insert(payload);
+        // Magasin d'inscription (modèle "agence bancaire", migration 044) :
+        // figé à la création, jamais réécrit après coup — pas de "transfert"
+        // de client entre magasins dans cette passe. null si créé depuis le
+        // siège (currentStore absent), ouvert à tous comme un client existant.
+        // credit_limit à la création n'est PAS une "modification" au sens
+        // gouvernance — c'est une décision d'onboarding normale, seuls les
+        // CHANGEMENTS ultérieurs passent par set_credit_limit()/audit_log.
+        : await supabase.from('customers').insert({
+            ...payload, credit_limit: Number(form.creditLimit) || 0, credit_used: 0,
+            registered_store_id: currentStore?.id ?? null,
+          });
       if (error) throw error;
       setShowDialog(false);
     } catch (e) { setFormError('Erreur lors de la sauvegarde'); console.error(e); }
     finally { setIsSaving(false); }
   };
+
+  // `stores` (useAuthStore) ne contient que les magasins accessibles à
+  // l'utilisateur courant — un Responsable cantonné au Magasin A n'y voit
+  // pas le Magasin B. Un id introuvable ne veut donc PAS dire "supprimé" :
+  // le plus souvent c'est juste un magasin auquel ce compte n'a pas accès
+  // (cas normal et attendu). Étiquette neutre plutôt que "supprimé", qui
+  // laisserait croire à une perte de données.
+  const storeName = (id: string | null) => id ? (stores.find(s => s.id === id)?.name ?? 'Autre magasin') : 'Siège';
+  const canManage = (c: Customer) => canManageCustomerRecord(user?.storeIds, c.registeredStoreId);
 
   const handleDelete = async () => {
     if (!tenantId || !deleteTarget) return;
@@ -244,6 +300,11 @@ export default function CustomersPage() {
                   <TableHead>Client</TableHead>
                   <TableHead>Contact</TableHead>
                   <TableHead>Type</TableHead>
+                  {/* Modèle "agence bancaire" (migration 044) : le magasin
+                      où la fiche a été créée. Sans cette colonne, un
+                      Responsable qui ne voit soudain plus "Modifier" sur
+                      certains clients n'aurait aucune explication visible. */}
+                  <TableHead>Magasin d&apos;inscription</TableHead>
                   <TableHead className="text-right">Limite crédit</TableHead>
                   <TableHead className="text-right">Crédit utilisé</TableHead>
                   <TableHead className="text-center">Statut</TableHead>
@@ -277,6 +338,11 @@ export default function CustomersPage() {
                           {c.customerType === 'BUSINESS' ? 'Entreprise' : 'Particulier'}
                         </Badge>
                       </TableCell>
+                      <TableCell>
+                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${c.registeredStoreId ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {storeName(c.registeredStoreId)}
+                        </span>
+                      </TableCell>
                       <TableCell className="text-right text-sm">{formatCurrency(c.creditLimit)}</TableCell>
                       <TableCell className="text-right">
                         <div>
@@ -296,10 +362,26 @@ export default function CustomersPage() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => router.push(`/customers/${c.id}`)}><Eye className="h-4 w-4 mr-2" />Voir le détail</DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => openEdit(c)}><Edit className="h-4 w-4 mr-2" />Modifier</DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => setDeleteTarget(c)} className="text-red-600 focus:text-red-600"><Trash2 className="h-4 w-4 mr-2" />Supprimer</DropdownMenuItem>
+                            {/* Modifier/Supprimer réservés au magasin d'inscription du
+                                client (ou au siège) — voir canManageCustomerRecord.
+                                Masqués plutôt que désactivés : cohérent avec le reste
+                                de l'app (ex. Transferts dans sidebar-nav.tsx). La
+                                vraie barrière reste la policy RLS customers_update/
+                                delete, ceci n'est qu'un confort d'affichage. */}
+                            {canManage(c) && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => openEdit(c)}><Edit className="h-4 w-4 mr-2" />Modifier</DropdownMenuItem>
+                                {/* Action distincte de "Modifier" depuis la migration 045 :
+                                    chaque changement de limite doit être tracé séparément
+                                    (audit_log), colonne credit_limit protégée côté base. */}
+                                <DropdownMenuItem onClick={() => { setLimitTarget(c); setNewLimit(String(c.creditLimit)); setLimitReason(''); setLimitError(null); }}>
+                                  <ShieldCheck className="h-4 w-4 mr-2" />Modifier la limite de crédit
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => setDeleteTarget(c)} className="text-red-600 focus:text-red-600"><Trash2 className="h-4 w-4 mr-2" />Supprimer</DropdownMenuItem>
+                              </>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -365,17 +447,24 @@ export default function CustomersPage() {
               <Label>Adresse</Label>
               <Input value={form.address} onChange={(e) => f('address', e.target.value)} placeholder="Badalabougou..." />
             </div>
-            <div className="col-span-2 space-y-2">
-              <Label>Limite de crédit (FCFA)</Label>
-              {/* 0 est la valeur par défaut ET signifie « aucun crédit
-                  autorisé ». Sans cette précision, un commerçant crée ses
-                  clients, tente une vente à crédit, et se la voit refuser
-                  sans comprendre pourquoi. */}
-              <p className="text-xs text-gray-500">
-                0 = aucune vente à crédit possible pour ce client.
-              </p>
-              <Input type="number" min="0" value={form.creditLimit} onChange={(e) => f('creditLimit', e.target.value)} placeholder="0" />
-            </div>
+            {/* Uniquement à la création : limite initiale, décision
+                d'onboarding normale. Pour un client existant, changer la
+                limite est tracé séparément (gouvernance, migration 045) —
+                voir "Modifier la limite de crédit" dans le menu de la liste,
+                pas ce formulaire. */}
+            {!editing && (
+              <div className="col-span-2 space-y-2">
+                <Label>Limite de crédit initiale (FCFA)</Label>
+                {/* 0 est la valeur par défaut ET signifie « aucun crédit
+                    autorisé ». Sans cette précision, un commerçant crée ses
+                    clients, tente une vente à crédit, et se la voit refuser
+                    sans comprendre pourquoi. */}
+                <p className="text-xs text-gray-500">
+                  0 = aucune vente à crédit possible pour ce client.
+                </p>
+                <Input type="number" min="0" value={form.creditLimit} onChange={(e) => f('creditLimit', e.target.value)} placeholder="0" />
+              </div>
+            )}
             <div className="col-span-2 space-y-2">
               <Label>Notes</Label>
               <Textarea value={form.notes} onChange={(e) => f('notes', e.target.value)} placeholder="Notes sur le client..." rows={2} />
@@ -408,6 +497,42 @@ export default function CustomersPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Limite de crédit — action à part, tracée dans audit_log
+          (migration 045). Une hausse notifie le siège. */}
+      <Dialog open={!!limitTarget} onOpenChange={(o) => { if (!o) setLimitTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Limite de crédit — {limitTarget ? displayName(limitTarget) : ''}</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="bg-gray-50 rounded-lg px-3 py-2 text-sm">
+              Limite actuelle : <strong>{limitTarget ? formatCurrency(limitTarget.creditLimit) : ''}</strong>
+              {limitTarget && limitTarget.creditUsed > 0 && <> · déjà utilisé : {formatCurrency(limitTarget.creditUsed)}</>}
+            </div>
+            {limitError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700">{limitError}</div>
+            )}
+            <div className="space-y-2">
+              <Label>Nouvelle limite (FCFA) *</Label>
+              <Input type="number" min="0" value={newLimit} onChange={e => { setNewLimit(e.target.value); setLimitError(null); }} />
+            </div>
+            <div className="space-y-2">
+              <Label>Motif *</Label>
+              <Textarea
+                rows={2}
+                placeholder="ex: Historique de paiement fiable, augmentation demandée..."
+                value={limitReason}
+                onChange={e => { setLimitReason(e.target.value); setLimitError(null); }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLimitTarget(null)} disabled={isSavingLimit}>Annuler</Button>
+            <Button onClick={handleSaveCreditLimit} disabled={isSavingLimit || !limitReason.trim()} className="bg-primary-600 hover:bg-primary-700">
+              {isSavingLimit ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Enregistrement...</> : 'Enregistrer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

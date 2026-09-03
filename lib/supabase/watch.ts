@@ -46,6 +46,7 @@ const LABELS: Record<string, string> = {
   notifications: 'Notifications',
   invoices: 'Factures',
   users: 'Utilisateurs',
+  audit_log: "Journal d'audit",
 };
 
 function labelOf(table: string): string {
