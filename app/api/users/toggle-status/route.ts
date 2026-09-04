@@ -34,6 +34,12 @@ export async function POST(request: NextRequest) {
     if (existing.role === 'OWNER') {
       return NextResponse.json({ error: 'Impossible de modifier le Propriétaire' }, { status: 403 });
     }
+    // Même règle que /api/users/delete : un Administrateur ne touche pas à un
+    // autre Administrateur, seul le Propriétaire le peut — sinon deux ADMIN
+    // pouvaient se désactiver mutuellement sans aucun recours.
+    if (existing.role === 'ADMIN' && session.role !== 'OWNER') {
+      return NextResponse.json({ error: 'Seul le Propriétaire peut modifier le statut d\'un Administrateur' }, { status: 403 });
+    }
 
     await supabase.from('users').update({ is_active: isActive }).eq('id', uid);
 

@@ -203,7 +203,7 @@ export function UsersTable({ tenantId, users, currentUser, isLoading, isOwnerOrA
                           <Button variant="ghost" size="icon" className="h-8 w-8" title="Voir l'activité" onClick={() => router.push(`/users/${u.id}/activity`)}>
                             <Activity className="h-4 w-4 text-gray-400" />
                           </Button>
-                          {isOwnerOrAdmin && u.role !== 'OWNER' && u.id !== currentUser?.id && (
+                          {isOwnerOrAdmin && u.role !== 'OWNER' && u.id !== currentUser?.id && !(currentUser?.role === 'ADMIN' && u.role === 'ADMIN') && (
                             <Switch checked={u.isActive} onCheckedChange={() => toggleActive(u)} />
                           )}
                           {canEditUser(u) && (
