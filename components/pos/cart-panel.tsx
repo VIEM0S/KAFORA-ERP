@@ -7,11 +7,12 @@ import { displayCustomerName } from '@/hooks/use-checkout';
 
 interface CartPanelProps {
   inventory: Record<string, number>;
+  canDiscount: boolean;
   onOpenCustomerPicker: () => void;
   onPay: () => void;
 }
 
-export function CartPanel({ inventory, onOpenCustomerPicker, onPay }: CartPanelProps) {
+export function CartPanel({ inventory, canDiscount, onOpenCustomerPicker, onPay }: CartPanelProps) {
   const {
     items, removeItem, updateItemQuantity, removeSerialFromItem, clearCart, setCustomer, customer,
     getSubtotal, getTax, getTotal, getItemCount, discountPercent, setDiscount,
@@ -120,21 +121,24 @@ export function CartPanel({ inventory, onOpenCustomerPicker, onPay }: CartPanelP
               <span>TOTAL</span><span className="text-primary-600">{formatCurrency(total)}</span>
             </div>
           </div>
-          {/* Remise libre */}
-          <div className="flex items-center gap-1.5 mb-2">
-            <span className="text-xs text-gray-500 flex-shrink-0">Remise :</span>
-            {[0, 5, 10, 15, 20].map(d => (
-              <button key={d} onClick={() => setDiscount(d, d > 0 ? `Remise ${d}%` : null)}
-                className={`text-xs px-2 py-1 rounded-lg border transition-colors flex-shrink-0 ${discountPercent === d ? 'bg-primary-600 text-white border-primary-600' : 'border-gray-200 text-gray-600 hover:border-primary-400'}`}>
-                {d === 0 ? 'Aucune' : `${d}%`}
-              </button>
-            ))}
-            <div className="relative flex-1">
-              <input type="number" min="0" max="100" placeholder="%" value={discountPercent || ''}
-                onChange={e => { const v = Math.min(100, Math.max(0, Number(e.target.value))); setDiscount(v, v > 0 ? `Remise ${v}%` : null); }}
-                className="w-full text-xs border-2 border-gray-200 rounded-lg px-2 py-1 text-center focus:border-primary-400 focus:outline-none" />
+          {/* Remise libre — négociation manager, jamais un Caissier (voir
+              aussi le clamp à 0 côté serveur dans /api/pos/checkout). */}
+          {canDiscount && (
+            <div className="flex items-center gap-1.5 mb-2">
+              <span className="text-xs text-gray-500 flex-shrink-0">Remise :</span>
+              {[0, 5, 10, 15, 20].map(d => (
+                <button key={d} onClick={() => setDiscount(d, d > 0 ? `Remise ${d}%` : null)}
+                  className={`text-xs px-2 py-1 rounded-lg border transition-colors flex-shrink-0 ${discountPercent === d ? 'bg-primary-600 text-white border-primary-600' : 'border-gray-200 text-gray-600 hover:border-primary-400'}`}>
+                  {d === 0 ? 'Aucune' : `${d}%`}
+                </button>
+              ))}
+              <div className="relative flex-1">
+                <input type="number" min="0" max="100" placeholder="%" value={discountPercent || ''}
+                  onChange={e => { const v = Math.min(100, Math.max(0, Number(e.target.value))); setDiscount(v, v > 0 ? `Remise ${v}%` : null); }}
+                  className="w-full text-xs border-2 border-gray-200 rounded-lg px-2 py-1 text-center focus:border-primary-400 focus:outline-none" />
+              </div>
             </div>
-          </div>
+          )}
           <Button onClick={onPay} className="w-full bg-primary-600 hover:bg-primary-700 h-10 font-bold text-base">
             Payer {formatCurrency(total)}
           </Button>

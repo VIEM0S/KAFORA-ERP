@@ -42,6 +42,19 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createServiceRoleClient();
+
+    // Cloisonnement magasin (même contrôle que /api/pos/checkout et
+    // /api/sales/cancel) : sans ça, un Manager affecté au magasin A pouvait
+    // traiter un retour/remboursement sur une vente du magasin B. storeIds
+    // absent ou null = accès à tous (direction).
+    if (Array.isArray(session.storeIds)) {
+      const { data: sale } = await supabase.from('sales').select('store_id').eq('id', saleId).eq('tenant_id', tenantId).maybeSingle();
+      if (!sale) return NextResponse.json({ error: 'Vente introuvable' }, { status: 404 });
+      if (!sale.store_id || !session.storeIds.includes(sale.store_id)) {
+        return NextResponse.json({ error: "Vous n'avez pas accès à ce magasin" }, { status: 403 });
+      }
+    }
+
     const { data: result, error: rpcError } = await supabase.rpc('create_sale_return', {
       p_tenant_id: tenantId,
       p_sale_id: saleId,

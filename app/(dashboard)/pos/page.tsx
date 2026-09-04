@@ -14,6 +14,7 @@ import { CustomerPickerDialog } from '@/components/pos/customer-picker-dialog';
 import { SuccessDialog } from '@/components/pos/success-dialog';
 import { SerialPickerDialog } from '@/components/pos/serial-picker-dialog';
 import type { Product } from '@/lib/types';
+import { isManagerPlus } from '@/lib/auth/roles';
 import { supabase } from '@/lib/supabase/client';
 // watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
 // (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
@@ -146,6 +147,7 @@ export default function POSPage() {
 
         <CartPanel
           inventory={inventory}
+          canDiscount={isManagerPlus(user?.role)}
           onOpenCustomerPicker={() => setShowCustomerPicker(true)}
           onPay={checkout.openPayment}
         />

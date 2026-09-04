@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
 import { checkSubscriptionAllows } from '@/lib/api/subscription-guard';
+import { isManagerPlus } from '@/lib/auth/roles';
 
 interface CheckoutItem {
   productId: string;
@@ -100,9 +101,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Remise = négociation manager (commentaire du type CheckoutItem) — un
+    // Caissier n'a pas ce pouvoir. Sans ce contrôle serveur, un Caissier
+    // pouvait envoyer discount/discountPercent: 100 directement à cette
+    // route (le champ n'était clampé qu'à 0-100, jamais réservé à un rôle)
+    // et finaliser une vente à 0 FCFA tout en décrémentant le stock réel.
+    const callerCanDiscount = isManagerPlus(session.role);
+
     const lines = items.map((it) => {
       const p = productById.get(it.productId)!;
-      const discount = Math.min(Math.max(Number(it.discount) || 0, 0), 100); // clamp 0-100%
+      const discount = callerCanDiscount ? Math.min(Math.max(Number(it.discount) || 0, 0), 100) : 0; // clamp 0-100%
       const serials = p.track_serial && Array.isArray(it.serials) ? it.serials.filter(Boolean) : undefined;
       const quantity = serials ? serials.length : Math.max(1, Math.floor(Number(it.quantity) || 0));
       const unitPrice = p.selling_price;
@@ -117,7 +125,7 @@ export async function POST(request: NextRequest) {
 
     const subtotal = Math.round(lines.reduce((s, l) => s + l.quantity * l.unitPrice * (1 - l.discount / 100), 0));
     const taxTotal = Math.round(lines.reduce((s, l) => s + l.quantity * l.unitPrice * (1 - l.discount / 100) * (l.tax / 100), 0));
-    const cartDiscountPercent = Math.min(Math.max(Number(discountPercent) || 0, 0), 100);
+    const cartDiscountPercent = callerCanDiscount ? Math.min(Math.max(Number(discountPercent) || 0, 0), 100) : 0;
     const discountAmount = Math.round(subtotal * (cartDiscountPercent / 100));
     const total = subtotal + taxTotal - discountAmount;
     const itemCount = lines.reduce((s, l) => s + l.quantity, 0);
