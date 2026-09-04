@@ -160,7 +160,7 @@ export function StoreJournalDialog({ tenantId, storeId, storeName, onOpenChange 
           <p className="text-sm text-gray-600">Journée du {dateStr}</p>
         </div>
 
-        <div className="flex items-center justify-between print:hidden">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between print:hidden">
           <div className="flex items-center gap-2">
             <Label className="text-sm text-gray-500">Journée du</Label>
             <Input type="date" value={dateStr} onChange={e => setDateStr(e.target.value)} className="w-40" max={todayStr()} />

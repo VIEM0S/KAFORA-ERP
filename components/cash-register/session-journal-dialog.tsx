@@ -162,7 +162,7 @@ export function SessionJournalDialog({ tenantId, storeId, session, onOpenChange 
           </p>
         </div>
 
-        <div className="flex items-center justify-between print:hidden">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between print:hidden">
           <p className="text-sm text-gray-500">
             {formatDateTime(session.openedAt)}
             {session.closedAt ? ` → ${formatDateTime(session.closedAt)}` : ' → en cours'}

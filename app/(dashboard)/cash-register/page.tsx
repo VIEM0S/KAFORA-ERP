@@ -390,12 +390,12 @@ export default function CashRegisterPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Caisse</h1>
             <p className="text-sm text-gray-500 mt-1">{currentStore?.name || 'Magasin'}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {/* Tirer un journal (par caisse ou par magasin) est une action
                 de supervision, pas une action de caissier — même hiérarchie
                 que canViewHistory/otherOpenSessions plus bas (demandé
