@@ -9,6 +9,23 @@
  * (ex: forgot-password répond quand même "succès" au client pour ne pas
  * révéler si un compte existe, mais peut logger une alerte interne).
  */
+/**
+ * Échappe une chaîne avant de l'interpoler dans un `html:` envoyé à
+ * sendEmail() — tout champ modifiable par un utilisateur (nom de client,
+ * de compte...) doit passer par ici avant d'atterrir dans un email. Sans
+ * ça, un Manager renommant un client en `<a href="...">...</a>` peut faire
+ * envoyer un lien de phishing arbitraire depuis le domaine d'expédition
+ * vérifié de Kafora, à l'Owner/Admin qui reçoit l'alerte.
+ */
+export function escapeHtml(input: string): string {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export async function sendEmail(params: {
   to: string;
   subject: string;

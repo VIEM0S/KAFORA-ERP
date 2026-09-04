@@ -1,5 +1,5 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
-import { sendEmail } from '@/lib/email/send';
+import { sendEmail, escapeHtml } from '@/lib/email/send';
 import type { Database } from '@/lib/supabase/database.types';
 
 type AlertType = Database['public']['Enums']['alert_type'];
@@ -41,7 +41,7 @@ export async function notifyRole(
     const results = await Promise.all(
       (users ?? []).map((u) =>
         u.email
-          ? sendEmail({ to: u.email, subject: alert.title, html: `<p>${alert.message}</p>` })
+          ? sendEmail({ to: u.email, subject: alert.title, html: `<p>${escapeHtml(alert.message)}</p>` })
           : Promise.resolve({ sent: false, error: "Pas d'email sur ce compte" })
       )
     );
@@ -67,7 +67,7 @@ export async function notifyUser(tenantId: string, userId: string, title: string
   try {
     const { data: target } = await supabase.from('users').select('email').eq('id', userId).maybeSingle();
     if (target?.email) {
-      const result = await sendEmail({ to: target.email, subject: title, html: `<p>${message}</p>` });
+      const result = await sendEmail({ to: target.email, subject: title, html: `<p>${escapeHtml(message)}</p>` });
       if (!result.sent) console.error('Notification email non envoyée :', result.error);
     }
   } catch (e) {
