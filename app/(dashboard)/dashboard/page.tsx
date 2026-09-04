@@ -44,7 +44,7 @@ function useDashboardData(tenantId: string | undefined, storeId: string | undefi
 
     const unsubS = watch(
       'sales',
-      () => supabase.from('sales').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(300),
+      () => supabase.from('sales').select('*').eq('tenant_id', tenantId).eq('store_id', storeId as string).order('created_at', { ascending: false }).limit(300),
       rows => { setSales(rows.map(r => mapSale(r))); checkDone(); },
       undefined,
       `tenant_id=eq.${tenantId}`
@@ -79,11 +79,11 @@ function useDashboardData(tenantId: string | undefined, storeId: string | undefi
     );
 
     return () => { unsubS(); unsubP(); unsubI(); unsubC(); unsubCat(); };
-    // storeId est indispensable ici : la requête inventory le filtre
-    // directement (ligne ci-dessus). Sans lui dans les deps, changer de
-    // magasin gardait l'écoute sur l'ancien storeId indéfiniment — stock,
-    // ruptures et valeur de stock restaient ceux du magasin précédent tant
-    // que la page n'était pas rechargée en dur.
+    // storeId est indispensable ici : les requêtes sales et inventory le
+    // filtrent directement (lignes ci-dessus). Sans lui dans les deps,
+    // changer de magasin gardait l'écoute sur l'ancien storeId indéfiniment
+    // — CA, stock, ruptures et valeur de stock restaient ceux du magasin
+    // précédent tant que la page n'était pas rechargée en dur.
   }, [tenantId, storeId]);
 
   // Coût/marge réel — réservé aux Managers+ (RLS sale_cost_summary_select).
@@ -97,11 +97,11 @@ function useDashboardData(tenantId: string | undefined, storeId: string | undefi
   // (interroger toutes les sous-collections cost_summary d'un coup) — une
   // simple table avec tenant_id suffit ici, voir le plan de migration.
   useEffect(() => {
-    if (!tenantId || !isManagerPlus) return;
+    if (!tenantId || !storeId || !isManagerPlus) return;
     const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     return watch(
       'sale_cost_summary',
-      () => supabase.from('sale_cost_summary').select('cost_total').eq('tenant_id', tenantId)
+      () => supabase.from('sale_cost_summary').select('cost_total').eq('tenant_id', tenantId).eq('store_id', storeId)
         .gte('created_at', startOfMonth.toISOString()),
       rows => {
         const total = rows.reduce((s, r) => s + (r.cost_total || 0), 0);
@@ -113,7 +113,7 @@ function useDashboardData(tenantId: string | undefined, storeId: string | undefi
       },
       `tenant_id=eq.${tenantId}`
     );
-  }, [tenantId, isManagerPlus]);
+  }, [tenantId, storeId, isManagerPlus]);
 
   return { sales, products, inventory, credits, categories, monthlyCostTotal, isLoading };
 }

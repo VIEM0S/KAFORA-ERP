@@ -42,6 +42,7 @@ export default function PurchaseOrdersPage() {
   // de l'app — cohérence UI/API, pas une nouvelle restriction).
   const canManage = ['OWNER', 'ADMIN', 'MANAGER'].includes(user?.role || '');
   const tenantId = tenant?.id;
+  const storeId = currentStore?.id;
 
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -69,11 +70,16 @@ export default function PurchaseOrdersPage() {
   const [isReceiving, setIsReceiving] = useState(false);
 
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !storeId) return;
     const unsub1 = watch(
       'purchase_orders',
-      // purchase_order_items embarqué via la relation FK.
-      () => supabase.from('purchase_orders').select('*, purchase_order_items(*)').eq('tenant_id', tenantId).order('created_at', { ascending: false }),
+      // purchase_order_items embarqué via la relation FK. Filtré par
+      // store_id (comme la création, storeId: currentStore.id plus bas) :
+      // sans ce filtre, un Manager+ multi-magasins voyait les bons de
+      // commande de TOUS les magasins en changeant simplement de magasin
+      // via le sélecteur — même bug que cash-register/dashboard (store_id
+      // absent alors que la table le porte).
+      () => supabase.from('purchase_orders').select('*, purchase_order_items(*)').eq('tenant_id', tenantId).eq('store_id', storeId).order('created_at', { ascending: false }),
       rows => {
         setOrders(rows.map(r => mapPurchaseOrder(r, (r.purchase_order_items ?? []).map(mapPurchaseOrderItem))));
         setIsLoading(false);
@@ -96,7 +102,7 @@ export default function PurchaseOrdersPage() {
       `tenant_id=eq.${tenantId}`
     );
     return () => { unsub1(); unsub2(); unsub3(); };
-  }, [tenantId]);
+  }, [tenantId, storeId]);
 
   // Reprend une suggestion de réappro déposée par la page Alertes stock (voir
   // lib/purchase-orders/reorder-suggestion.ts). On attend que `products` soit
