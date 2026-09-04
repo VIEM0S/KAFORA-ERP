@@ -2701,6 +2701,21 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      adjust_inventory: {
+        Args: {
+          p_amount: number
+          p_caller_id: string
+          p_has_min_quantity: boolean
+          p_min_quantity: number
+          p_mode: string
+          p_product_id: string
+          p_product_name: string
+          p_reason: string
+          p_store_id: string
+          p_tenant_id: string
+        }
+        Returns: Json
+      }
       admin_extend_subscription: {
         Args: {
           p_amount: number

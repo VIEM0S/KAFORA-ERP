@@ -104,15 +104,19 @@ export default function AlertsPage() {
     setExpiringLotId(lot.id);
     try {
       await supabase.from('product_lots').update({ quantity: 0 }).eq('id', lot.id);
-      const inv = inventory.find(i => i.productId === lot.productId && i.storeId === lot.storeId);
-      const currentQty = inv?.quantity ?? 0;
-      const newQty = Math.max(0, currentQty - lot.quantity);
-      if (inv) await supabase.from('inventory').update({ quantity: newQty }).eq('id', inv.id);
-      await supabase.from('inventory_movements').insert({
-        tenant_id: tenantId, product_id: lot.productId, product_name: product?.name || 'Produit',
-        store_id: lot.storeId, type: 'ADJUSTMENT', quantity: -lot.quantity,
-        previous_quantity: currentQty, new_quantity: newQty, reason: 'Péremption',
+      // Décrément atomique côté serveur (verrou de ligne) — voir
+      // adjust_inventory() en RPC et le même correctif dans
+      // inventory/page.tsx (évite un "lost update" si une vente concurrente
+      // touche le même produit pendant l'opération).
+      const res = await fetch('/api/inventory/adjust', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId, storeId: lot.storeId, productId: lot.productId, productName: product?.name || 'Produit',
+          mode: 'remove', amount: lot.quantity, hasMinQuantity: false, reason: 'Péremption',
+        }),
       });
+      if (!res.ok) { const data = await res.json().catch(() => null); throw new Error(data?.error || 'Erreur'); }
     } catch (e) { console.error(e); }
     finally { setExpiringLotId(null); }
   };

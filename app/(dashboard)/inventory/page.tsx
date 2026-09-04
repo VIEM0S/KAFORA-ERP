@@ -112,24 +112,25 @@ export default function InventoryPage() {
     setIsSaving(true);
     setAdjError(null);
     try {
-      const currentQty = getStock(adjProduct.id);
-      const newQty = adjType === 'add' ? currentQty + qty : adjType === 'remove' ? Math.max(0, currentQty - qty) : qty;
       const minQuantity = adjSeuil.trim() === '' ? null : Number(adjSeuil);
 
-      const existing = inventory.find((i) => i.productId === adjProduct.id && i.storeId === storeId);
-      if (existing) {
-        await supabase.from('inventory').update({
-          quantity: newQty,
-          // `null` efface le seuil propre au magasin et fait retomber sur
-          // celui du produit — distinct de 0, qui désactive l'alerte.
-          min_quantity: minQuantity,
-        }).eq('id', existing.id);
-      } else {
-        await supabase.from('inventory').insert({
-          tenant_id: tenantId, product_id: adjProduct.id, store_id: storeId, quantity: newQty,
-          min_quantity: minQuantity,
-        });
-      }
+      // Calcul et écriture atomiques côté serveur (verrou de ligne sur la
+      // quantité RÉELLE, pas celle mise en cache côté client) — voir
+      // adjust_inventory() en RPC. Remplace l'ancien calcul client d'une
+      // quantité absolue, sujet à un "lost update" si une vente concurrente
+      // touchait le même produit entre l'ouverture du dialogue et l'envoi.
+      const res = await fetch('/api/inventory/adjust', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId, storeId, productId: adjProduct.id, productName: adjProduct.name,
+          mode: adjType, amount: qty,
+          hasMinQuantity: minQuantity !== null, minQuantity,
+          reason: adjNote || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erreur lors de l'enregistrement");
 
       // Ventilation additionnelle (lots ou séries), en plus du total
       // inventory.quantity déjà à jour ci-dessus — voir migration 041.
@@ -153,26 +154,13 @@ export default function InventoryPage() {
         if (error) throw error;
       }
 
-      // type ADJUSTMENT pour les deux sens (entrée/sortie manuelle) — même
-      // valeur d'enum que l'annulation de vente (cancel_sale), qui restocke
-      // aussi sous ADJUSTMENT ; le sens se lit dans le signe de `quantity`,
-      // pas dans un type "IN"/"OUT" séparé qui n'existe pas dans l'enum
-      // inventory_movement_type (les valeurs IN/OUT de l'ancien code
-      // Firestore n'avaient jamais été harmonisées avec le reste de l'app).
-      await supabase.from('inventory_movements').insert({
-        tenant_id: tenantId, product_id: adjProduct.id, product_name: adjProduct.name, store_id: storeId,
-        type: 'ADJUSTMENT',
-        quantity: adjType === 'set' ? newQty - currentQty : (adjType === 'remove' ? -qty : qty),
-        previous_quantity: currentQty, new_quantity: newQty,
-        reason: adjNote || 'Ajustement manuel',
-      });
       setAdjProduct(null); setAdjQty(''); setAdjNote(''); setAdjSeuil(''); setAdjExpiryDate(''); setAdjSerials('');
     } catch (e) {
       const code = (e as { code?: string })?.code;
       setAdjError(
         code === '23505'
           ? 'Un ou plusieurs numéros de série sont déjà enregistrés pour ce produit.'
-          : "Erreur lors de l'enregistrement. Réessayez."
+          : (e instanceof Error ? e.message : "Erreur lors de l'enregistrement. Réessayez.")
       );
       console.error(e);
     }
