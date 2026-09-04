@@ -1,0 +1,30 @@
+-- CORRECTIF DE SÉCURITÉ CRITIQUE, auto-introduit par la migration 050
+-- (adjust_inventory) et trouvé en revérifiant systématiquement les
+-- privilèges EXECUTE de toutes les fonctions SECURITY DEFINER du schéma,
+-- juste après l'avoir committée — même méthode que la migration 038, qui
+-- avait déjà documenté exactement ce piège :
+--
+-- `revoke execute ... from anon, authenticated` ne retire PAS le droit
+-- accordé par défaut à PUBLIC quand une fonction est créée — et l'inverse
+-- est vrai aussi (038 : Supabase accorde EXECUTE nommément à anon/
+-- authenticated, qu'un simple `revoke ... from public` ne retire pas). Une
+-- fonction fraîchement créée reste donc appelable tant que les DEUX
+-- révocations ne sont pas faites. La migration 050 n'avait fait que la
+-- seconde (`from anon, authenticated`), pas la première.
+--
+-- Gravité : adjust_inventory() est SECURITY DEFINER, ne vérifie plus aucun
+-- rôle en interne depuis son propre correctif (le contrôle a été déplacé
+-- dans /api/inventory/adjust — voir commentaire de la migration 050), et
+-- fait entièrement confiance à p_tenant_id/p_store_id tels quels. Confirmé
+-- en direct : `has_function_privilege('anon', ..., 'EXECUTE')` renvoyait
+-- true — n'importe quel visiteur non connecté (juste avec la clé publique
+-- intégrée à toutes les pages) pouvait manipuler le stock de N'IMPORTE
+-- QUEL tenant/magasin/produit, sans jamais se connecter.
+--
+-- Déjà corrigé en direct sur la base de production avant cette migration
+-- (fenêtre d'exposition réelle : entre le push du commit qui a introduit
+-- la RPC et cette vérification, quelques minutes plus tard, dans la même
+-- session) — cette migration existe pour que le fichier source reflète
+-- l'état réel de la base et qu'un environnement rejoué depuis zéro ne
+-- réintroduise pas la faille.
+revoke execute on function public.adjust_inventory(uuid, uuid, uuid, text, text, int, boolean, int, text, uuid) from public, anon, authenticated;
