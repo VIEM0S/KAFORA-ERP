@@ -171,7 +171,12 @@ export default function CashRegisterPage() {
       // caisses peuvent être ouvertes en parallèle, cette table doit rester
       // un historique de clôtures, pas mélanger avec les sessions encore en
       // cours (voir le panneau "Autres caisses ouvertes" juste en dessous).
-      () => supabase.from('cash_sessions').select('*').eq('tenant_id', tenantId).eq('status', 'CLOSED')
+      // store_id=storeId : sans ce filtre (bug trouvé lors de l'audit —
+      // préexistant, jamais visible tant qu'il n'y avait qu'un magasin
+      // testé), un Responsable régional ou Admin changeant de magasin via
+      // le sélecteur voyait l'historique de TOUS les magasins du tenant
+      // mélangés, pas seulement celui affiché à l'écran.
+      () => supabase.from('cash_sessions').select('*').eq('tenant_id', tenantId).eq('store_id', storeId).eq('status', 'CLOSED')
         .order('opened_at', { ascending: false }).limit(10),
       rows => setSessionHistory(rows.map(mapCashSession)),
       undefined,
