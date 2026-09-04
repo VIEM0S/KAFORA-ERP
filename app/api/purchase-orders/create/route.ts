@@ -32,6 +32,12 @@ export async function POST(request: NextRequest) {
     if (tenantId !== session.tenantId) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
     }
+    // Cloisonnement magasin (même contrôle que /api/pos/checkout et
+    // /api/transfers/create) : sans ça, un Manager affecté au magasin A
+    // pouvait créer un bon de commande pour le magasin B.
+    if (Array.isArray(session.storeIds) && !session.storeIds.includes(storeId)) {
+      return NextResponse.json({ error: "Vous n'avez pas accès à ce magasin" }, { status: 403 });
+    }
 
     const supabase = createServiceRoleClient();
     const { data: supplier } = await supabase.from('suppliers').select('id').eq('id', supplierId).eq('tenant_id', tenantId).maybeSingle();

@@ -34,6 +34,21 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createServiceRoleClient();
+
+    // Cloisonnement magasin (même contrôle que /api/sales/cancel et
+    // /api/sales/returns/create) : receive_purchase_order() lit le magasin
+    // depuis le bon de commande lui-même (jamais du client), mais ne
+    // vérifie pas que l'appelant y a accès — sans ce contrôle ici, un
+    // Manager du magasin A pouvait réceptionner (stock réel incrémenté) un
+    // bon de commande du magasin B en connaissant juste son identifiant.
+    if (Array.isArray(session.storeIds)) {
+      const { data: po } = await supabase.from('purchase_orders').select('store_id').eq('id', purchaseOrderId).eq('tenant_id', tenantId).maybeSingle();
+      if (!po) return NextResponse.json({ error: 'Bon de commande introuvable' }, { status: 404 });
+      if (!po.store_id || !session.storeIds.includes(po.store_id)) {
+        return NextResponse.json({ error: "Vous n'avez pas accès à ce magasin" }, { status: 403 });
+      }
+    }
+
     const { error: rpcError } = await supabase.rpc('receive_purchase_order', {
       p_tenant_id: tenantId,
       p_po_id: purchaseOrderId,
