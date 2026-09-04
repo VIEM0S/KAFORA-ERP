@@ -3,8 +3,10 @@
 import { useState, useEffect } from 'react';
 import {
   DollarSign, Lock, Unlock, RefreshCw, TrendingUp,
-  TrendingDown, History, CheckCircle2, AlertCircle, Banknote
+  TrendingDown, History, CheckCircle2, AlertCircle, Banknote, Receipt, BookOpen
 } from 'lucide-react';
+import { SessionJournalDialog } from '@/components/cash-register/session-journal-dialog';
+import { StoreJournalDialog } from '@/components/cash-register/store-journal-dialog';
 import { DashboardLayout } from '@/components/layout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -46,6 +48,14 @@ export default function CashRegisterPage() {
   const [closingAmount, setClosingAmount] = useState('');
   const [closeNotes, setCloseNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  // Journal détaillé (voir components/cash-register/session-journal-dialog.tsx)
+  // — accessible depuis ma propre session, "Autres caisses ouvertes" et
+  // l'historique des clôtures : n'importe quelle session que je peux déjà
+  // voir dans cette page.
+  const [journalTarget, setJournalTarget] = useState<CashRegisterSession | null>(null);
+  // Journal consolidé du magasin (tous caissiers confondus, par journée) —
+  // voir components/cash-register/store-journal-dialog.tsx.
+  const [showStoreJournal, setShowStoreJournal] = useState(false);
 
   // ─── État de la caisse ────────────────────────────────────────────────────
   // Remplace l'écoute RTDB (Realtime Database est entièrement éliminée) : la
@@ -53,11 +63,14 @@ export default function CashRegisterPage() {
   // abonnement Realtime Postgres — même rôle, une seule source de vérité au
   // lieu d'une double-écriture Firestore+RTDB.
   useEffect(() => {
-    if (!tenantId || !storeId) return;
+    if (!tenantId || !storeId || !user?.id) return;
+    // MA caisse personnelle (migration 047) — plus "la" caisse du magasin :
+    // deux collègues peuvent désormais avoir chacun la leur ouverte en même
+    // temps, sans se marcher dessus.
     return watch(
       'cash_sessions',
       () => supabase.from('cash_sessions').select('*').eq('tenant_id', tenantId).eq('store_id', storeId)
-        .eq('status', 'OPEN').limit(1),
+        .eq('opened_by', user.id).eq('status', 'OPEN').limit(1),
       rows => {
         setSession(rows.length > 0 ? mapCashSession(rows[0]) : null);
         setIsLoading(false);
@@ -65,30 +78,31 @@ export default function CashRegisterPage() {
       undefined,
       `tenant_id=eq.${tenantId}`
     );
-  }, [tenantId, storeId]);
+  }, [tenantId, storeId, user?.id]);
 
   // ─── Ventes du jour (pour calcul attendu) ────────────────────────────────
   // Fix (héritage Firestore) : ne filtrait ni par magasin ni par session — le
   // solde attendu à la fermeture mélangeait les ventes de TOUS les magasins
   // du tenant, et comptait depuis minuit même si la caisse avait été ouverte
-  // plus tard dans la journée. Scope au magasin courant + à la session en
-  // cours (depuis son ouverture), ce qui est aussi ce qui permet à un
-  // Caissier de ne voir que le total de SA session (ou de la session
-  // partagée en cas de relève), jamais un CA jour/mois consolidé.
+  // plus tard dans la journée. Scope au magasin courant + à MA session
+  // personnelle (migration 047, depuis son ouverture) : sans le filtre
+  // cashier_id, les ventes d'un collègue ayant sa propre caisse ouverte en
+  // parallèle se mélangeraient dans mon solde attendu.
   useEffect(() => {
-    if (!tenantId || !storeId) return;
+    if (!tenantId || !storeId || !user?.id) return;
     const sinceStart = session?.status === 'OPEN'
       ? session.openedAt
       : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
     return watch(
       'sales',
       () => supabase.from('sales').select('*').eq('tenant_id', tenantId).eq('store_id', storeId)
+        .eq('cashier_id', user.id)
         .gte('created_at', sinceStart.toISOString()).order('created_at', { ascending: false }).limit(200),
       rows => setTodaySales(rows.map(r => mapSale(r))),
       undefined,
       `tenant_id=eq.${tenantId}`
     );
-  }, [tenantId, storeId, session?.status, session?.openedAt]);
+  }, [tenantId, storeId, user?.id, session?.status, session?.openedAt]);
 
   // ─── Versements de dette encaissés pendant la session ────────────────────
   //
@@ -97,24 +111,26 @@ export default function CashRegisterPage() {
   // directs) — plus besoin de la requête par groupe de collections que
   // Firestore imposait pour une sous-collection.
   useEffect(() => {
-    if (!tenantId || !storeId) { setCreditRepaymentTotal(0); return; }
+    if (!tenantId || !storeId || !user?.id) { setCreditRepaymentTotal(0); return; }
     const sinceStart = session?.status === 'OPEN'
       ? session.openedAt
       : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
 
     return watch(
       'credit_payments',
-      // On ne compte que les règlements en espèces : un virement ou un
-      // paiement Mobile Money ne passe pas par le tiroir.
+      // On ne compte que les règlements en espèces (un virement ou un
+      // paiement Mobile Money ne passe pas par le tiroir) ET encaissés par
+      // MOI (migration 047) — sinon un versement pris par un collègue sur
+      // sa propre caisse gonflerait mon solde attendu.
       () => supabase.from('credit_payments').select('amount').eq('tenant_id', tenantId).eq('store_id', storeId)
-        .eq('payment_method', 'CASH').gte('created_at', sinceStart.toISOString()),
+        .eq('payment_method', 'CASH').eq('user_id', user.id).gte('created_at', sinceStart.toISOString()),
       rows => setCreditRepaymentTotal(rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0)),
       // Coupure ou refus RLS : on n'empêche pas la caisse de fonctionner, on
       // affiche simplement 0 de ce côté.
       () => setCreditRepaymentTotal(0),
       `tenant_id=eq.${tenantId}`
     );
-  }, [tenantId, storeId, session?.status, session?.openedAt]);
+  }, [tenantId, storeId, user?.id, session?.status, session?.openedAt]);
 
   // ─── Remboursements sortis du tiroir pendant la session ──────────────────
   //
@@ -125,36 +141,92 @@ export default function CashRegisterPage() {
   // On ne compte que `cash_refund`, pas `refund_amount` : la part imputée sur
   // une dette client n'a jamais quitté le tiroir.
   useEffect(() => {
-    if (!tenantId || !storeId) { setCashRefundTotal(0); return; }
+    if (!tenantId || !storeId || !user?.id) { setCashRefundTotal(0); return; }
     const sinceStart = session?.status === 'OPEN'
       ? session.openedAt
       : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
 
     return watch(
       'sale_returns',
+      // processed_by = MOI (migration 047) : un remboursement traité par un
+      // collègue sur sa propre caisse ne doit pas amputer mon solde attendu.
       () => supabase.from('sale_returns').select('cash_refund, refund_amount').eq('tenant_id', tenantId).eq('store_id', storeId)
-        .eq('refund_method', 'CASH').gte('created_at', sinceStart.toISOString()),
+        .eq('refund_method', 'CASH').eq('processed_by', user.id).gte('created_at', sinceStart.toISOString()),
       rows => setCashRefundTotal(rows.reduce((sum, r) => sum + (Number(r.cash_refund ?? r.refund_amount) || 0), 0)),
       () => setCashRefundTotal(0),
       `tenant_id=eq.${tenantId}`
     );
-  }, [tenantId, storeId, session?.status, session?.openedAt]);
+  }, [tenantId, storeId, user?.id, session?.status, session?.openedAt]);
 
   // ─── Historique des sessions ──────────────────────────────────────────────
-  // Réservé à Manager+ : un Caissier n'a besoin que du statut de la session en
-  // cours pour ouvrir/fermer son poste, pas de l'historique des clôtures
-  // passées (CA d'autres jours/caissiers/magasins).
+  // Réservé à Manager+ : un Caissier n'a besoin que du statut de sa propre
+  // session en cours pour ouvrir/fermer son poste, pas de l'historique des
+  // clôtures passées (CA d'autres jours/caissiers/magasins).
   const canViewHistory = isManagerPlusRole(user?.role);
   useEffect(() => {
     if (!tenantId || !storeId || !canViewHistory) { setSessionHistory([]); return; }
     return watch(
       'cash_sessions',
-      () => supabase.from('cash_sessions').select('*').eq('tenant_id', tenantId).order('opened_at', { ascending: false }).limit(10),
+      // status='CLOSED' explicite (migration 047) : depuis que plusieurs
+      // caisses peuvent être ouvertes en parallèle, cette table doit rester
+      // un historique de clôtures, pas mélanger avec les sessions encore en
+      // cours (voir le panneau "Autres caisses ouvertes" juste en dessous).
+      () => supabase.from('cash_sessions').select('*').eq('tenant_id', tenantId).eq('status', 'CLOSED')
+        .order('opened_at', { ascending: false }).limit(10),
       rows => setSessionHistory(rows.map(mapCashSession)),
       undefined,
       `tenant_id=eq.${tenantId}`
     );
   }, [tenantId, storeId, canViewHistory]);
+
+  // ─── Autres caisses ouvertes en ce moment (migration 047) ─────────────────
+  // Réservé à Manager+ : vue d'ensemble des collègues qui ont chacun leur
+  // propre caisse ouverte sur CE magasin — utile pour repérer une caisse
+  // oubliée ouverte, et la seule façon de la clôturer si son titulaire n'est
+  // plus là (voir handleCloseOther, qui utilise le même contrôle de rôle
+  // que app/api/cash-register/close/route.ts).
+  const [otherOpenSessions, setOtherOpenSessions] = useState<CashRegisterSession[]>([]);
+  useEffect(() => {
+    if (!tenantId || !storeId || !canViewHistory) { setOtherOpenSessions([]); return; }
+    return watch(
+      'cash_sessions',
+      () => supabase.from('cash_sessions').select('*').eq('tenant_id', tenantId).eq('store_id', storeId)
+        .eq('status', 'OPEN'),
+      rows => setOtherOpenSessions(rows.map(mapCashSession).filter(s => s.openedBy !== user?.id)),
+      undefined,
+      `tenant_id=eq.${tenantId}`
+    );
+  }, [tenantId, storeId, canViewHistory, user?.id]);
+
+  // ─── Clôturer la caisse d'un collègue (Manager+) ───────────────────────────
+  const [closeTarget, setCloseTarget] = useState<CashRegisterSession | null>(null);
+  const [targetCountedAmount, setTargetCountedAmount] = useState('');
+  const [targetCloseError, setTargetCloseError] = useState<string | null>(null);
+  const [targetCloseResult, setTargetCloseResult] = useState<{ expectedBalance: number; difference: number } | null>(null);
+  const handleCloseOther = async () => {
+    if (!tenantId || !storeId || !user || !closeTarget) return;
+    setIsSaving(true);
+    setTargetCloseError(null);
+    try {
+      const res = await fetch('/api/cash-register/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId, storeId,
+          targetUserId: closeTarget.openedBy,
+          countedAmount: Number(targetCountedAmount) || 0,
+          closedByName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || 'La clôture a échoué');
+      setTargetCloseResult({ expectedBalance: data.expectedBalance || 0, difference: data.difference || 0 });
+    } catch (e) {
+      setTargetCloseError(e instanceof Error ? e.message : 'La clôture a échoué');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // ─── Calculs ────────────────────────────────────────────────────────────
   // ─── Rapprochement de caisse ────────────────────────────────────────────
@@ -318,16 +390,35 @@ export default function CashRegisterPage() {
             <h1 className="text-2xl font-bold text-gray-900">Caisse</h1>
             <p className="text-sm text-gray-500 mt-1">{currentStore?.name || 'Magasin'}</p>
           </div>
-          {isOpen ? (
-            <Button onClick={() => { setClosingAmount(''); setCloseNotes(''); setShowClose(true); }}
-              variant="outline" className="text-red-600 border-red-200 hover:bg-red-50">
-              <Lock className="h-4 w-4 mr-2" />Fermer la caisse
-            </Button>
-          ) : (
-            <Button onClick={() => { setOpeningAmount(''); setShowOpen(true); }} className="bg-green-600 hover:bg-green-700">
-              <Unlock className="h-4 w-4 mr-2" />Ouvrir la caisse
-            </Button>
-          )}
+          <div className="flex gap-2">
+            {/* Tirer un journal (par caisse ou par magasin) est une action
+                de supervision, pas une action de caissier — même hiérarchie
+                que canViewHistory/otherOpenSessions plus bas (demandé
+                explicitement : "c'est le responsable qui peut... tirer le
+                journal", "il doit avoir le journal par magasin également"). */}
+            {isManagerPlusRole(user?.role) && storeId && (
+              <Button variant="outline" onClick={() => setShowStoreJournal(true)}>
+                <BookOpen className="h-4 w-4 mr-2" />Journal du magasin
+              </Button>
+            )}
+            {isOpen ? (
+              <>
+                {isManagerPlusRole(user?.role) && (
+                  <Button variant="outline" onClick={() => session && setJournalTarget(session)}>
+                    <Receipt className="h-4 w-4 mr-2" />Journal
+                  </Button>
+                )}
+                <Button onClick={() => { setClosingAmount(''); setCloseNotes(''); setShowClose(true); }}
+                  variant="outline" className="text-red-600 border-red-200 hover:bg-red-50">
+                  <Lock className="h-4 w-4 mr-2" />Fermer la caisse
+                </Button>
+              </>
+            ) : (
+              <Button onClick={() => { setOpeningAmount(''); setShowOpen(true); }} className="bg-green-600 hover:bg-green-700">
+                <Unlock className="h-4 w-4 mr-2" />Ouvrir la caisse
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* État de la caisse */}
@@ -395,6 +486,37 @@ export default function CashRegisterPage() {
         </div>
 
         {/* Historique des sessions — réservé à Manager+ */}
+        {/* Autres caisses ouvertes en ce moment (migration 047, Manager+) —
+            plusieurs collègues peuvent chacun avoir la leur ouverte sur ce
+            magasin ; celle-ci sert à repérer une caisse oubliée ouverte, et
+            c'est le seul moyen de la clôturer si son titulaire n'est plus là. */}
+        {canViewHistory && otherOpenSessions.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Unlock className="h-5 w-5 text-amber-600" />Autres caisses ouvertes</CardTitle>
+            <CardDescription>Sessions ouvertes par d&apos;autres utilisateurs sur ce magasin</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {otherOpenSessions.map(s => (
+              <div key={s.id} className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">{s.openedByName || 'Utilisateur'}</p>
+                  <p className="text-xs text-gray-500">Ouverte {formatDateTime(s.openedAt)} · Fond initial {formatCurrency(s.openingBalance)}</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setJournalTarget(s)}>
+                    <Receipt className="h-3.5 w-3.5 mr-1.5" />Journal
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => { setCloseTarget(s); setTargetCountedAmount(''); setTargetCloseError(null); setTargetCloseResult(null); }}>
+                    <Lock className="h-3.5 w-3.5 mr-1.5" />Clôturer
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+        )}
+
         {canViewHistory && (
         <Card>
           <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
@@ -436,12 +558,14 @@ export default function CashRegisterPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>Ouvert par</TableHead>
                     <TableHead>Ouverture</TableHead>
                     <TableHead>Fermeture</TableHead>
                     <TableHead className="text-right">Fond initial</TableHead>
                     <TableHead className="text-right">Attendu</TableHead>
                     <TableHead className="text-right">Compté</TableHead>
                     <TableHead className="text-right">Écart</TableHead>
+                    <TableHead className="w-12" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -449,6 +573,7 @@ export default function CashRegisterPage() {
                     const diff = data.difference || 0;
                     return (
                       <TableRow key={data.id}>
+                        <TableCell className="text-sm text-gray-700">{data.openedByName || '—'}</TableCell>
                         <TableCell className="text-sm text-gray-500">{formatDateTime(data.openedAt)}</TableCell>
                         <TableCell className="text-sm text-gray-500">{data.closedAt ? formatDateTime(data.closedAt) : '—'}</TableCell>
                         <TableCell className="text-right text-sm">{formatCurrency(data.openingBalance)}</TableCell>
@@ -458,6 +583,11 @@ export default function CashRegisterPage() {
                           <span className={`text-sm font-bold ${diff === 0 ? 'text-green-600' : diff > 0 ? 'text-blue-600' : 'text-red-600'}`}>
                             {diff > 0 ? '+' : ''}{formatCurrency(diff)}
                           </span>
+                        </TableCell>
+                        <TableCell>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" title="Voir le journal" onClick={() => setJournalTarget(data)}>
+                            <Receipt className="h-4 w-4 text-gray-400" />
+                          </Button>
                         </TableCell>
                       </TableRow>
                     );
@@ -577,6 +707,72 @@ export default function CashRegisterPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog fermeture de la caisse d'un collègue (Manager+, migration 047).
+          Pas d'aperçu du solde attendu en direct ici : contrairement à MA
+          propre caisse, je n'ai pas les ventes de ce collègue chargées
+          côté client — le serveur calcule le vrai solde attendu et
+          l'affiche APRÈS validation, jamais avant. */}
+      <Dialog open={!!closeTarget} onOpenChange={o => { if (!o) setCloseTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Clôturer la caisse — {closeTarget?.openedByName || 'Utilisateur'}</DialogTitle></DialogHeader>
+          {targetCloseResult ? (
+            <div className="space-y-4 py-2">
+              <div className={`rounded-lg p-3 text-center ${targetCloseResult.difference === 0 ? 'bg-green-50' : targetCloseResult.difference > 0 ? 'bg-blue-50' : 'bg-red-50'}`}>
+                <p className="text-xs text-gray-500 mb-1">Solde attendu (calculé côté serveur)</p>
+                <p className="text-lg font-bold text-gray-900">{formatCurrency(targetCloseResult.expectedBalance)}</p>
+                <p className="text-xs text-gray-500 mt-2 mb-1">Écart</p>
+                <p className={`text-lg font-bold ${targetCloseResult.difference === 0 ? 'text-green-700' : targetCloseResult.difference > 0 ? 'text-blue-700' : 'text-red-700'}`}>
+                  {targetCloseResult.difference > 0 ? '+' : ''}{formatCurrency(targetCloseResult.difference)}
+                </p>
+              </div>
+              <Button className="w-full" onClick={() => setCloseTarget(null)}>Fermer</Button>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-4 py-2">
+                <div className="space-y-2">
+                  <Label>Montant compté en caisse *</Label>
+                  <p className="text-xs text-gray-500">
+                    Comptez les billets et pièces réellement présents dans ce tiroir.
+                  </p>
+                  <Input type="number" min="0" placeholder="0" value={targetCountedAmount}
+                    onChange={e => setTargetCountedAmount(e.target.value)} className="text-lg font-bold" autoFocus />
+                </div>
+                {targetCloseError && (
+                  <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+                    <AlertCircle className="h-4 w-4 flex-shrink-0" />{targetCloseError}
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setCloseTarget(null)}>Annuler</Button>
+                <Button onClick={handleCloseOther} disabled={isSaving || !targetCountedAmount} className="bg-red-600 hover:bg-red-700">
+                  {isSaving ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Fermeture...</> : <><Lock className="h-4 w-4 mr-2" />Confirmer la fermeture</>}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {journalTarget && tenantId && storeId && (
+        <SessionJournalDialog
+          tenantId={tenantId}
+          storeId={storeId}
+          session={journalTarget}
+          onOpenChange={(o) => { if (!o) setJournalTarget(null); }}
+        />
+      )}
+
+      {showStoreJournal && tenantId && storeId && (
+        <StoreJournalDialog
+          tenantId={tenantId}
+          storeId={storeId}
+          storeName={currentStore?.name || 'Magasin'}
+          onOpenChange={(o) => { if (!o) setShowStoreJournal(false); }}
+        />
+      )}
     </DashboardLayout>
   );
 }

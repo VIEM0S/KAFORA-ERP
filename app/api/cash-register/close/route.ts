@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
-import { resolveCashRegisterId } from '@/lib/api/cash-register';
+import { findCashRegisterId } from '@/lib/api/cash-register';
+import { isManagerPlus } from '@/lib/auth/roles';
 
 /**
  * Clôture une caisse. Toute l'atomicité (relecture de la session ouverte,
@@ -15,7 +16,7 @@ export async function POST(request: NextRequest) {
     const session = await getSessionClaims();
     if (!session) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
 
-    const { tenantId, storeId, countedAmount, notes, closedByName } = await request.json();
+    const { tenantId, storeId, countedAmount, notes, closedByName, targetUserId } = await request.json();
     if (!tenantId || !storeId || countedAmount === undefined) {
       return NextResponse.json({ error: 'Champs manquants' }, { status: 400 });
     }
@@ -29,12 +30,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Vous n'avez pas accès à ce magasin" }, { status: 403 });
     }
 
+    // Caisse PERSONNELLE de l'appelant par défaut (migration 047). Un
+    // Manager+ peut clôturer celle d'un autre (ex: un caissier a oublié en
+    // partant, ou n'a plus de compte) — un simple Caissier ne peut fermer
+    // que la sienne, jamais celle d'un collègue.
+    if (targetUserId && targetUserId !== session.uid && !isManagerPlus(session.role)) {
+      return NextResponse.json({ error: 'Seuls les responsables peuvent clôturer la caisse d\'un autre utilisateur' }, { status: 403 });
+    }
+    const ownerUserId = (targetUserId as string) || session.uid;
+
     const supabase = createServiceRoleClient();
-    // L'app n'a jamais eu qu'une seule caisse par magasin — jamais un
-    // identifiant fourni par le client (voir lib/api/cash-register.ts).
-    // Si ce magasin n'a jamais eu de caisse ouverte, il n'y a de toute façon
-    // rien à clôturer : la RPC le signale elle-même via NO_OPEN_SESSION.
-    const registerId = await resolveCashRegisterId(supabase, tenantId, storeId);
+    // Si cette personne n'a jamais eu de caisse dans ce magasin, il n'y a
+    // de toute façon rien à clôturer.
+    const registerId = await findCashRegisterId(supabase, tenantId, storeId, ownerUserId);
+    if (!registerId) {
+      return NextResponse.json({ error: 'Aucune caisse ouverte trouvée' }, { status: 404 });
+    }
     const { data: result, error: rpcError } = await supabase.rpc('close_cash_register', {
       p_tenant_id: tenantId,
       p_store_id: storeId,

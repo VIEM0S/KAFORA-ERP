@@ -27,9 +27,13 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createServiceRoleClient();
-    // L'app n'a jamais eu qu'une seule caisse par magasin — jamais un
+    // Caisse PERSONNELLE de l'appelant (migration 047) — jamais un
     // identifiant fourni par le client (voir lib/api/cash-register.ts).
-    const registerId = await resolveCashRegisterId(supabase, tenantId, storeId);
+    // C'est ce qui permet à deux caissiers d'avoir chacun leur propre
+    // session ouverte simultanément : ALREADY_OPEN ne se déclenche
+    // désormais que si CET utilisateur précis a déjà sa caisse ouverte,
+    // jamais à cause d'un collègue.
+    const registerId = await resolveCashRegisterId(supabase, tenantId, storeId, session.uid, openedByName);
     const { data: result, error: rpcError } = await supabase.rpc('open_cash_register', {
       p_tenant_id: tenantId,
       p_store_id: storeId,

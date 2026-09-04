@@ -180,6 +180,7 @@ export type Database = {
           id: string
           is_active: boolean
           name: string
+          owner_user_id: string | null
           store_id: string | null
           tenant_id: string
           updated_at: string
@@ -189,6 +190,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           name: string
+          owner_user_id?: string | null
           store_id?: string | null
           tenant_id: string
           updated_at?: string
@@ -198,6 +200,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           name?: string
+          owner_user_id?: string | null
           store_id?: string | null
           tenant_id?: string
           updated_at?: string

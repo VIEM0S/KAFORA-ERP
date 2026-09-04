@@ -48,16 +48,20 @@ export default function POSPage() {
   const [registerOpen, setRegisterOpen] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (!tenantId || !storeId) return;
+    if (!tenantId || !storeId || !user?.id) return;
+    // MA caisse personnelle (migration 047) : la vente que je m'apprête à
+    // encaisser entrera dans MA clôture, pas dans celle d'un collègue qui a
+    // sa propre caisse ouverte en parallèle — l'avertissement doit donc
+    // porter sur MON état, pas sur celui du magasin en général.
     return watch(
       'cash_sessions',
       () => supabase.from('cash_sessions').select('id').eq('tenant_id', tenantId).eq('store_id', storeId)
-        .eq('status', 'OPEN').limit(1),
+        .eq('opened_by', user.id).eq('status', 'OPEN').limit(1),
       rows => setRegisterOpen(rows.length > 0),
       () => setRegisterOpen(null),
       `tenant_id=eq.${tenantId}`
     );
-  }, [tenantId, storeId]);
+  }, [tenantId, storeId, user?.id]);
 
   // ─── Ajout au panier avec vérification stock ─────────────────────────────
   const handleAddItem = (p: Product) => {
