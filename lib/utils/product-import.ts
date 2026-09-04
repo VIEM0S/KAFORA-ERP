@@ -133,10 +133,14 @@ function rowsToProducts(rows: unknown[][]): ParsedProductRow[] {
     else if (Number.isNaN(sellingPrice) || sellingPrice <= 0) errors.push('Prix de vente invalide');
 
     const purchasePrice = parseNumber(get('purchasePrice'));
+    if (!Number.isNaN(purchasePrice) && purchasePrice < 0) errors.push("Prix d'achat invalide (négatif)");
     const initialStock = colMap.initialStock !== undefined ? parseNumber(get('initialStock')) : 0;
     if (Number.isNaN(initialStock)) warnings.push('Stock initial illisible, mis à 0');
 
     const taxRate = colMap.taxRate !== undefined ? parseNumber(get('taxRate')) : 0;
+    // Un taux négatif ou aberrant corromprait silencieusement les calculs de
+    // TVA/marge en aval (sale_cost_summary, rapports) — jamais rejeté avant.
+    if (!Number.isNaN(taxRate) && (taxRate < 0 || taxRate > 100)) errors.push('Taux de TVA invalide (0-100%)');
     const alertThreshold = colMap.alertThreshold !== undefined ? parseNumber(get('alertThreshold')) : 10;
 
     let sku = get('sku');
