@@ -99,6 +99,19 @@ export async function GET(_request: NextRequest) {
     // Calculés à partir des lignes déjà chargées : aucune requête
     // supplémentaire.
     const paidStates = rows.filter(r => r.status === 'ACTIVE');
+
+    // Revenu RÉELLEMENT encaissé ce mois-ci (contrairement à mrrProjected,
+    // qui reste une projection au tarif catalogue même pour un client à
+    // qui on a offert une prolongation gracieuse à 0 FCFA). Demandé
+    // explicitement après confusion sur ce que représentait la projection.
+    const monthStart = new Date();
+    monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+    const { data: paymentsThisMonth } = await supabase
+      .from('subscription_payments')
+      .select('amount')
+      .gte('created_at', monthStart.toISOString());
+    const revenueCollectedThisMonth = (paymentsThisMonth ?? []).reduce((a, p) => a + (Number(p.amount) || 0), 0);
+
     const stats = {
       tenantCount: rows.length,
       activeCount: rows.filter(r => r.isActive).length,
@@ -112,6 +125,7 @@ export async function GET(_request: NextRequest) {
       // l'encaissé — un client peut être actif sans avoir encore payé le mois
       // en cours. Le réel se lit dans subscription_payments.
       mrrProjected: paidStates.reduce((a, r) => a + (PLAN_PRICES[r.plan || ''] || 0), 0),
+      revenueCollectedThisMonth,
     };
 
     return NextResponse.json({ tenants: rows, stats });
