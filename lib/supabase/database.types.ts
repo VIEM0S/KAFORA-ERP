@@ -745,7 +745,7 @@ export type Database = {
           product_id: string
           quantity: number
           reorder_point: number | null
-          store_id: string
+          store_id: string | null
           tenant_id: string
         }
         Insert: {
@@ -756,7 +756,7 @@ export type Database = {
           product_id: string
           quantity?: number
           reorder_point?: number | null
-          store_id: string
+          store_id?: string | null
           tenant_id: string
         }
         Update: {
@@ -767,7 +767,7 @@ export type Database = {
           product_id?: string
           quantity?: number
           reorder_point?: number | null
-          store_id?: string
+          store_id?: string | null
           tenant_id?: string
         }
         Relationships: [
@@ -1026,7 +1026,7 @@ export type Database = {
           purchase_order_id: string | null
           quantity: number
           received_at: string
-          store_id: string
+          store_id: string | null
           tenant_id: string
         }
         Insert: {
@@ -1038,7 +1038,7 @@ export type Database = {
           purchase_order_id?: string | null
           quantity?: number
           received_at?: string
-          store_id: string
+          store_id?: string | null
           tenant_id: string
         }
         Update: {
@@ -1050,7 +1050,7 @@ export type Database = {
           purchase_order_id?: string | null
           quantity?: number
           received_at?: string
-          store_id?: string
+          store_id?: string | null
           tenant_id?: string
         }
         Relationships: [
@@ -1095,7 +1095,7 @@ export type Database = {
           serial_number: string
           sold_at: string | null
           status: string
-          store_id: string
+          store_id: string | null
           tenant_id: string
         }
         Insert: {
@@ -1108,7 +1108,7 @@ export type Database = {
           serial_number: string
           sold_at?: string | null
           status?: string
-          store_id: string
+          store_id?: string | null
           tenant_id: string
         }
         Update: {
@@ -1121,7 +1121,7 @@ export type Database = {
           serial_number?: string
           sold_at?: string | null
           status?: string
-          store_id?: string
+          store_id?: string | null
           tenant_id?: string
         }
         Relationships: [
@@ -2304,6 +2304,101 @@ export type Database = {
           },
         ]
       }
+      support_ticket_replies: {
+        Row: {
+          author_name: string | null
+          author_type: string
+          created_at: string
+          id: string
+          message: string
+          ticket_id: string
+        }
+        Insert: {
+          author_name?: string | null
+          author_type: string
+          created_at?: string
+          id?: string
+          message: string
+          ticket_id: string
+        }
+        Update: {
+          author_name?: string | null
+          author_type?: string
+          created_at?: string
+          id?: string
+          message?: string
+          ticket_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_ticket_replies_ticket_id_fkey"
+            columns: ["ticket_id"]
+            isOneToOne: false
+            referencedRelation: "support_tickets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      support_tickets: {
+        Row: {
+          created_at: string
+          id: string
+          message: string
+          page_url: string | null
+          status: Database["public"]["Enums"]["ticket_status"]
+          tenant_id: string
+          type: Database["public"]["Enums"]["ticket_type"]
+          updated_at: string
+          user_email: string | null
+          user_id: string | null
+          user_name: string | null
+          user_role: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message: string
+          page_url?: string | null
+          status?: Database["public"]["Enums"]["ticket_status"]
+          tenant_id: string
+          type?: Database["public"]["Enums"]["ticket_type"]
+          updated_at?: string
+          user_email?: string | null
+          user_id?: string | null
+          user_name?: string | null
+          user_role?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message?: string
+          page_url?: string | null
+          status?: Database["public"]["Enums"]["ticket_status"]
+          tenant_id?: string
+          type?: Database["public"]["Enums"]["ticket_type"]
+          updated_at?: string
+          user_email?: string | null
+          user_id?: string | null
+          user_name?: string | null
+          user_role?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_tickets_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "support_tickets_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sync_dedup: {
         Row: {
           created_at: string
@@ -2962,6 +3057,11 @@ export type Database = {
         | "CREDIT_WRITTEN_OFF"
         | "CREDIT_WRITE_OFF_PENDING"
         | "CREDIT_LIMIT_CHANGED"
+        | "SUPPORT_TICKET_REPLY"
+        | "SUBSCRIPTION_SUSPENDED"
+        | "SUBSCRIPTION_REACTIVATED"
+        | "SUBSCRIPTION_EXTENDED"
+        | "KAFORA_ANNOUNCEMENT"
       credit_status:
         | "PENDING"
         | "PARTIALLY_PAID"
@@ -3017,6 +3117,8 @@ export type Database = {
         | "PAST_DUE"
         | "CANCELLED"
         | "EXPIRED"
+      ticket_status: "OPEN" | "ANSWERED" | "CLOSED"
+      ticket_type: "BUG" | "SUGGESTION" | "QUESTION"
       transfer_status:
         | "PENDING"
         | "APPROVED"
@@ -3174,6 +3276,11 @@ export const Constants = {
         "CREDIT_WRITTEN_OFF",
         "CREDIT_WRITE_OFF_PENDING",
         "CREDIT_LIMIT_CHANGED",
+        "SUPPORT_TICKET_REPLY",
+        "SUBSCRIPTION_SUSPENDED",
+        "SUBSCRIPTION_REACTIVATED",
+        "SUBSCRIPTION_EXTENDED",
+        "KAFORA_ANNOUNCEMENT",
       ],
       credit_status: [
         "PENDING",
@@ -3237,6 +3344,8 @@ export const Constants = {
         "CANCELLED",
         "EXPIRED",
       ],
+      ticket_status: ["OPEN", "ANSWERED", "CLOSED"],
+      ticket_type: ["BUG", "SUGGESTION", "QUESTION"],
       transfer_status: [
         "PENDING",
         "APPROVED",

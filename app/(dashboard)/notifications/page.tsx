@@ -52,7 +52,7 @@ function useDerivedNotifications(tenantId: string | undefined, storeId: string |
   useEffect(() => {
     if (!tenantId) return;
     let products: Record<string, { name: string; alertThreshold: number; trackInventory: boolean }> = {};
-    let inventory: { productId: string; storeId: string; quantity: number; minQuantity: number | null }[] = [];
+    let inventory: { productId: string; storeId: string | null; quantity: number; minQuantity: number | null }[] = [];
     let credits: { id: string; customerName: string | null; remainingAmount: number; dueDate: string | null; status: string }[] = [];
 
     const buildNotifications = () => {

@@ -232,7 +232,9 @@ export interface ProductLot {
   id: string;
   tenantId: string;
   productId: string;
-  storeId: string;
+  // null = magasin d'origine supprimé (voir migration 055) — le lot est
+  // conservé pour l'historique/FEFO, plus rattaché à aucun magasin actif.
+  storeId: string | null;
   quantity: number;
   expiryDate: Date;
   receivedAt: Date;
@@ -248,7 +250,10 @@ export interface ProductSerial {
   id: string;
   tenantId: string;
   productId: string;
-  storeId: string;
+  // null = magasin d'origine supprimé (voir migration 055) — la série est
+  // conservée pour l'historique (même vendue), plus rattachée à aucun
+  // magasin actif.
+  storeId: string | null;
   serialNumber: string;
   status: 'IN_STOCK' | 'SOLD';
   saleId: string | null;
@@ -261,7 +266,9 @@ export interface Inventory {
   id: string;
   tenantId: string;
   productId: string;
-  storeId: string;
+  // null = magasin d'origine supprimé (voir migration 055) — la ligne
+  // reste pour l'historique, plus rattachée à aucun magasin actif.
+  storeId: string | null;
   quantity: number;
   minQuantity?: number;
   maxQuantity?: number | null;
@@ -520,7 +527,7 @@ export interface Alert {
   createdAt: Date;
 }
 
-export type AlertType = 'LOW_STOCK' | 'OUT_OF_STOCK' | 'OVERDUE_CREDIT' | 'LARGE_DISCOUNT' | 'REFUND' | 'CASH_VARIANCE' | 'FAILED_PAYMENT' | 'SUSPICIOUS_ACTIVITY' | 'OFFLINE_SYNC_CONFLICT' | 'USER_DELETION_REQUEST' | 'USER_DELETION_RESOLVED' | 'CREDIT_WRITTEN_OFF' | 'CREDIT_WRITE_OFF_PENDING' | 'CREDIT_LIMIT_CHANGED';
+export type AlertType = 'LOW_STOCK' | 'OUT_OF_STOCK' | 'OVERDUE_CREDIT' | 'LARGE_DISCOUNT' | 'REFUND' | 'CASH_VARIANCE' | 'FAILED_PAYMENT' | 'SUSPICIOUS_ACTIVITY' | 'OFFLINE_SYNC_CONFLICT' | 'USER_DELETION_REQUEST' | 'USER_DELETION_RESOLVED' | 'CREDIT_WRITTEN_OFF' | 'CREDIT_WRITE_OFF_PENDING' | 'CREDIT_LIMIT_CHANGED' | 'SUPPORT_TICKET_REPLY' | 'SUBSCRIPTION_SUSPENDED' | 'SUBSCRIPTION_REACTIVATED' | 'SUBSCRIPTION_EXTENDED' | 'KAFORA_ANNOUNCEMENT';
 export type AlertSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
 export interface Notification {
