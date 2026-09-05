@@ -51,16 +51,25 @@ export async function notifyRole(
   }
 }
 
-/** Notifie un utilisateur précis (ex. l'Admin qui a fait une demande de suppression). */
-export async function notifyUser(tenantId: string, userId: string, title: string, message: string) {
+/**
+ * Notifie un utilisateur précis (ex. l'Admin qui a fait une demande de
+ * suppression, un client dont Kafora a répondu au signalement, changé
+ * l'abonnement...). `type` par défaut inchangé pour ne rien casser aux
+ * appels existants (demandes de suppression) ; les nouveaux usages
+ * passent leur propre type d'alerte.
+ */
+export async function notifyUser(
+  tenantId: string, userId: string, title: string, message: string,
+  type: AlertType = 'USER_DELETION_RESOLVED', reference = 'users'
+) {
   const supabase = createServiceRoleClient();
 
   await supabase.from('alerts').insert({
     tenant_id: tenantId,
-    type: 'USER_DELETION_RESOLVED',
+    type,
     severity: 'MEDIUM',
     title, message,
-    reference: 'users',
+    reference,
     target_user_id: userId,
   });
 
