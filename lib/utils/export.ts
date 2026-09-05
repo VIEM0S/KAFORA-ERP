@@ -22,7 +22,19 @@ export interface CsvColumn<T> {
 
 function escapeCsvValue(value: unknown): string {
   if (value === null || value === undefined) return '';
-  const str = String(value);
+  let str = String(value);
+  // Injection de formule (CSV/Excel) : un champ utilisateur (nom de
+  // client/produit, motif, note...) commençant par =, +, -, @ ou une
+  // tabulation est interprété comme une formule par Excel/LibreOffice à
+  // l'ouverture — ex. un client renommé `=HYPERLINK("http://evil","clic")`
+  // exporté dans le journal de caisse ou une liste de ventes. Préfixe
+  // standard OWASP : une apostrophe force l'affichage en texte brut.
+  // Exclu : un nombre valide (ex. un remboursement `-1500`) reste un vrai
+  // nombre dans le tableur, jamais une formule — pas de raison de le
+  // dénaturer en texte.
+  if (/^[=+\-@\t\r]/.test(str) && !Number.isFinite(Number(str))) {
+    str = `'${str}`;
+  }
   // Si la valeur contient un séparateur, un guillemet ou un saut de ligne,
   // on l'entoure de guillemets et on double les guillemets internes.
   if (/[",;\n]/.test(str)) {
