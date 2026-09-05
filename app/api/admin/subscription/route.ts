@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
 import { SUBSCRIPTION_PLANS, PlanId, REFERRAL_REFERRER_BONUS_DAYS } from '@/lib/constants';
+import { notifyRole } from '@/lib/api/notify-role';
+import { formatCurrency } from '@/lib/utils/helpers';
 
 /**
  * Console éditeur : enregistre un paiement et prolonge un abonnement.
@@ -61,6 +63,26 @@ export async function POST(request: NextRequest) {
       p_limits_by_plan: limitsByPlan,
     });
     if (rpcError) throw rpcError;
+
+    // admin_extend_subscription() écrit déjà subscription_payments — c'est
+    // la trace de suivi pour ce paiement (voir /api/admin/tenant-history,
+    // qui la lit directement), pas besoin de la dupliquer dans
+    // super_admin_logs.
+    const rpcResult = result as { plan?: string; currentPeriodEnd?: string };
+
+    // Avant, rien ne prévenait le client d'une prolongation ou d'un
+    // changement de forfait décidé côté Kafora.
+    try {
+      await notifyRole(tenantId, 'OWNER', {
+        type: 'SUBSCRIPTION_EXTENDED', severity: 'LOW',
+        title: 'Votre abonnement Kafora a été mis à jour',
+        message: amount > 0
+          ? `Paiement de ${formatCurrency(amount)} enregistré. Votre abonnement${rpcResult.plan ? ` (${rpcResult.plan})` : ''} est prolongé jusqu'au ${rpcResult.currentPeriodEnd ? new Date(rpcResult.currentPeriodEnd).toLocaleDateString('fr-FR') : 'nouvelle échéance'}.`
+          : `Votre abonnement${rpcResult.plan ? ` (${rpcResult.plan})` : ''} a été prolongé gracieusement jusqu'au ${rpcResult.currentPeriodEnd ? new Date(rpcResult.currentPeriodEnd).toLocaleDateString('fr-FR') : 'nouvelle échéance'}.`,
+      });
+    } catch (e) {
+      console.error('Subscription notify error (action déjà appliquée) :', e);
+    }
 
     return NextResponse.json({ success: true, ...(result as object) });
   } catch (error) {

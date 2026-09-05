@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
+import { notifyRole } from '@/lib/api/notify-role';
 
 /**
  * Suspend ou réactive une entreprise cliente. Toute l'atomicité (mise à jour
@@ -43,6 +44,27 @@ export async function POST(request: NextRequest) {
       p_performed_by: session.uid,
     });
     if (rpcError) throw rpcError;
+
+    // Avant, rien ne prévenait jamais le client d'une suspension ou d'une
+    // réactivation décidée côté Kafora — il ne l'apprenait qu'en essayant
+    // de se connecter (ou pas du tout, à la réactivation). Best-effort :
+    // l'action elle-même a déjà réussi (RPC ci-dessus), un échec de
+    // notification ne doit pas la faire échouer après coup.
+    try {
+      await notifyRole(tenantId, 'OWNER', isActive
+        ? {
+            type: 'SUBSCRIPTION_REACTIVATED', severity: 'HIGH',
+            title: 'Votre compte Kafora a été réactivé',
+            message: "L'accès à votre espace Kafora est de nouveau actif.",
+          }
+        : {
+            type: 'SUBSCRIPTION_SUSPENDED', severity: 'CRITICAL',
+            title: 'Votre compte Kafora a été suspendu',
+            message: `L'accès à votre espace Kafora est suspendu. Motif : ${reason?.trim()}. Contactez le support pour le réactiver.`,
+          });
+    } catch (e) {
+      console.error('Tenant status notify error (action déjà appliquée) :', e);
+    }
 
     return NextResponse.json({ success: true, ...(result as object) });
   } catch (error) {
