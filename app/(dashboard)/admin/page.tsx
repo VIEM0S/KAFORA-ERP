@@ -486,6 +486,7 @@ function UsersDialog({
   const [users, setUsers] = useState<TenantUser[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [resetLink, setResetLink] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -503,7 +504,7 @@ function UsersDialog({
 
   const resetPassword = async (email: string) => {
     if (!tenant) return;
-    setMsg(null); setErr(null);
+    setMsg(null); setErr(null); setResetLink(null);
     try {
       const res = await fetch('/api/admin/tenant-users', {
         method: 'POST',
@@ -512,7 +513,11 @@ function UsersDialog({
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || `Erreur serveur (${res.status})`);
-      setMsg(`Lien généré pour ${email} — transmettez-le à l'utilisateur.`);
+      // L'API renvoyait déjà le lien (data.link) mais l'écran ne l'affichait
+      // jamais — "transmettez-le à l'utilisateur" sans jamais montrer quoi
+      // transmettre. Trouvé lors d'un premier essai réel de la console.
+      setMsg(`Lien généré pour ${email} :`);
+      setResetLink(data?.link || null);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Erreur inconnue');
     }
@@ -560,6 +565,17 @@ function UsersDialog({
         )}
 
         {msg && <p className="text-sm text-green-700">{msg}</p>}
+        {resetLink && (
+          <div className="flex items-center gap-2">
+            <Input readOnly value={resetLink} className="text-xs" onFocus={e => e.target.select()} />
+            <Button
+              size="sm" variant="outline"
+              onClick={() => { navigator.clipboard.writeText(resetLink); setMsg('Lien copié dans le presse-papiers.'); }}
+            >
+              Copier
+            </Button>
+          </div>
+        )}
         {err && <p className="text-sm text-red-600">{err}</p>}
 
         <DialogFooter>
