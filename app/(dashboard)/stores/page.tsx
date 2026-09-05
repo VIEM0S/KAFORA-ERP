@@ -128,6 +128,23 @@ export default function StoresPage() {
     }
     setIsDeleting(true);
     try {
+      // Un utilisateur encore affecté à CE SEUL magasin (store_ids = [ce
+      // magasin], pas le siège) perdrait l'accès à TOUS les magasins après
+      // suppression (can_access_store() compare contre un identifiant qui
+      // n'existe plus) — sans avertissement ni réaffectation automatique.
+      const { data: affectedUsers, error: usersError } = await supabase
+        .from('users')
+        .select('first_name, last_name')
+        .eq('tenant_id', tenantId)
+        .eq('is_active', true)
+        .contains('store_ids', [deleteTarget.id]);
+      if (usersError) throw usersError;
+      if (affectedUsers && affectedUsers.length > 0) {
+        const names = affectedUsers.map(u => `${u.first_name || ''} ${u.last_name || ''}`.trim()).join(', ');
+        alert(`Réaffectez d'abord ces utilisateurs à un autre magasin avant de supprimer celui-ci : ${names}`);
+        setDeleteTarget(null);
+        return;
+      }
       const { error } = await supabase.from('stores').delete().eq('id', deleteTarget.id);
       if (error) throw error;
       setDeleteTarget(null);
