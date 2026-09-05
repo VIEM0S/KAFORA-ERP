@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Building2, Loader2, RefreshCw, Wallet, Users, Ban, Check } from 'lucide-react';
+import { Building2, Loader2, RefreshCw, Wallet, Users, Ban, Check, Megaphone, History as HistoryIcon, MessageSquare, CheckCircle2 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,7 +17,7 @@ import { isSuperAdmin } from '@/lib/auth/roles';
 interface PlatformStats {
   tenantCount: number; activeCount: number; suspendedCount: number;
   userCount: number; activeSubscriptions: number; trialCount: number;
-  expiringSoon: number; mrrProjected: number;
+  expiringSoon: number; mrrProjected: number; revenueCollectedThisMonth: number;
 }
 
 interface TenantRow {
@@ -67,6 +67,9 @@ export default function AdminConsolePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [paying, setPaying] = useState<TenantRow | null>(null);
+  const [tab, setTab] = useState<'clients' | 'support'>('clients');
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const [historyTarget, setHistoryTarget] = useState<TenantRow | null>(null);
 
   const load = async () => {
     setIsLoading(true);
@@ -137,9 +140,14 @@ export default function AdminConsolePage() {
               Triés par urgence : les abonnements les plus proches du blocage en premier.
             </p>
           </div>
-          <Button variant="outline" onClick={load} disabled={isLoading}>
-            <RefreshCw className="h-4 w-4 mr-2" /> Actualiser
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setBroadcastOpen(true)}>
+              <Megaphone className="h-4 w-4 mr-2" /> Message aux clients
+            </Button>
+            <Button variant="outline" onClick={load} disabled={isLoading}>
+              <RefreshCw className="h-4 w-4 mr-2" /> Actualiser
+            </Button>
+          </div>
         </div>
 
         {error && (
@@ -149,7 +157,7 @@ export default function AdminConsolePage() {
         )}
 
         {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             {[
               { label: 'Entreprises', value: stats.tenantCount, sub: `${stats.activeCount} active(s)` },
               { label: 'Utilisateurs', value: stats.userCount, sub: 'tous clients confondus' },
@@ -160,6 +168,11 @@ export default function AdminConsolePage() {
                 // Distinction essentielle : c'est ce que les forfaits actifs
                 // DEVRAIENT rapporter, pas ce qui a été encaissé.
                 sub: 'sur la base des forfaits actifs',
+              },
+              {
+                label: 'Encaissé ce mois-ci',
+                value: formatCurrency(stats.revenueCollectedThisMonth),
+                sub: 'paiements réellement enregistrés',
               },
             ].map(c => (
               <Card key={c.label}>
@@ -184,7 +197,22 @@ export default function AdminConsolePage() {
           </div>
         )}
 
-        {isLoading ? (
+        <div className="flex gap-1 border-b border-gray-200">
+          {([['clients', 'Clients'], ['support', 'Support']] as const).map(([id, label]) => (
+            <button
+              key={id} onClick={() => setTab(id)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                tab === id ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'support' && <SupportTicketsPanel />}
+
+        {tab === 'clients' && (isLoading ? (
           <div className="flex justify-center py-12">
             <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
           </div>
@@ -278,6 +306,9 @@ export default function AdminConsolePage() {
                               <Check className="h-4 w-4 mr-1" /> Réactiver
                             </Button>
                           )}
+                          <Button size="sm" variant="ghost" onClick={() => setHistoryTarget(t)}>
+                            <HistoryIcon className="h-4 w-4 mr-1" /> Journal
+                          </Button>
                         </div>
                       </div>
                     </div>
@@ -286,12 +317,14 @@ export default function AdminConsolePage() {
               );
             })}
           </div>
-        )}
+        ))}
       </div>
 
       <PaymentDialog tenant={paying} onClose={() => setPaying(null)} onDone={load} />
       <SuspendDialog tenant={suspending} onClose={() => setSuspending(null)} onDone={load} />
       <UsersDialog tenant={viewingUsers} onClose={() => setViewingUsers(null)} />
+      <BroadcastDialog open={broadcastOpen} onClose={() => setBroadcastOpen(false)} />
+      <TenantHistoryDialog tenant={historyTarget} onClose={() => setHistoryTarget(null)} />
     </DashboardLayout>
   );
 }
@@ -578,6 +611,353 @@ function UsersDialog({
         )}
         {err && <p className="text-sm text-red-600">{err}</p>}
 
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Fermer</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+
+const TICKET_TYPE_LABELS: Record<string, string> = { BUG: 'Bug', SUGGESTION: 'Suggestion', QUESTION: 'Question' };
+const TICKET_STATUS_STYLE: Record<string, string> = {
+  OPEN: 'bg-red-100 text-red-800', ANSWERED: 'bg-green-100 text-green-800', CLOSED: 'bg-gray-100 text-gray-600',
+};
+const TICKET_STATUS_LABEL: Record<string, string> = { OPEN: 'Ouvert', ANSWERED: 'Répondu', CLOSED: 'Clos' };
+
+interface Ticket {
+  id: string; tenantId: string; tenantName: string;
+  userName: string | null; userEmail: string | null; userRole: string | null;
+  type: string; message: string; pageUrl: string | null; status: string;
+  createdAt: string; updatedAt: string;
+}
+
+/**
+ * Boîte de réception des signalements clients — "Signaler un problème"
+ * n'était qu'un email à sens unique avant ça, sans historique ni réponse
+ * possible. Le fil de discussion se lit ici, la réponse déclenche une
+ * vraie notification chez le client (voir /api/admin/tickets/reply).
+ */
+function SupportTicketsPanel() {
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'ALL' | 'OPEN' | 'ANSWERED' | 'CLOSED'>('OPEN');
+  const [selected, setSelected] = useState<Ticket | null>(null);
+
+  const load = () => {
+    setIsLoading(true); setError(null);
+    fetch('/api/admin/tickets')
+      .then(async res => {
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || `Erreur serveur (${res.status})`);
+        setTickets(data.tickets || []);
+      })
+      .catch(e => setError(e instanceof Error ? e.message : 'Erreur inconnue'))
+      .finally(() => setIsLoading(false));
+  };
+  useEffect(load, []);
+
+  const visible = tickets.filter(t => filter === 'ALL' || t.status === filter);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-1.5">
+        {(['OPEN', 'ANSWERED', 'CLOSED', 'ALL'] as const).map(f => (
+          <button
+            key={f} onClick={() => setFilter(f)}
+            className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+              filter === f ? 'bg-primary-600 text-white border-primary-600' : 'border-gray-200 text-gray-600 hover:border-primary-400'
+            }`}
+          >
+            {f === 'ALL' ? 'Tous' : TICKET_STATUS_LABEL[f]}
+          </button>
+        ))}
+      </div>
+
+      {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+
+      {isLoading ? (
+        <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-gray-400" /></div>
+      ) : visible.length === 0 ? (
+        <Card><CardContent className="p-10 text-center text-gray-500">Aucun signalement.</CardContent></Card>
+      ) : (
+        <div className="space-y-2">
+          {visible.map(t => (
+            <Card key={t.id} className="cursor-pointer hover:border-primary-300" onClick={() => setSelected(t)}>
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                        {TICKET_TYPE_LABELS[t.type] || t.type}
+                      </span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${TICKET_STATUS_STYLE[t.status]}`}>
+                        {TICKET_STATUS_LABEL[t.status] || t.status}
+                      </span>
+                      <span className="text-sm font-medium text-gray-900">{t.tenantName}</span>
+                    </div>
+                    <p className="text-sm text-gray-700 mt-1.5 line-clamp-2">{t.message}</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {t.userName || 'Utilisateur'} ({t.userRole}) · {new Date(t.createdAt).toLocaleString('fr-FR')}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <TicketDialog ticket={selected} onClose={() => setSelected(null)} onDone={load} />
+    </div>
+  );
+}
+
+interface TicketReply { id: string; authorType: string; authorName: string | null; message: string; createdAt: string; }
+
+function TicketDialog({ ticket, onClose, onDone }: { ticket: Ticket | null; onClose: () => void; onDone: () => void }) {
+  const [replies, setReplies] = useState<TicketReply[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [reply, setReply] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!ticket) return;
+    setReplies([]); setReply(''); setErr(null); setIsLoading(true);
+    fetch(`/api/admin/tickets/${ticket.id}/replies`)
+      .then(async res => {
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || `Erreur serveur (${res.status})`);
+        setReplies(data.replies || []);
+      })
+      .catch(e => setErr(e instanceof Error ? e.message : 'Erreur inconnue'))
+      .finally(() => setIsLoading(false));
+  }, [ticket]);
+
+  const sendReply = async () => {
+    if (!ticket || !reply.trim()) return;
+    setIsSending(true); setErr(null);
+    try {
+      const res = await fetch('/api/admin/tickets/reply', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticketId: ticket.id, message: reply.trim() }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || `Erreur serveur (${res.status})`);
+      onClose(); onDone();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Erreur inconnue');
+    } finally { setIsSending(false); }
+  };
+
+  const closeTicket = async () => {
+    if (!ticket) return;
+    setIsSending(true); setErr(null);
+    try {
+      const res = await fetch('/api/admin/tickets/close', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticketId: ticket.id }),
+      });
+      if (!res.ok) { const data = await res.json().catch(() => null); throw new Error(data?.error || 'Erreur serveur'); }
+      onClose(); onDone();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Erreur inconnue');
+    } finally { setIsSending(false); }
+  };
+
+  return (
+    <Dialog open={!!ticket} onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" /> {ticket?.tenantName}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3 max-h-96 overflow-y-auto">
+          <div className="rounded-lg bg-gray-50 border border-gray-200 p-3">
+            <p className="text-xs text-gray-400 mb-1">
+              {ticket?.userName || 'Utilisateur'} ({ticket?.userRole}) · {ticket && new Date(ticket.createdAt).toLocaleString('fr-FR')}
+              {ticket?.pageUrl && ` · ${ticket.pageUrl}`}
+            </p>
+            <p className="text-sm text-gray-800 whitespace-pre-wrap">{ticket?.message}</p>
+          </div>
+
+          {isLoading ? (
+            <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-gray-400" /></div>
+          ) : replies.map(r => (
+            <div key={r.id} className={`rounded-lg p-3 border ${r.authorType === 'KAFORA' ? 'bg-primary-50 border-primary-200 ml-4' : 'bg-gray-50 border-gray-200'}`}>
+              <p className="text-xs text-gray-400 mb-1">
+                {r.authorName || (r.authorType === 'KAFORA' ? 'Kafora' : 'Client')} · {new Date(r.createdAt).toLocaleString('fr-FR')}
+              </p>
+              <p className="text-sm text-gray-800 whitespace-pre-wrap">{r.message}</p>
+            </div>
+          ))}
+        </div>
+
+        {ticket?.status !== 'CLOSED' && (
+          <div className="space-y-2 pt-2 border-t">
+            <Textarea rows={3} placeholder="Votre réponse..." value={reply} onChange={e => setReply(e.target.value)} />
+          </div>
+        )}
+
+        {err && <p className="text-sm text-red-600">{err}</p>}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Fermer</Button>
+          {ticket?.status !== 'CLOSED' && (
+            <>
+              <Button variant="outline" onClick={closeTicket} disabled={isSending}>
+                <CheckCircle2 className="h-4 w-4 mr-1" /> Clore sans réponse
+              </Button>
+              <Button onClick={sendReply} disabled={isSending || !reply.trim()}>
+                {isSending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                Répondre
+              </Button>
+            </>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Message groupé à tous les clients ou filtré par forfait — jusqu'ici il
+ * n'existait aucun moyen d'annoncer quoi que ce soit à plusieurs clients
+ * à la fois (voir /api/admin/broadcast).
+ */
+function BroadcastDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [title, setTitle] = useState('');
+  const [message, setMessage] = useState('');
+  const [plan, setPlan] = useState<'ALL' | 'STARTER' | 'BUSINESS' | 'ENTERPRISE'>('ALL');
+  const [isSending, setIsSending] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const reset = () => { setTitle(''); setMessage(''); setPlan('ALL'); setResult(null); setErr(null); };
+
+  const submit = async () => {
+    if (!title.trim() || !message.trim()) return setErr('Titre et message requis');
+    setIsSending(true); setErr(null); setResult(null);
+    try {
+      const res = await fetch('/api/admin/broadcast', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: title.trim(), message: message.trim(), plan }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || `Erreur serveur (${res.status})`);
+      setResult(`Envoyé à ${data.sentTo} entreprise(s).`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Erreur inconnue');
+    } finally { setIsSending(false); }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o) { reset(); onClose(); } }}>
+      <DialogContent>
+        <DialogHeader><DialogTitle className="flex items-center gap-2"><Megaphone className="h-5 w-5" /> Message aux clients</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label>Destinataires</Label>
+            <Select value={plan} onValueChange={v => setPlan(v as typeof plan)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Toutes les entreprises actives</SelectItem>
+                <SelectItem value="STARTER">Forfait Starter uniquement</SelectItem>
+                <SelectItem value="BUSINESS">Forfait Business uniquement</SelectItem>
+                <SelectItem value="ENTERPRISE">Forfait Enterprise uniquement</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>Titre *</Label>
+            <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="Ex : Maintenance prévue ce week-end" />
+          </div>
+          <div>
+            <Label>Message *</Label>
+            <Textarea rows={4} value={message} onChange={e => setMessage(e.target.value)} />
+          </div>
+          {result && <p className="text-sm text-green-700">{result}</p>}
+          {err && <p className="text-sm text-red-600">{err}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => { reset(); onClose(); }}>Fermer</Button>
+          <Button onClick={submit} disabled={isSending}>
+            {isSending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+            Envoyer
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+
+interface HistoryEvent { kind: 'LOG' | 'PAYMENT'; action: string; detail: string | null; createdAt: string; }
+
+const HISTORY_ACTION_LABELS: Record<string, string> = {
+  TENANT_SUSPENDED: 'Suspension', TENANT_ACTIVATED: 'Réactivation',
+  PASSWORD_RESET_LINK: 'Lien de réinitialisation généré', TICKET_REPLIED: 'Réponse à un signalement',
+  BROADCAST_SENT: 'Message groupé', PAYMENT_RECORDED: 'Paiement enregistré',
+};
+
+/**
+ * "Journal Kafora" d'un client — toutes les actions prises côté éditeur
+ * sur son compte, jusqu'ici éparpillées sans aucun écran pour les
+ * consulter (voir /api/admin/tenant-history). Le suivi demandé
+ * explicitement côté SUPER_ADMIN.
+ */
+function TenantHistoryDialog({ tenant, onClose }: { tenant: TenantRow | null; onClose: () => void }) {
+  const [events, setEvents] = useState<HistoryEvent[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!tenant) return;
+    setEvents([]); setErr(null); setIsLoading(true);
+    fetch(`/api/admin/tenant-history?tenantId=${encodeURIComponent(tenant.id)}`)
+      .then(async res => {
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || `Erreur serveur (${res.status})`);
+        setEvents(data.events || []);
+      })
+      .catch(e => setErr(e instanceof Error ? e.message : 'Erreur inconnue'))
+      .finally(() => setIsLoading(false));
+  }, [tenant]);
+
+  return (
+    <Dialog open={!!tenant} onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle className="flex items-center gap-2"><HistoryIcon className="h-5 w-5" /> Journal — {tenant?.name}</DialogTitle></DialogHeader>
+        <p className="text-xs text-gray-500">
+          Actions prises côté Kafora sur ce compte (suspensions, paiements, réponses de support). Jamais les données commerciales du client.
+        </p>
+        {err && <p className="text-sm text-red-600">{err}</p>}
+        {isLoading ? (
+          <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-gray-400" /></div>
+        ) : events.length === 0 ? (
+          <p className="p-4 text-sm text-gray-500 text-center">Aucune action enregistrée.</p>
+        ) : (
+          <div className="max-h-96 overflow-y-auto divide-y rounded-lg border border-gray-200">
+            {events.map((e, i) => (
+              <div key={i} className="p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-900">{HISTORY_ACTION_LABELS[e.action] || e.action}</span>
+                  <span className="text-xs text-gray-400">{new Date(e.createdAt).toLocaleString('fr-FR')}</span>
+                </div>
+                {e.detail && <p className="text-xs text-gray-600 mt-1">{e.detail}</p>}
+              </div>
+            ))}
+          </div>
+        )}
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Fermer</Button>
         </DialogFooter>

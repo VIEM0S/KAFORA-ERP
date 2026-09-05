@@ -208,12 +208,18 @@ export function Header() {
         {/* Signaler un problème — canal de retour client, voir
             components/feedback/feedback-dialog.tsx. Dans le header plutôt
             que la sidebar : c'est le seul emplacement visible depuis
-            absolument toutes les pages du dashboard. */}
-        <button onClick={() => setFeedbackOpen(true)} title="Signaler un problème"
-          className="p-2.5 rounded-xl text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors">
-          <MessageSquareWarning className="h-5 w-5" />
-        </button>
-        <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
+            absolument toutes les pages du dashboard. Absent pour
+            SUPER_ADMIN : la route exige un compte rattaché à un tenant
+            (jamais son cas), le bouton échouait silencieusement avant. */}
+        {user?.role !== 'SUPER_ADMIN' && (
+          <>
+            <button onClick={() => setFeedbackOpen(true)} title="Signaler un problème"
+              className="p-2.5 rounded-xl text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors">
+              <MessageSquareWarning className="h-5 w-5" />
+            </button>
+            <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
+          </>
+        )}
 
         {/* Notifications avec badge */}
         <Link href="/notifications"
