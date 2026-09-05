@@ -11,6 +11,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { formatCurrency } from '@/lib/utils/helpers';
+import { useAuthStore } from '@/hooks/store';
+import { isSuperAdmin } from '@/lib/auth/roles';
 
 interface PlatformStats {
   tenantCount: number; activeCount: number; suspendedCount: number;
@@ -55,6 +57,8 @@ function daysSince(iso: string | null): number | null {
 }
 
 export default function AdminConsolePage() {
+  const { user } = useAuthStore();
+  const isAllowed = isSuperAdmin(user?.role);
   const [tenants, setTenants] = useState<TenantRow[]>([]);
   const [stats, setStats] = useState<PlatformStats | null>(null);
   const [suspending, setSuspending] = useState<TenantRow | null>(null);
@@ -80,7 +84,26 @@ export default function AdminConsolePage() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  // Garde côté page, pas seulement côté API : sans ça, n'importe quel
+  // utilisateur connecté (n'importe quel tenant, n'importe quel rôle) qui
+  // navigue directement vers /admin voyait toute l'interface de la console
+  // éditeur (suspendre/prolonger/réinitialiser un mot de passe client) en
+  // permanence — les routes /api/admin/* renvoyaient bien 404 sans jamais
+  // charger de vraie donnée, mais l'existence et les capacités de cette
+  // console restaient visibles à n'importe qui. Le 404 de l'API dit
+  // explicitement "ne pas confirmer que cette console existe" ; la page
+  // doit refléter la même intention plutôt que juste bloquer les données.
+  useEffect(() => { if (isAllowed) load(); }, [isAllowed]);
+
+  if (!isAllowed) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center py-24 text-gray-400">
+          <p className="text-sm">Page introuvable</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   /** Action d'administration simple (réactivation), suivie d'un rechargement. */
   const act = async (url: string, body: Record<string, unknown>, id: string) => {
