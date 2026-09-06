@@ -212,7 +212,7 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
-              {greet()}{tenant?.name ? `, ${tenant.name}` : ''} 👋
+              {greet()}{tenant?.name ? `, ${tenant.name}` : ''}<span className="ml-2 inline-block">👋</span>
             </h1>
             <p className="text-gray-500 text-sm mt-1">
               {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}

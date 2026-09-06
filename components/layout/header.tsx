@@ -180,8 +180,15 @@ export function Header() {
         )}
       </div>
 
-      {/* Droite — recherche, alertes, settings, profil */}
-      <div className="flex items-center gap-1">
+      {/* Droite — recherche, alertes, settings, profil.
+          min-w-0 + overflow-x-auto : filet de sécurité. Sans ça, si la
+          police système de l'utilisateur est agrandie (réglage
+          d'accessibilité, fréquent sur Android) ou l'écran très étroit,
+          ce groupe de boutons pouvait dépasser silencieusement du cadre
+          — l'avatar tout à droite devenait invisible sans qu'il y ait le
+          moindre indice qu'il fallait défiler. Ici il reste toujours
+          atteignable, quitte à glisser le doigt. */}
+      <div className="flex items-center gap-1 min-w-0 overflow-x-auto scrollbar-thin">
 
         {/* Recherche */}
         {searchOpen ? (
