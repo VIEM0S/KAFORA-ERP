@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Building2, Loader2, RefreshCw, Wallet, Users, Ban, Check, Megaphone, History as HistoryIcon, MessageSquare, CheckCircle2 } from 'lucide-react';
+import { Building2, Loader2, RefreshCw, Wallet, Users, Ban, Check, Megaphone, History as HistoryIcon, MessageSquare, CheckCircle2, Download } from 'lucide-react';
+import { exportToCsv } from '@/lib/utils/export';
 import { DashboardLayout } from '@/components/layout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -67,7 +68,7 @@ export default function AdminConsolePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [paying, setPaying] = useState<TenantRow | null>(null);
-  const [tab, setTab] = useState<'clients' | 'support'>('clients');
+  const [tab, setTab] = useState<'clients' | 'support' | 'payments'>('clients');
   const [broadcastOpen, setBroadcastOpen] = useState(false);
   const [historyTarget, setHistoryTarget] = useState<TenantRow | null>(null);
 
@@ -198,7 +199,7 @@ export default function AdminConsolePage() {
         )}
 
         <div className="flex gap-1 border-b border-gray-200">
-          {([['clients', 'Clients'], ['support', 'Support']] as const).map(([id, label]) => (
+          {([['clients', 'Clients'], ['payments', 'Paiements'], ['support', 'Support']] as const).map(([id, label]) => (
             <button
               key={id} onClick={() => setTab(id)}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
@@ -210,6 +211,7 @@ export default function AdminConsolePage() {
           ))}
         </div>
 
+        {tab === 'payments' && <PaymentsPanel tenants={tenants} />}
         {tab === 'support' && <SupportTicketsPanel />}
 
         {tab === 'clients' && (isLoading ? (
@@ -823,6 +825,149 @@ function TicketDialog({ ticket, onClose, onDone }: { ticket: Ticket | null; onCl
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+
+interface Payment {
+  id: string; tenantId: string; tenantName: string; months: number; plan: string;
+  amount: number; method: string | null; note: string | null;
+  periodStart: string; periodEnd: string; createdAt: string;
+}
+
+/**
+ * Vue comptable de tous les paiements enregistrés, tous clients confondus
+ * — le "Journal" par client reste la narration contextuelle (mélangée aux
+ * suspensions/réponses de support), celle-ci est la vue filtrable dédiée
+ * demandée explicitement pour le suivi financier.
+ */
+function PaymentsPanel({ tenants }: { tenants: TenantRow[] }) {
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [total, setTotal] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [tenantId, setTenantId] = useState('ALL');
+  const [plan, setPlan] = useState('ALL');
+  const [method, setMethod] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
+  const load = () => {
+    setIsLoading(true); setError(null);
+    const params = new URLSearchParams();
+    if (tenantId !== 'ALL') params.set('tenantId', tenantId);
+    if (plan !== 'ALL') params.set('plan', plan);
+    if (method.trim()) params.set('method', method.trim());
+    if (dateFrom) params.set('dateFrom', dateFrom);
+    if (dateTo) params.set('dateTo', dateTo);
+    fetch(`/api/admin/payments?${params.toString()}`)
+      .then(async res => {
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || `Erreur serveur (${res.status})`);
+        setPayments(data.payments || []);
+        setTotal(data.total || 0);
+      })
+      .catch(e => setError(e instanceof Error ? e.message : 'Erreur inconnue'))
+      .finally(() => setIsLoading(false));
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(load, [tenantId, plan]);
+
+  const handleExport = () => exportToCsv(
+    `paiements-kafora-${new Date().toISOString().slice(0, 10)}`,
+    payments,
+    [
+      { key: 'createdAt', label: 'Date', format: v => new Date(v as string).toLocaleDateString('fr-FR') },
+      { key: 'tenantName', label: 'Entreprise' },
+      { key: 'plan', label: 'Forfait' },
+      { key: 'months', label: 'Mois' },
+      { key: 'amount', label: 'Montant (FCFA)' },
+      { key: 'method', label: 'Moyen' },
+      { key: 'note', label: 'Note' },
+      { key: 'periodStart', label: 'Début période', format: v => new Date(v as string).toLocaleDateString('fr-FR') },
+      { key: 'periodEnd', label: 'Fin période', format: v => new Date(v as string).toLocaleDateString('fr-FR') },
+    ]
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-end gap-2">
+        <div>
+          <Label className="text-xs text-gray-500">Entreprise</Label>
+          <Select value={tenantId} onValueChange={setTenantId}>
+            <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Toutes</SelectItem>
+              {tenants.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs text-gray-500">Forfait</Label>
+          <Select value={plan} onValueChange={setPlan}>
+            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Tous</SelectItem>
+              <SelectItem value="STARTER">Starter</SelectItem>
+              <SelectItem value="BUSINESS">Business</SelectItem>
+              <SelectItem value="ENTERPRISE">Enterprise</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs text-gray-500">Moyen</Label>
+          <Input className="w-32" placeholder="Orange Money..." value={method} onChange={e => setMethod(e.target.value)} />
+        </div>
+        <div>
+          <Label className="text-xs text-gray-500">Du</Label>
+          <Input type="date" className="w-40" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+        </div>
+        <div>
+          <Label className="text-xs text-gray-500">Au</Label>
+          <Input type="date" className="w-40" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+        </div>
+        <Button variant="outline" onClick={load}>Filtrer</Button>
+        <Button variant="outline" onClick={handleExport} disabled={payments.length === 0}>
+          <Download className="h-4 w-4 mr-2" /> CSV
+        </Button>
+      </div>
+
+      <Card>
+        <CardContent className="p-4 flex items-center justify-between">
+          <span className="text-sm text-gray-500">{payments.length} paiement(s)</span>
+          <span className="text-lg font-bold text-gray-900">{formatCurrency(total)}</span>
+        </CardContent>
+      </Card>
+
+      {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+
+      {isLoading ? (
+        <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-gray-400" /></div>
+      ) : payments.length === 0 ? (
+        <Card><CardContent className="p-10 text-center text-gray-500">Aucun paiement pour ces filtres.</CardContent></Card>
+      ) : (
+        <div className="divide-y rounded-lg border border-gray-200 overflow-hidden">
+          {payments.map(p => (
+            <div key={p.id} className="p-3 flex items-center justify-between gap-3 bg-white">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-900">
+                  {p.tenantName} <span className="text-xs text-gray-400 font-normal">· {p.plan} · {p.months} mois</span>
+                </p>
+                <p className="text-xs text-gray-400">
+                  {new Date(p.createdAt).toLocaleString('fr-FR')}
+                  {p.method && ` · ${p.method}`}
+                  {p.note && ` · ${p.note}`}
+                </p>
+              </div>
+              <span className={`text-sm font-semibold shrink-0 ${p.amount === 0 ? 'text-amber-600' : 'text-gray-900'}`}>
+                {p.amount === 0 ? 'Gracieux' : formatCurrency(p.amount)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
