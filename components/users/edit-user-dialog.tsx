@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import type { UserProfile } from './types';
 
 interface EditForm {
@@ -29,7 +29,6 @@ interface EditUserDialogProps {
 }
 
 export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogProps) {
-  const { toast } = useToast();
   const { stores, user: currentUser } = useAuthStore();
   const [editForm, setEditForm] = useState<EditForm>(EMPTY_EDIT_FORM);
 
@@ -101,7 +100,7 @@ export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogP
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur lors de la modification');
       onOpenChange(false);
-      toast({ title: 'Utilisateur modifié', description: `${editForm.firstName} ${editForm.lastName} a été mis à jour.` });
+      toast.success('Utilisateur modifié', { description: `${editForm.firstName} ${editForm.lastName} a été mis à jour.` });
     } catch (e) {
       setEditError(e instanceof Error ? e.message : 'Erreur interne');
     } finally { setIsEditSaving(false); }

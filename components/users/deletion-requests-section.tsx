@@ -8,7 +8,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import type { DeletionRequest, CurrentUser } from './types';
 
 type RespondAction = 'approve' | 'reject' | 'delete_now' | 'revoke_approval';
@@ -20,7 +20,6 @@ interface DeletionRequestsSectionProps {
 }
 
 export function DeletionRequestsSection({ tenantId, deletionRequests, currentUser }: DeletionRequestsSectionProps) {
-  const { toast } = useToast();
   const [respondingTo, setRespondingTo] = useState<{ req: DeletionRequest; action: RespondAction } | null>(null);
   const [responseNote, setResponseNote] = useState('');
   const [isResponding, setIsResponding] = useState(false);
@@ -46,9 +45,9 @@ export function DeletionRequestsSection({ tenantId, deletionRequests, currentUse
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur');
-      toast({ title: 'Demande retirée', description: `Ta demande concernant ${req.targetUserName} a été annulée.` });
+      toast.success('Demande retirée', { description: `Ta demande concernant ${req.targetUserName} a été annulée.` });
     } catch (e) {
-      toast({ title: 'Erreur', description: e instanceof Error ? e.message : 'Erreur interne', variant: 'destructive' });
+      toast.error('Erreur', { description: e instanceof Error ? e.message : 'Erreur interne' });
     } finally { setIsCancellingRequest(false); }
   };
 
@@ -63,9 +62,9 @@ export function DeletionRequestsSection({ tenantId, deletionRequests, currentUse
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur lors de la suppression');
-      toast({ title: 'Compte désactivé', description: `${req.targetUserName} a été désactivé (restaurable depuis la liste).` });
+      toast.success('Compte désactivé', { description: `${req.targetUserName} a été désactivé (restaurable depuis la liste).` });
     } catch (e) {
-      toast({ title: 'Erreur', description: e instanceof Error ? e.message : 'Erreur interne', variant: 'destructive' });
+      toast.error('Erreur', { description: e instanceof Error ? e.message : 'Erreur interne' });
     } finally { setIsFinalizing(false); }
   };
 
@@ -81,11 +80,11 @@ export function DeletionRequestsSection({ tenantId, deletionRequests, currentUse
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur');
       const labels = { approve: 'approuvée', reject: 'refusée', delete_now: 'traitée directement', revoke_approval: 'ramenée en attente' };
-      toast({ title: 'Demande ' + labels[respondingTo.action], description: `${respondingTo.req.targetUserName}` });
+      toast.success('Demande ' + labels[respondingTo.action], { description: `${respondingTo.req.targetUserName}` });
       setRespondingTo(null);
       setResponseNote('');
     } catch (e) {
-      toast({ title: 'Erreur', description: e instanceof Error ? e.message : 'Erreur interne', variant: 'destructive' });
+      toast.error('Erreur', { description: e instanceof Error ? e.message : 'Erreur interne' });
     } finally { setIsResponding(false); }
   };
 

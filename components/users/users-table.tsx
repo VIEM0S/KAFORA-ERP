@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatDate } from '@/lib/utils/helpers';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { isSubsetOf } from '@/lib/api/regional-scope';
 import { RoleBadge } from './role-badge';
 import type { UserProfile, CurrentUser } from './types';
@@ -31,7 +31,6 @@ interface UsersTableProps {
 
 export function UsersTable({ tenantId, users, currentUser, isLoading, isOwnerOrAdmin, isManagerPlus, onEdit }: UsersTableProps) {
   const router = useRouter();
-  const { toast } = useToast();
 
   // Un REGIONAL_MANAGER peut modifier (jamais activer/désactiver ni
   // supprimer, réservés à isOwnerOrAdmin) un compte MANAGER/CASHIER déjà
@@ -64,14 +63,13 @@ export function UsersTable({ tenantId, users, currentUser, isLoading, isOwnerOrA
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur');
-      toast({
-        title: !u.isActive ? 'Utilisateur activé' : 'Utilisateur désactivé',
+      toast.success(!u.isActive ? 'Utilisateur activé' : 'Utilisateur désactivé', {
         description: !u.isActive
           ? `${u.firstName} ${u.lastName} peut à nouveau se connecter.`
           : `${u.firstName} ${u.lastName} est désactivé et son accès a été révoqué immédiatement.`,
       });
     } catch (e) {
-      toast({ title: 'Erreur', description: e instanceof Error ? e.message : 'Erreur interne', variant: 'destructive' });
+      toast.error('Erreur', { description: e instanceof Error ? e.message : 'Erreur interne' });
     }
   };
 
@@ -86,9 +84,9 @@ export function UsersTable({ tenantId, users, currentUser, isLoading, isOwnerOrA
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur lors de la restauration');
-      toast({ title: 'Compte restauré', description: `${u.firstName} ${u.lastName} peut à nouveau se connecter.` });
+      toast.success('Compte restauré', { description: `${u.firstName} ${u.lastName} peut à nouveau se connecter.` });
     } catch (e) {
-      toast({ title: 'Erreur', description: e instanceof Error ? e.message : 'Erreur interne', variant: 'destructive' });
+      toast.error('Erreur', { description: e instanceof Error ? e.message : 'Erreur interne' });
     } finally { setIsDeleting(false); }
   };
 
@@ -96,7 +94,7 @@ export function UsersTable({ tenantId, users, currentUser, isLoading, isOwnerOrA
     if (!tenantId || !deletingUser) return;
     const requiresJustification = currentUser?.role === 'ADMIN' && ['MANAGER', 'CASHIER'].includes(deletingUser.role);
     if (requiresJustification && deleteReason.trim().length < 5) {
-      toast({ title: 'Justification requise', description: 'Explique en quelques mots pourquoi cette suppression est nécessaire.', variant: 'destructive' });
+      toast.error('Justification requise', { description: 'Explique en quelques mots pourquoi cette suppression est nécessaire.' });
       return;
     }
     setIsDeleting(true);
@@ -109,14 +107,14 @@ export function UsersTable({ tenantId, users, currentUser, isLoading, isOwnerOrA
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur lors de la suppression');
       if (data.pending) {
-        toast({ title: 'Demande envoyée', description: `La suppression de ${deletingUser.firstName} ${deletingUser.lastName} attend la validation du Propriétaire.` });
+        toast.success('Demande envoyée', { description: `La suppression de ${deletingUser.firstName} ${deletingUser.lastName} attend la validation du Propriétaire.` });
       } else {
-        toast({ title: 'Utilisateur supprimé', description: `${deletingUser.firstName} ${deletingUser.lastName} a été retiré du compte.` });
+        toast.success('Utilisateur supprimé', { description: `${deletingUser.firstName} ${deletingUser.lastName} a été retiré du compte.` });
       }
       setDeletingUser(null);
       setDeleteReason('');
     } catch (e) {
-      toast({ title: 'Erreur', description: e instanceof Error ? e.message : 'Erreur interne', variant: 'destructive' });
+      toast.error('Erreur', { description: e instanceof Error ? e.message : 'Erreur interne' });
     } finally { setIsDeleting(false); }
   };
 
@@ -131,11 +129,11 @@ export function UsersTable({ tenantId, users, currentUser, isLoading, isOwnerOrA
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur lors de la purge');
-      toast({ title: 'Compte purgé définitivement', description: `${purgingUser.firstName} ${purgingUser.lastName} a été effacé — cette action ne peut plus être annulée.` });
+      toast.success('Compte purgé définitivement', { description: `${purgingUser.firstName} ${purgingUser.lastName} a été effacé — cette action ne peut plus être annulée.` });
       setPurgingUser(null);
       setPurgeConfirmText('');
     } catch (e) {
-      toast({ title: 'Erreur', description: e instanceof Error ? e.message : 'Erreur interne', variant: 'destructive' });
+      toast.error('Erreur', { description: e instanceof Error ? e.message : 'Erreur interne' });
     } finally { setIsPurging(false); }
   };
 
