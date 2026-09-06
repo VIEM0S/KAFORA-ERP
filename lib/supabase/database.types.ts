@@ -2127,6 +2127,7 @@ export type Database = {
           current_period_end: string | null
           current_period_start: string | null
           id: string
+          last_reminder_days_left: number | null
           limits: Json | null
           plan: Database["public"]["Enums"]["subscription_plan"]
           status: Database["public"]["Enums"]["subscription_status"]
@@ -2140,6 +2141,7 @@ export type Database = {
           current_period_end?: string | null
           current_period_start?: string | null
           id?: string
+          last_reminder_days_left?: number | null
           limits?: Json | null
           plan?: Database["public"]["Enums"]["subscription_plan"]
           status?: Database["public"]["Enums"]["subscription_status"]
@@ -2153,6 +2155,7 @@ export type Database = {
           current_period_end?: string | null
           current_period_start?: string | null
           id?: string
+          last_reminder_days_left?: number | null
           limits?: Json | null
           plan?: Database["public"]["Enums"]["subscription_plan"]
           status?: Database["public"]["Enums"]["subscription_status"]
@@ -3062,6 +3065,7 @@ export type Database = {
         | "SUBSCRIPTION_REACTIVATED"
         | "SUBSCRIPTION_EXTENDED"
         | "KAFORA_ANNOUNCEMENT"
+        | "SUBSCRIPTION_EXPIRING_SOON"
       credit_status:
         | "PENDING"
         | "PARTIALLY_PAID"
@@ -3281,6 +3285,7 @@ export const Constants = {
         "SUBSCRIPTION_REACTIVATED",
         "SUBSCRIPTION_EXTENDED",
         "KAFORA_ANNOUNCEMENT",
+        "SUBSCRIPTION_EXPIRING_SOON",
       ],
       credit_status: [
         "PENDING",
