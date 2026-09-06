@@ -71,6 +71,8 @@ export default function AdminConsolePage() {
   const [tab, setTab] = useState<'clients' | 'support' | 'payments'>('clients');
   const [broadcastOpen, setBroadcastOpen] = useState(false);
   const [historyTarget, setHistoryTarget] = useState<TenantRow | null>(null);
+  const [search, setSearch] = useState('');
+  const [riskOnly, setRiskOnly] = useState(false);
 
   const load = async () => {
     setIsLoading(true);
@@ -128,6 +130,20 @@ export default function AdminConsolePage() {
       setBusyId(null);
     }
   };
+
+  // Recherche + "clients à risque" (aucune vente depuis >14j, ou blocage
+  // sous 7j) — utile dès qu'il y a plus qu'une poignée de clients à
+  // parcourir pour savoir qui rappeler en priorité.
+  const q = search.trim().toLowerCase();
+  const visibleTenants = tenants.filter(t => {
+    if (q && !`${t.name} ${t.email || ''} ${t.city || ''}`.toLowerCase().includes(q)) return false;
+    if (riskOnly) {
+      const idle = daysSince(t.lastSaleAt);
+      const atRisk = idle === null || idle > 14 || (t.daysLeft !== null && t.daysLeft <= 7);
+      if (!atRisk) return false;
+    }
+    return true;
+  });
 
   return (
     <DashboardLayout>
@@ -214,15 +230,31 @@ export default function AdminConsolePage() {
         {tab === 'payments' && <PaymentsPanel tenants={tenants} />}
         {tab === 'support' && <SupportTicketsPanel />}
 
+        {tab === 'clients' && (
+          <div className="flex flex-wrap items-center gap-3">
+            <Input
+              className="w-64" placeholder="Rechercher une entreprise..."
+              value={search} onChange={e => setSearch(e.target.value)}
+            />
+            <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
+              <input type="checkbox" checked={riskOnly} onChange={e => setRiskOnly(e.target.checked)} />
+              Clients à risque uniquement
+            </label>
+            {(search || riskOnly) && (
+              <span className="text-xs text-gray-400">{visibleTenants.length} / {tenants.length}</span>
+            )}
+          </div>
+        )}
+
         {tab === 'clients' && (isLoading ? (
           <div className="flex justify-center py-12">
             <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
           </div>
-        ) : tenants.length === 0 ? (
-          <Card><CardContent className="p-10 text-center text-gray-500">Aucun client.</CardContent></Card>
+        ) : visibleTenants.length === 0 ? (
+          <Card><CardContent className="p-10 text-center text-gray-500">Aucun client{search || riskOnly ? ' pour ce filtre' : ''}.</CardContent></Card>
         ) : (
           <div className="space-y-3">
-            {tenants.map(t => {
+            {visibleTenants.map(t => {
               const idle = daysSince(t.lastSaleAt);
               return (
                 <Card key={t.id}>
@@ -325,7 +357,7 @@ export default function AdminConsolePage() {
       <PaymentDialog tenant={paying} onClose={() => setPaying(null)} onDone={load} />
       <SuspendDialog tenant={suspending} onClose={() => setSuspending(null)} onDone={load} />
       <UsersDialog tenant={viewingUsers} onClose={() => setViewingUsers(null)} />
-      <BroadcastDialog open={broadcastOpen} onClose={() => setBroadcastOpen(false)} />
+      <BroadcastDialog open={broadcastOpen} onClose={() => setBroadcastOpen(false)} tenants={tenants} />
       <TenantHistoryDialog tenant={historyTarget} onClose={() => setHistoryTarget(null)} />
     </DashboardLayout>
   );
@@ -977,19 +1009,28 @@ function PaymentsPanel({ tenants }: { tenants: TenantRow[] }) {
  * Message groupé à tous les clients ou filtré par forfait — jusqu'ici il
  * n'existait aucun moyen d'annoncer quoi que ce soit à plusieurs clients
  * à la fois (voir /api/admin/broadcast).
+ *
+ * Étape d'aperçu obligatoire avant l'envoi réel : trouvé à l'usage (voir
+ * [[project_admin_console_support_broadcast]]) qu'un envoi "à toutes les
+ * entreprises actives" testé par erreur touchait de VRAIS clients, sans
+ * aucun moyen de le voir venir avant de cliquer Envoyer. La liste des
+ * destinataires réels est maintenant affichée et doit être confirmée
+ * explicitement une seconde fois.
  */
-function BroadcastDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+function BroadcastDialog({ open, onClose, tenants }: { open: boolean; onClose: () => void; tenants: TenantRow[] }) {
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [plan, setPlan] = useState<'ALL' | 'STARTER' | 'BUSINESS' | 'ENTERPRISE'>('ALL');
+  const [step, setStep] = useState<'compose' | 'confirm'>('compose');
   const [isSending, setIsSending] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  const reset = () => { setTitle(''); setMessage(''); setPlan('ALL'); setResult(null); setErr(null); };
+  const reset = () => { setTitle(''); setMessage(''); setPlan('ALL'); setStep('compose'); setResult(null); setErr(null); };
+
+  const recipients = tenants.filter(t => t.isActive && (plan === 'ALL' || t.plan === plan));
 
   const submit = async () => {
-    if (!title.trim() || !message.trim()) return setErr('Titre et message requis');
     setIsSending(true); setErr(null); setResult(null);
     try {
       const res = await fetch('/api/admin/broadcast', {
@@ -999,6 +1040,7 @@ function BroadcastDialog({ open, onClose }: { open: boolean; onClose: () => void
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || `Erreur serveur (${res.status})`);
       setResult(`Envoyé à ${data.sentTo} entreprise(s).`);
+      setStep('compose');
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Erreur inconnue');
     } finally { setIsSending(false); }
@@ -1008,37 +1050,70 @@ function BroadcastDialog({ open, onClose }: { open: boolean; onClose: () => void
     <Dialog open={open} onOpenChange={o => { if (!o) { reset(); onClose(); } }}>
       <DialogContent>
         <DialogHeader><DialogTitle className="flex items-center gap-2"><Megaphone className="h-5 w-5" /> Message aux clients</DialogTitle></DialogHeader>
-        <div className="space-y-3">
-          <div>
-            <Label>Destinataires</Label>
-            <Select value={plan} onValueChange={v => setPlan(v as typeof plan)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">Toutes les entreprises actives</SelectItem>
-                <SelectItem value="STARTER">Forfait Starter uniquement</SelectItem>
-                <SelectItem value="BUSINESS">Forfait Business uniquement</SelectItem>
-                <SelectItem value="ENTERPRISE">Forfait Enterprise uniquement</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label>Titre *</Label>
-            <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="Ex : Maintenance prévue ce week-end" />
-          </div>
-          <div>
-            <Label>Message *</Label>
-            <Textarea rows={4} value={message} onChange={e => setMessage(e.target.value)} />
-          </div>
-          {result && <p className="text-sm text-green-700">{result}</p>}
-          {err && <p className="text-sm text-red-600">{err}</p>}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => { reset(); onClose(); }}>Fermer</Button>
-          <Button onClick={submit} disabled={isSending}>
-            {isSending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-            Envoyer
-          </Button>
-        </DialogFooter>
+
+        {step === 'compose' ? (
+          <>
+            <div className="space-y-3">
+              <div>
+                <Label>Destinataires</Label>
+                <Select value={plan} onValueChange={v => setPlan(v as typeof plan)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">Toutes les entreprises actives</SelectItem>
+                    <SelectItem value="STARTER">Forfait Starter uniquement</SelectItem>
+                    <SelectItem value="BUSINESS">Forfait Business uniquement</SelectItem>
+                    <SelectItem value="ENTERPRISE">Forfait Enterprise uniquement</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Titre *</Label>
+                <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="Ex : Maintenance prévue ce week-end" />
+              </div>
+              <div>
+                <Label>Message *</Label>
+                <Textarea rows={4} value={message} onChange={e => setMessage(e.target.value)} />
+              </div>
+              {result && <p className="text-sm text-green-700">{result}</p>}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { reset(); onClose(); }}>Fermer</Button>
+              <Button
+                onClick={() => { if (!title.trim() || !message.trim()) { setErr('Titre et message requis'); return; } setErr(null); setStep('confirm'); }}
+              >
+                Aperçu des destinataires
+              </Button>
+            </DialogFooter>
+            {err && <p className="text-sm text-red-600 px-1">{err}</p>}
+          </>
+        ) : (
+          <>
+            <div className="space-y-3">
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                Ce message sera envoyé (alerte + email) à {recipients.length} entreprise(s) réelle(s), listées ci-dessous. Vérifiez avant de confirmer.
+              </div>
+              <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 divide-y">
+                {recipients.length === 0 ? (
+                  <p className="p-3 text-sm text-gray-500">Aucune entreprise ne correspond à ce filtre.</p>
+                ) : recipients.map(t => (
+                  <p key={t.id} className="p-2 text-sm text-gray-800">{t.name} <span className="text-xs text-gray-400">({t.plan})</span></p>
+                ))}
+              </div>
+              <div className="rounded-lg bg-gray-50 border border-gray-200 p-3">
+                <p className="text-sm font-medium text-gray-900">{title}</p>
+                <p className="text-sm text-gray-600 whitespace-pre-wrap mt-1">{message}</p>
+              </div>
+              {err && <p className="text-sm text-red-600">{err}</p>}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setStep('compose')} disabled={isSending}>Modifier</Button>
+              <Button onClick={submit} disabled={isSending || recipients.length === 0} className="bg-amber-600 hover:bg-amber-700">
+                {isSending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                Confirmer l&apos;envoi à {recipients.length} entreprise(s)
+              </Button>
+            </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );
