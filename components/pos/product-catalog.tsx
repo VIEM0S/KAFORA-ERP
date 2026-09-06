@@ -39,7 +39,7 @@ export function ProductCatalog({
   const filteredProducts = products;
 
   return (
-    <div className="flex-1 flex flex-col gap-3 min-w-0">
+    <div className="flex-1 flex flex-col gap-3 min-w-0 min-h-0">
       {outsideHours && (
         <div className="rounded-lg border bg-slate-50 border-slate-200 text-slate-700 text-sm px-4 py-2 flex items-center gap-2">
           <Clock className="h-4 w-4 flex-shrink-0" />
@@ -106,7 +106,7 @@ export function ProductCatalog({
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto min-h-0">
         {isLoading ? (
           <div className="flex items-center justify-center h-full text-gray-400">
             <RefreshCw className="h-5 w-5 animate-spin mr-2" />Chargement...

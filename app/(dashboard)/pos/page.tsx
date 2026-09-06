@@ -124,7 +124,15 @@ export default function POSPage() {
         </div>
       )}
 
-      <div className="flex gap-4 h-[calc(100vh-8rem)]">
+      {/* En dessous de lg, le panier passait à côté du catalogue dans une
+          rangée flex qui ne repassait jamais en colonne : avec un panier à
+          largeur fixe (320px) qui ne rétrécit jamais, le catalogue de
+          produits se retrouvait écrasé à quelques pixels de large — la
+          page la plus utilisée de l'app (caisse) devenait quasi inutilisable
+          sur téléphone/tablette. Empilés en colonne, chacun garde son propre
+          défilement (min-h-0 sur les deux, voir product-catalog.tsx et
+          cart-panel.tsx) plutôt que de faire défiler toute la page. */}
+      <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-8rem)]">
         <ProductCatalog
           products={products}
           inventory={inventory}

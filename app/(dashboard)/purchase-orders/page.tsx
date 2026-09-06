@@ -262,12 +262,12 @@ export default function PurchaseOrdersPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Bons de commande</h1>
             <p className="text-sm text-gray-500 mt-1">{orders.length} bon{orders.length !== 1 ? 's' : ''} de commande</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline" size="sm" disabled={filtered.length === 0}
               onClick={() => exportToCsv(`achats-${new Date().toISOString().slice(0, 10)}`, filtered, [
@@ -368,7 +368,7 @@ export default function PurchaseOrdersPage() {
           )}
           {createError && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{createError}</div>}
           <div className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Fournisseur *</Label>
                 <Select value={supplierId} onValueChange={setSupplierId}>
@@ -396,7 +396,13 @@ export default function PurchaseOrdersPage() {
               <Label>Articles</Label>
               <div className="space-y-2">
                 {lines.map((l, i) => (
-                  <div key={i} className="flex gap-2 items-start">
+                  // Sur mobile, le Select produit + les deux champs numériques + le
+                  // bouton supprimer sur une seule ligne dépassaient largement la
+                  // largeur du dialogue (qui n'a pas de défilement horizontal) —
+                  // le contenu débordait hors de l'écran, notamment la corbeille,
+                  // rendant une ligne impossible à retirer au doigt. Empilé en
+                  // colonne en dessous de sm, chaque élément reste atteignable.
+                  <div key={i} className="flex flex-col sm:flex-row gap-2 sm:items-start">
                     <div className="flex-1">
                       <Select value={l.productId} onValueChange={v => onPickProduct(i, v)}>
                         <SelectTrigger><SelectValue placeholder="Produit" /></SelectTrigger>
@@ -405,17 +411,19 @@ export default function PurchaseOrdersPage() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <Input
-                      type="number" min={1} placeholder="Qté" className="w-24"
-                      value={l.quantityOrdered} onChange={e => updateLine(i, { quantityOrdered: e.target.value })}
-                    />
-                    <Input
-                      type="number" min={0} placeholder="Coût unit." className="w-32"
-                      value={l.unitCost} onChange={e => updateLine(i, { unitCost: e.target.value })}
-                    />
-                    <Button variant="ghost" size="icon" className="h-9 w-9 flex-shrink-0" onClick={() => removeLine(i)} disabled={lines.length === 1}>
-                      <Trash2 className="h-4 w-4 text-red-500" />
-                    </Button>
+                    <div className="flex gap-2">
+                      <Input
+                        type="number" min={1} placeholder="Qté" className="w-24"
+                        value={l.quantityOrdered} onChange={e => updateLine(i, { quantityOrdered: e.target.value })}
+                      />
+                      <Input
+                        type="number" min={0} placeholder="Coût unit." className="w-32"
+                        value={l.unitCost} onChange={e => updateLine(i, { unitCost: e.target.value })}
+                      />
+                      <Button variant="ghost" size="icon" className="h-9 w-9 flex-shrink-0" onClick={() => removeLine(i)} disabled={lines.length === 1}>
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>

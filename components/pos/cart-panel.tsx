@@ -23,7 +23,7 @@ export function CartPanel({ inventory, canDiscount, onOpenCustomerPicker, onPay 
   const total = getTotal();
 
   return (
-    <div className="w-80 flex-shrink-0 flex flex-col bg-white rounded-xl border-2 border-gray-100 shadow-sm">
+    <div className="flex-1 min-h-0 lg:flex-none lg:w-80 lg:flex-shrink-0 flex flex-col bg-white rounded-xl border-2 border-gray-100 shadow-sm">
       <div className="p-4 border-b">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-bold text-gray-900 flex items-center gap-2">
@@ -51,7 +51,7 @@ export function CartPanel({ inventory, canDiscount, onOpenCustomerPicker, onPay 
       </div>
 
       {/* Articles */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+      <div className="flex-1 overflow-y-auto min-h-0 p-3 space-y-2">
         {items.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400 py-8">
             <ShoppingCart className="h-12 w-12 mb-3 opacity-20" />

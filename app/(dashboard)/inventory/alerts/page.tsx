@@ -150,14 +150,14 @@ export default function AlertsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Alertes stock</h1>
             <p className="text-sm text-gray-500 mt-1">
               {allAlerts.length} alerte{allAlerts.length !== 1 ? 's' : ''} active{allAlerts.length !== 1 ? 's' : ''}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {allAlerts.length > 0 && (
               <Button
                 onClick={() => {
@@ -183,7 +183,7 @@ export default function AlertsPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Card className="border-red-200"><CardContent className="p-4">
             <div className="flex items-center gap-3">
               <Package className="h-8 w-8 text-red-500" />

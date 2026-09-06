@@ -281,9 +281,12 @@ export default function ProductImportPage() {
               </Button>
 
               <Tabs defaultValue="paste">
-                <TabsList>
-                  <TabsTrigger value="paste"><ClipboardPaste className="h-4 w-4 mr-1.5" />Coller depuis Excel</TabsTrigger>
-                  <TabsTrigger value="file"><Upload className="h-4 w-4 mr-1.5" />Importer un fichier</TabsTrigger>
+                {/* w-full + grid (au lieu de l'inline-flex par défaut, qui ne
+                    rétrécit pas whitespace-nowrap) : les deux libellés
+                    dépassaient légèrement du conteneur sur mobile. */}
+                <TabsList className="w-full grid grid-cols-2">
+                  <TabsTrigger value="paste"><ClipboardPaste className="h-4 w-4 mr-1.5 flex-shrink-0" />Coller depuis Excel</TabsTrigger>
+                  <TabsTrigger value="file"><Upload className="h-4 w-4 mr-1.5 flex-shrink-0" />Importer un fichier</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="paste" className="space-y-3 pt-3">

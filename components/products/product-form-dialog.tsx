@@ -181,7 +181,7 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-4 py-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
           <div className="space-y-2">
             <Label>SKU / Référence *</Label>
             <Input placeholder="ex: CM-PT-50" autoFocus value={form.sku} onChange={(e) => f('sku', e.target.value)} />
@@ -190,11 +190,11 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
             <Label>Code-barres</Label>
             <Input placeholder="ex: 1234567890123" value={form.barcode} onChange={(e) => f('barcode', e.target.value)} />
           </div>
-          <div className="col-span-2 space-y-2">
+          <div className="col-span-1 sm:col-span-2 space-y-2">
             <Label>Nom du produit *</Label>
             <Input placeholder="Nom du produit" value={form.name} onChange={(e) => f('name', e.target.value)} />
           </div>
-          <div className="col-span-2 space-y-2">
+          <div className="col-span-1 sm:col-span-2 space-y-2">
             <Label>Description</Label>
             <Textarea placeholder="Description du produit..." value={form.description} onChange={(e) => f('description', e.target.value)} rows={2} />
           </div>
@@ -232,7 +232,7 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
             <Input type="number" placeholder="0" value={form.sellingPrice} onChange={(e) => f('sellingPrice', e.target.value)} min="0" />
           </div>
           {form.purchasePrice && form.sellingPrice && Number(form.purchasePrice) > 0 && (
-            <div className="col-span-2 bg-green-50 rounded-lg px-4 py-2 text-sm text-green-700">
+            <div className="col-span-1 sm:col-span-2 bg-green-50 rounded-lg px-4 py-2 text-sm text-green-700">
               Marge : {Math.round(((Number(form.sellingPrice) - Number(form.purchasePrice)) / Number(form.purchasePrice)) * 100)}%
               · Bénéfice : {formatCurrency(Number(form.sellingPrice) - Number(form.purchasePrice))} / unité
             </div>
@@ -245,14 +245,14 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
             <Label>Seuil d&apos;alerte stock</Label>
             <Input type="number" placeholder="10" value={form.alertThreshold} onChange={(e) => f('alertThreshold', e.target.value)} min="0" />
           </div>
-          <div className="col-span-2 flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+          <div className="col-span-1 sm:col-span-2 flex items-center justify-between p-3 bg-gray-50 rounded-lg">
             <div>
               <p className="text-sm font-medium">Produit actif</p>
               <p className="text-xs text-gray-500">Visible dans le POS et les ventes</p>
             </div>
             <Switch checked={form.isActive} onCheckedChange={(v) => f('isActive', v)} />
           </div>
-          <div className="col-span-2 flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+          <div className="col-span-1 sm:col-span-2 flex items-center justify-between p-3 bg-gray-50 rounded-lg">
             <div>
               <p className="text-sm font-medium">Suivi de stock</p>
               <p className="text-xs text-gray-500">Décrémenter le stock lors des ventes</p>
@@ -264,7 +264,7 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
               chk_products_track_exclusive côté base). Activer l'un désactive
               l'autre ici, en plus de la contrainte SQL qui protège contre un
               contournement. */}
-          <div className="col-span-2 flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+          <div className="col-span-1 sm:col-span-2 flex items-center justify-between p-3 bg-gray-50 rounded-lg">
             <div>
               <p className="text-sm font-medium">Suivi de péremption (FEFO)</p>
               <p className="text-xs text-gray-500">Chaque entrée en stock demande une date de péremption ; les plus proches sont vendues en premier</p>
@@ -274,7 +274,7 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
               onCheckedChange={(v) => setForm((prev) => ({ ...prev, trackExpiry: v, trackSerial: v ? false : prev.trackSerial }))}
             />
           </div>
-          <div className="col-span-2 flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+          <div className="col-span-1 sm:col-span-2 flex items-center justify-between p-3 bg-gray-50 rounded-lg">
             <div>
               <p className="text-sm font-medium">Suivi par numéro de série / IMEI</p>
               <p className="text-xs text-gray-500">Chaque exemplaire est identifié individuellement, choisi au moment de la vente</p>

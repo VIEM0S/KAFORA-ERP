@@ -63,7 +63,7 @@ function ProductsPageInner() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Produits</h1>
             <p className="text-sm text-gray-500 mt-1">
@@ -72,7 +72,7 @@ function ProductsPageInner() {
             </p>
           </div>
           {canManage && (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => router.push('/products/import')}>
                 <Upload className="h-4 w-4 mr-2" />Importer en masse
               </Button>
