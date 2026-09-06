@@ -112,9 +112,9 @@ export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogP
         <DialogHeader>
           <DialogTitle>Modifier l&apos;utilisateur</DialogTitle>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-4 py-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
           {editError && (
-            <div className="col-span-2 flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+            <div className="col-span-1 sm:col-span-2 flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
               <AlertCircle className="h-4 w-4 flex-shrink-0" />{editError}
             </div>
           )}
@@ -134,7 +134,7 @@ export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogP
             <Label htmlFor="eu-phone">Téléphone</Label>
             <Input id="eu-phone" value={editForm.phone} onChange={e => ef('phone', e.target.value)} placeholder="+223 ..." />
           </div>
-          <div className="col-span-2 space-y-1.5">
+          <div className="col-span-1 sm:col-span-2 space-y-1.5">
             <Label htmlFor="eu-role">Rôle</Label>
             <Select value={editForm.role} onValueChange={v => ef('role', v)}>
               <SelectTrigger id="eu-role"><SelectValue /></SelectTrigger>
@@ -148,7 +148,7 @@ export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogP
             <p className="text-xs text-gray-400">Ex. : promouvoir un Caissier en Responsable, ou l&apos;inverse.</p>
           </div>
 
-          <div className="col-span-2">
+          <div className="col-span-1 sm:col-span-2">
             {editForm.role === 'ADMIN' ? (
               <p className="text-xs text-gray-500">
                 Un Administrateur a accès à tous les magasins.
@@ -185,7 +185,7 @@ export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogP
               </>
             )}
           </div>
-          <div className="col-span-2 border-t pt-3 mt-1">
+          <div className="col-span-1 sm:col-span-2 border-t pt-3 mt-1">
             <p className="text-sm font-medium text-gray-700 mb-1">Horaires habituels (optionnel)</p>
             <p className="text-xs text-gray-400 mb-2">Affiche juste un avertissement dans le POS hors de ces heures — ne bloque jamais l&apos;accès. Laisser vide pour un poste sans horaire fixe (ex. boutique ouverte en continu).</p>
           </div>
@@ -197,7 +197,7 @@ export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogP
             <Label htmlFor="eu-workEnd">Fin</Label>
             <Input id="eu-workEnd" type="time" value={editForm.workEnd} onChange={e => ef('workEnd', e.target.value)} />
           </div>
-          <div className="col-span-2 border-t pt-3 mt-1">
+          <div className="col-span-1 sm:col-span-2 border-t pt-3 mt-1">
             <p className="text-sm font-medium text-gray-700 mb-2">Réinitialiser le mot de passe (optionnel)</p>
           </div>
           <div className="space-y-1.5">

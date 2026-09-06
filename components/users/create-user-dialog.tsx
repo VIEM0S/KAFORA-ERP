@@ -84,7 +84,7 @@ export function CreateUserDialog({ tenantId, open, onOpenChange, onCreated }: Cr
             <AlertCircle className="h-4 w-4 flex-shrink-0" />{formError}
           </div>
         )}
-        <div className="grid grid-cols-2 gap-4 py-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
           <div className="space-y-2">
             <Label htmlFor="cu-firstName">Prénom *</Label>
             <Input id="cu-firstName" value={form.firstName} onChange={e => f('firstName', e.target.value)} placeholder="Amadou" />
@@ -93,7 +93,7 @@ export function CreateUserDialog({ tenantId, open, onOpenChange, onCreated }: Cr
             <Label htmlFor="cu-lastName">Nom *</Label>
             <Input id="cu-lastName" value={form.lastName} onChange={e => f('lastName', e.target.value)} placeholder="Coulibaly" />
           </div>
-          <div className="col-span-2 space-y-2">
+          <div className="col-span-1 sm:col-span-2 space-y-2">
             <Label htmlFor="cu-email">Email *</Label>
             <Input id="cu-email" type="email" value={form.email} onChange={e => f('email', e.target.value)} placeholder="utilisateur@email.com" />
           </div>
@@ -175,7 +175,7 @@ export function CreateUserDialog({ tenantId, open, onOpenChange, onCreated }: Cr
               <p className="text-xs text-red-500">Les mots de passe ne correspondent pas</p>
             )}
           </div>
-          <div className="col-span-2 bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+          <div className="col-span-1 sm:col-span-2 bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
             ℹ️ L&apos;utilisateur recevra ses identifiants par email. Il pourra modifier son mot de passe depuis les paramètres.
           </div>
         </div>
