@@ -243,7 +243,7 @@ export default function NotificationsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6 max-w-2xl">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>
             <p className="text-sm text-gray-500 mt-1">
@@ -251,7 +251,7 @@ export default function NotificationsPage() {
             </p>
           </div>
           {visible.length > 0 && (
-            <Button variant="outline" size="sm" onClick={dismissAll}>
+            <Button variant="outline" size="sm" onClick={dismissAll} className="self-start sm:self-auto">
               <Check className="h-4 w-4 mr-2" />Tout marquer comme lu
             </Button>
           )}

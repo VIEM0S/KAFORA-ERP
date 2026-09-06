@@ -145,18 +145,20 @@ export default function CustomerDetailPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center gap-4">
-          <Button variant="outline" size="sm" onClick={() => router.push('/customers')}>
+        {/* Header — flex-wrap + min-w-0 : sans ça, un nom d'entreprise long
+            (raison sociale complète) ne pouvait pas passer à la ligne dans la
+            rangée flex et débordait hors de l'écran sur mobile. */}
+        <div className="flex flex-wrap items-center gap-4">
+          <Button variant="outline" size="sm" onClick={() => router.push('/customers')} className="flex-shrink-0">
             <ArrowLeft className="h-4 w-4 mr-2" />Retour
           </Button>
-          <div className="flex items-center gap-3">
-            <div className={`h-12 w-12 rounded-full flex items-center justify-center text-lg font-bold text-white ${customer.customerType === 'BUSINESS' ? 'bg-purple-500' : 'bg-blue-500'}`}>
+          <div className="flex items-center gap-3 min-w-0">
+            <div className={`h-12 w-12 rounded-full flex items-center justify-center text-lg font-bold text-white flex-shrink-0 ${customer.customerType === 'BUSINESS' ? 'bg-purple-500' : 'bg-blue-500'}`}>
               {displayName[0] || '?'}
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold text-gray-900">{displayName}</h1>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-2xl font-bold text-gray-900 break-words">{displayName}</h1>
                 <Badge variant={customer.customerType === 'BUSINESS' ? 'secondary' : 'outline'}>
                   {customer.customerType === 'BUSINESS' ? 'Entreprise' : 'Particulier'}
                 </Badge>
