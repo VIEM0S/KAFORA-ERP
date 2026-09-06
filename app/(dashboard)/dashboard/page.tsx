@@ -387,7 +387,14 @@ export default function DashboardPage() {
                           <ShoppingCart className="h-5 w-5 text-primary-600" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
+                          {/* flex-wrap : sans lui, l'ID + les badges (parfois
+                              deux à la fois — statut ET moyen de paiement)
+                              débordaient hors de leur colonne sur mobile au
+                              lieu de passer à la ligne, poussant toute la
+                              page plus large que l'écran (jamais vu en test
+                              avec peu de ventes, mais systématique dès qu'un
+                              vrai historique de ventes s'affiche). */}
+                          <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-medium text-gray-900 text-sm font-mono">
                               #{sale.id.slice(0, 8).toUpperCase()}
                             </p>
@@ -398,7 +405,7 @@ export default function DashboardPage() {
                           </div>
                           <p className="text-sm text-gray-500 truncate">{sale.customerName || 'Client comptoir'}</p>
                         </div>
-                        <div className="text-right">
+                        <div className="text-right flex-shrink-0">
                           <p className="font-semibold text-gray-900">{formatCurrency(sale.total || 0)}</p>
                           <p className="text-xs text-gray-400">{formatRelativeTime(sale.createdAt)}</p>
                         </div>
