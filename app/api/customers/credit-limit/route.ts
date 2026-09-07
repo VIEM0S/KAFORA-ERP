@@ -3,6 +3,7 @@ import { createServiceRoleClient, createServerSupabaseClient } from '@/lib/supab
 import { getSessionClaims } from '@/lib/api/session';
 import { notifyRole } from '@/lib/api/notify-role';
 import { formatCurrency } from '@/lib/utils/helpers';
+import { getErrorMessage } from '@/lib/utils/errors';
 
 // customers.credit_limit n'est plus modifiable par un update direct
 // (revoke update (credit_limit), migration 045) — set_credit_limit() est
@@ -59,7 +60,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, previousLimit: result.previousLimit, newLimit: result.newLimit });
   } catch (error) {
     console.error('Set credit limit error:', error);
-    const msg = error instanceof Error ? error.message : 'Erreur interne';
+    const msg = getErrorMessage(error) || 'Erreur interne';
     const isKnown = /(FORBIDDEN|NOT_FOUND|INVALID_AMOUNT):/.test(msg);
     const cleanMsg = msg.replace(/^.*(FORBIDDEN|NOT_FOUND|INVALID_AMOUNT):\s*/, '');
     return NextResponse.json(

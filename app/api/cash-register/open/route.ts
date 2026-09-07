@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
 import { resolveCashRegisterId } from '@/lib/api/cash-register';
+import { getErrorMessage } from '@/lib/utils/errors';
 
 /**
  * Ouvre une session de caisse. Remplace l'écriture directe côté client dans
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, id: r.id });
   } catch (error) {
     console.error('Open cash register error:', error);
-    const msg = error instanceof Error ? error.message : 'Erreur interne';
+    const msg = getErrorMessage(error) || 'Erreur interne';
     const isAlreadyOpen = msg.includes('ALREADY_OPEN');
     const cleanMsg = msg.replace(/^.*ALREADY_OPEN:\s*/, '');
     return NextResponse.json(

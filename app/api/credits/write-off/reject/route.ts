@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient, createServerSupabaseClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
 import { notifyUser } from '@/lib/api/notify-role';
+import { getErrorMessage } from '@/lib/utils/errors';
 
 // Le RPC est appelé via createServerSupabaseClient() (JWT de l'appelant),
 // pas le service-role — voir le commentaire détaillé dans
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Credit write-off reject error:', error);
-    const msg = error instanceof Error ? error.message : 'Erreur interne';
+    const msg = getErrorMessage(error) || 'Erreur interne';
     const isKnown = /(FORBIDDEN|NOT_FOUND|INVALID_STATUS):/.test(msg);
     const cleanMsg = msg.replace(/^.*(FORBIDDEN|NOT_FOUND|INVALID_STATUS):\s*/, '');
     return NextResponse.json(

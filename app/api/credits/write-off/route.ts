@@ -3,6 +3,7 @@ import { createServiceRoleClient, createServerSupabaseClient } from '@/lib/supab
 import { getSessionClaims } from '@/lib/api/session';
 import { notifyRole } from '@/lib/api/notify-role';
 import { formatCurrency } from '@/lib/utils/helpers';
+import { getErrorMessage } from '@/lib/utils/errors';
 
 // Passe par une route API plutôt qu'un appel RPC direct depuis le client
 // (contrairement à repay_credit) : au-delà du seuil de gouvernance
@@ -79,7 +80,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, status: result.status, threshold: result.threshold });
   } catch (error) {
     console.error('Credit write-off error:', error);
-    const msg = error instanceof Error ? error.message : 'Erreur interne';
+    const msg = getErrorMessage(error) || 'Erreur interne';
     const isKnown = /^(FORBIDDEN|NOT_FOUND|INVALID_STATUS):/.test(msg) || /(FORBIDDEN|NOT_FOUND|INVALID_STATUS):/.test(msg);
     const cleanMsg = msg.replace(/^.*(FORBIDDEN|NOT_FOUND|INVALID_STATUS):\s*/, '');
     return NextResponse.json(

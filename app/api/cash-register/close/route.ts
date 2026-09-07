@@ -3,6 +3,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
 import { findCashRegisterId } from '@/lib/api/cash-register';
 import { isManagerPlus } from '@/lib/auth/roles';
+import { getErrorMessage } from '@/lib/utils/errors';
 
 /**
  * Clôture une caisse. Toute l'atomicité (relecture de la session ouverte,
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, ...(result as object) });
   } catch (error) {
     console.error('Close cash register error:', error);
-    const msg = error instanceof Error ? error.message : 'Erreur interne';
+    const msg = getErrorMessage(error) || 'Erreur interne';
     const isNoOpenSession = msg.includes('NO_OPEN_SESSION');
     const cleanMsg = msg.replace(/^.*NO_OPEN_SESSION:\s*/, '');
     return NextResponse.json(

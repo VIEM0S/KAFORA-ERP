@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
+import { getErrorMessage } from '@/lib/utils/errors';
 
 interface ReturnItemInput {
   productId: string;
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, id: r.id, refundAmount: r.refundAmount });
   } catch (error) {
     console.error('Create return error:', error);
-    const msg = error instanceof Error ? error.message : 'Erreur interne';
+    const msg = getErrorMessage(error) || 'Erreur interne';
     const isKnownBusinessError = msg.includes('QUANTITY_EXCEEDS') || msg.includes('PRODUCT_NOT_IN_SALE') || msg.includes('INVALID_STATUS');
     const isNotFound = msg.includes('NOT_FOUND');
     const cleanMsg = msg.replace(/^.*(QUANTITY_EXCEEDS|PRODUCT_NOT_IN_SALE|INVALID_STATUS|NOT_FOUND):\s*/, '');

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
 import { notifyRole } from '@/lib/api/notify-role';
+import { getErrorMessage } from '@/lib/utils/errors';
 
 /**
  * Suspend ou réactive une entreprise cliente. Toute l'atomicité (mise à jour
@@ -69,7 +70,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, ...(result as object) });
   } catch (error) {
     console.error('Admin tenant-status error:', error);
-    const msg = error instanceof Error ? error.message : 'Erreur interne';
+    const msg = getErrorMessage(error) || 'Erreur interne';
     const isNotFound = msg.includes('NOT_FOUND');
     return NextResponse.json(
       { error: isNotFound ? msg.replace(/^.*NOT_FOUND:\s*/, '') : 'Erreur interne' },

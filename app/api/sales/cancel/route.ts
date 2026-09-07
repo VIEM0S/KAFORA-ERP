@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
 import { writeAuditLog } from '@/lib/supabase/audit-log';
+import { getErrorMessage } from '@/lib/utils/errors';
 
 // Annule une vente complétée et restaure le stock.
 // Le serveur revérifie tout (statut, quantités) au lieu de faire confiance
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Cancel sale error:', error);
-    const msg = error instanceof Error ? error.message : 'Erreur interne';
+    const msg = getErrorMessage(error) || 'Erreur interne';
     const isKnownBusinessError = msg.includes('ALREADY_CANCELLED') || msg.includes('NOT_FOUND');
     const cleanMsg = msg.replace(/^.*(ALREADY_CANCELLED|NOT_FOUND):\s*/, '');
     return NextResponse.json(

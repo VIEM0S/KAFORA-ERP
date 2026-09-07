@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { checkRateLimit, getClientIp } from '@/lib/api/rate-limit';
 import { mapUser, mapTenant, mapStore, mapSubscription } from '@/lib/supabase/mappers';
+import { getErrorMessage } from '@/lib/utils/errors';
 
 /**
  * Appelée par le client juste après supabase.auth.signInWithPassword() —
@@ -156,7 +157,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: unknown) {
     console.error('❌ Login error:', error);
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error) || String(error);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

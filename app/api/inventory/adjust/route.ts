@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
 import { isManagerPlus } from '@/lib/auth/roles';
+import { getErrorMessage } from '@/lib/utils/errors';
 
 /**
  * Ajuste le stock d'un produit dans un magasin (entrée, sortie ou
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, ...(result as object) });
   } catch (error) {
     console.error('Adjust inventory error:', error);
-    const msg = error instanceof Error ? error.message : 'Erreur interne';
+    const msg = getErrorMessage(error) || 'Erreur interne';
     const isForbidden = msg.includes('FORBIDDEN');
     const cleanMsg = msg.replace(/^.*(FORBIDDEN|INVALID_MODE):\s*/, '');
     return NextResponse.json(

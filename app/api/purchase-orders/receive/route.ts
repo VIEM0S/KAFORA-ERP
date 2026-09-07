@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
+import { getErrorMessage } from '@/lib/utils/errors';
 
 interface ReceiveLine {
   productId: string;
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Receive purchase order error:', error);
-    const msg = error instanceof Error ? error.message : 'Erreur interne';
+    const msg = getErrorMessage(error) || 'Erreur interne';
     const isKnownBusinessError = msg.includes('INVALID_STATUS') || msg.includes('QUANTITY_EXCEEDS');
     const isNotFound = msg.includes('NOT_FOUND');
     const cleanMsg = msg.replace(/^.*(INVALID_STATUS|QUANTITY_EXCEEDS|NOT_FOUND):\s*/, '');

@@ -4,6 +4,7 @@ import { getSessionClaims } from '@/lib/api/session';
 import { SUBSCRIPTION_PLANS, PlanId, REFERRAL_REFERRER_BONUS_DAYS } from '@/lib/constants';
 import { notifyRole } from '@/lib/api/notify-role';
 import { formatCurrency } from '@/lib/utils/helpers';
+import { getErrorMessage } from '@/lib/utils/errors';
 
 /**
  * Console éditeur : enregistre un paiement et prolonge un abonnement.
@@ -87,7 +88,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, ...(result as object) });
   } catch (error) {
     console.error('Admin subscription error:', error);
-    const msg = error instanceof Error ? error.message : 'Erreur interne';
+    const msg = getErrorMessage(error) || 'Erreur interne';
     const isNotFound = msg.includes('NOT_FOUND');
     return NextResponse.json(
       { error: isNotFound ? msg.replace(/^.*NOT_FOUND:\s*/, '') : 'Erreur interne' },

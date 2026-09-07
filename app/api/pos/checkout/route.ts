@@ -3,6 +3,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
 import { checkSubscriptionAllows } from '@/lib/api/subscription-guard';
 import { isManagerPlus } from '@/lib/auth/roles';
+import { getErrorMessage } from '@/lib/utils/errors';
 
 interface CheckoutItem {
   productId: string;
@@ -193,7 +194,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, saleId: r.saleId, reference: r.reference, total: r.total, change: r.change });
   } catch (error) {
     console.error('POS checkout error:', error);
-    const msg = error instanceof Error ? error.message : 'Erreur interne';
+    const msg = getErrorMessage(error) || 'Erreur interne';
     // pos_checkout() préfixe ses erreurs métier connues pour qu'on puisse les
     // distinguer d'une erreur technique — l'utilisateur doit savoir pourquoi.
     const isKnownBusinessError = msg.includes('STOCK_INSUFFICIENT') || msg.includes('CREDIT_LIMIT_EXCEEDED') || msg.includes('SERIAL_UNAVAILABLE');

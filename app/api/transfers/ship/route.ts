@@ -5,6 +5,7 @@ import { checkSubscriptionAllows } from '@/lib/api/subscription-guard';
 import { checkPlanFeatureAllows } from '@/lib/api/plan-guard';
 import { resolveTransferSettings, canShip } from '@/lib/transfers/rules';
 import type { UserRole } from '@/lib/types';
+import { getErrorMessage } from '@/lib/utils/errors';
 
 /**
  * Expédie un transfert : le stock SORT du magasin source. Toute l'atomicité
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Transfer ship error:', error);
-    const msg = error instanceof Error ? error.message : 'Erreur interne';
+    const msg = getErrorMessage(error) || 'Erreur interne';
     const isKnownBusinessError = msg.includes('INVALID_STATUS') || msg.includes('NO_STOCK') || msg.includes('INSUFFICIENT_STOCK');
     const isNotFound = msg.includes('NOT_FOUND');
     const cleanMsg = msg.replace(/^.*(INVALID_STATUS|NO_STOCK|INSUFFICIENT_STOCK|NOT_FOUND):\s*/, '');

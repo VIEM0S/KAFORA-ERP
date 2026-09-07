@@ -5,6 +5,7 @@ import { checkSubscriptionAllows } from '@/lib/api/subscription-guard';
 import { checkPlanFeatureAllows } from '@/lib/api/plan-guard';
 import { resolveTransferSettings, canShip } from '@/lib/transfers/rules';
 import type { UserRole } from '@/lib/types';
+import { getErrorMessage } from '@/lib/utils/errors';
 
 /**
  * Confirme la réception d'un transfert : le stock ENTRE au magasin
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Transfer receive error:', error);
-    const msg = error instanceof Error ? error.message : 'Erreur interne';
+    const msg = getErrorMessage(error) || 'Erreur interne';
     const isKnownBusinessError = msg.includes('INVALID_STATUS');
     const isNotFound = msg.includes('NOT_FOUND');
     const cleanMsg = msg.replace(/^.*(INVALID_STATUS|NOT_FOUND):\s*/, '');
