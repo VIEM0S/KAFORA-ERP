@@ -252,7 +252,16 @@ export default function CreditsPage() {
       const result = data as unknown as { remainingAmount: number; status: CreditStatus };
 
       setMontantVersement('');
-      setSelected(prev => prev ? { ...prev, remainingAmount: result.remainingAmount, status: result.status } : null);
+      // paidAmount n'est pas renvoyé par repay_credit() (seulement remainingAmount
+      // et status) — dérivé ici plutôt que d'aller le rechercher, totalAmount ne
+      // change jamais. Sans ça, "Total versé" restait figé à 0 après un versement
+      // (trouvé lors de l'audit : le solde et le statut se mettaient à jour
+      // correctement, mais pas ce champ précis). La ligne dans la liste `credits`
+      // était logée à la même enseigne (seul `selected`, le panneau de détail,
+      // était patché) — patchée ici aussi, même correctif que handleRelance.
+      const paidAmount = selected.totalAmount - result.remainingAmount;
+      setSelected(prev => prev ? { ...prev, paidAmount, remainingAmount: result.remainingAmount, status: result.status } : null);
+      setCredits(prev => prev.map(c => c.id === selected.id ? { ...c, paidAmount, remainingAmount: result.remainingAmount, status: result.status } : c));
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Erreur lors de l\'enregistrement';
       setVersementError(msg.replace(/^.*(?:FORBIDDEN|INVALID_AMOUNT|NOT_FOUND):\s*/, ''));
