@@ -634,7 +634,7 @@ function UsersDialog({
         {msg && <p className="text-sm text-green-700">{msg}</p>}
         {resetLink && (
           <div className="flex items-center gap-2">
-            <Input readOnly value={resetLink} className="text-xs" onFocus={e => e.target.select()} />
+            <Input readOnly value={resetLink} className="text-base md:text-xs" onFocus={e => e.target.select()} />
             <Button
               size="sm" variant="outline"
               onClick={() => { navigator.clipboard.writeText(resetLink); setMsg('Lien copié dans le presse-papiers.'); }}

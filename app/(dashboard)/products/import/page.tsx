@@ -295,7 +295,10 @@ export default function ProductImportPage() {
                     placeholder={'Copie une plage de cellules dans Excel (avec la ligne d\'en-tête : SKU, Nom, Catégorie, Prix Achat, Prix Vente, Stock Initial...) puis colle ici (Ctrl+V)'}
                     value={pasteText}
                     onChange={e => setPasteText(e.target.value)}
-                    className="font-mono text-xs"
+                    // text-base sur mobile : text-xs (12px) forçait le zoom
+                    // auto au focus sur Safari/Chrome iOS (seuil 16px),
+                    // écrasant le défaut du composant Textarea.
+                    className="font-mono text-base md:text-xs"
                   />
                   <Button onClick={handlePasteSubmit} disabled={!pasteText.trim()}>
                     Analyser

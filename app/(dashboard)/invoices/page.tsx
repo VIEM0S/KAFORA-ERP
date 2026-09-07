@@ -271,7 +271,9 @@ export default function InvoicesPage() {
               <select
                 value={statusFilter}
                 onChange={e => setStatusFilter(e.target.value)}
-                className="h-10 rounded-lg border border-gray-200 px-3 text-sm text-gray-700 md:w-56"
+                // text-base sur mobile : un <select> natif zoome aussi la
+                // page au focus sous 16px, comme un <input>.
+                className="h-10 rounded-lg border border-gray-200 px-3 text-base md:text-sm text-gray-700 md:w-56"
               >
                 <option value="all">Toutes les factures</option>
                 <option value="COMPLETED">Validées</option>
