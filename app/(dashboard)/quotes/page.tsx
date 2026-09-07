@@ -170,7 +170,12 @@ export default function QuotesPage() {
   const handleStatus = async (quoteId: string, status: QuoteStatus) => {
     if (!tenantId) return;
     await supabase.from('quotes').update({ status }).eq('id', quoteId);
+    // Même défaut trouvé et corrigé sur credits/sales cette même session :
+    // la ligne dans la liste `quotes` n'était jamais patchée, seul le
+    // panneau de détail l'était — elle restait affichée avec l'ancien
+    // statut jusqu'au rechargement si le canal temps réel ne rattrapait pas.
     if (selected?.id === quoteId) setSelected(prev => prev ? { ...prev, status } : null);
+    setQuotes(prev => prev.map(q => q.id === quoteId ? { ...q, status } : q));
   };
 
   const handleConvert = async () => {
