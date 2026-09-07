@@ -21,21 +21,6 @@ export function formatCurrency(amount: number, currency: string = 'FCFA'): strin
   }).format(amount);
 }
 
-export function formatDecimal(value: number, decimals: number = 2): string {
-  return new Intl.NumberFormat('fr-FR', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(value);
-}
-
-export function formatPercent(value: number): string {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'percent',
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  }).format(value / 100);
-}
-
 /** Convertit n'importe quel format de date Firestore/JS en objet Date */
 function toDate(date: unknown): Date | null {
   if (!date) return null;
@@ -88,11 +73,6 @@ export function formatRelativeTime(date: unknown): string {
   return formatDate(d);
 }
 
-export function truncate(str: string, length: number): string {
-  if (str.length <= length) return str;
-  return str.slice(0, length) + '...';
-}
-
 export function slugify(str: string): string {
   return str.toLowerCase().trim().normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -109,79 +89,4 @@ export function generateReferralCode(companyName: string): string {
   // en base à la création.
   const random = Math.random().toString(36).substring(2, 8).toUpperCase();
   return `${base}-${random}`;
-}
-
-export function generateReference(prefix: string): string {
-  const year = new Date().getFullYear();
-  const random = Math.random().toString(36).substring(2, 6).toUpperCase();
-  const timestamp = Date.now().toString(36).toUpperCase().slice(-6);
-  return `${prefix}-${year}-${timestamp}${random}`;
-}
-
-export function getInitials(firstName: string, lastName: string): string {
-  return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
-}
-
-export function getFullName(firstName: string, lastName: string): string {
-  return `${firstName} ${lastName}`.trim();
-}
-
-export function debounce<T extends (...args: Parameters<T>) => void>(
-  func: T,
-  wait: number
-): (...args: Parameters<T>) => void {
-  let timeoutId: NodeJS.Timeout;
-  return (...args: Parameters<T>) => {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => func(...args), wait);
-  };
-}
-
-export function classNames(...classes: (string | undefined | null | false)[]): string {
-  return classes.filter(Boolean).join(' ');
-}
-
-export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-export function parseNumber(value: string): number {
-  const parsed = parseFloat(value.replace(/[^\d.-]/g, ''));
-  return isNaN(parsed) ? 0 : parsed;
-}
-
-export function calculateMargin(cost: number, price: number): number {
-  if (cost === 0) return 0;
-  return ((price - cost) / cost) * 100;
-}
-
-export function calculateProfit(cost: number, price: number, quantity: number): number {
-  return (price - cost) * quantity;
-}
-
-export function isValidEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-}
-
-export function isValidPhone(phone: string): boolean {
-  const phoneRegex = /^(\+223|00223)?[0-9]{8}$/;
-  return phoneRegex.test(phone.replace(/\s/g, ''));
-}
-
-/** Convertit n'importe quel format Firestore en Date JS — version exportée pour usage dans les pages */
-export function toFirestoreDate(v: unknown): Date {
-  if (!v) return new Date();
-  if (typeof v === 'object' && v !== null && 'toDate' in v && typeof (v as { toDate: () => Date }).toDate === 'function') {
-    return (v as { toDate: () => Date }).toDate();
-  }
-  if (typeof v === 'object' && v !== null && 'seconds' in v && typeof (v as { seconds: number }).seconds === 'number') {
-    return new Date((v as { seconds: number }).seconds * 1000);
-  }
-  if (typeof v === 'string') {
-    const d = new Date(v);
-    return isNaN(d.getTime()) ? new Date() : d;
-  }
-  if (v instanceof Date) return isNaN(v.getTime()) ? new Date() : v;
-  return new Date();
 }

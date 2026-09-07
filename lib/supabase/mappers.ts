@@ -3,8 +3,8 @@ import type {
   Store, Category, Product, Inventory, InventoryMovement, Customer, Supplier,
   Sale, SaleItem, Payment, Credit, CreditPayment, Quote, QuoteItem,
   PurchaseOrder, PurchaseOrderItem, Transfer, TransferLine,
-  Alert, Notification, SaleReturn, SaleReturnItem, CashRegisterSession,
-  Tenant, Subscription, User, DailyStat, ProductLot, ProductSerial, AuditLogEntry,
+  SaleReturn, SaleReturnItem, CashRegisterSession,
+  Tenant, Subscription, User, DailyStat, ProductLot, AuditLogEntry,
 } from '@/lib/types';
 
 /**
@@ -73,15 +73,6 @@ export function mapProductLot(r: Row<'product_lots'>): ProductLot {
   };
 }
 
-export function mapProductSerial(r: Row<'product_serials'>): ProductSerial {
-  return {
-    id: r.id, tenantId: r.tenant_id, productId: r.product_id, storeId: r.store_id,
-    serialNumber: r.serial_number, status: r.status as ProductSerial['status'],
-    saleId: r.sale_id, soldAt: toDateOrNull(r.sold_at), receivedAt: toDate(r.received_at),
-    purchaseOrderId: r.purchase_order_id,
-  };
-}
-
 export function mapInventoryMovement(r: Row<'inventory_movements'>): InventoryMovement {
   return {
     id: r.id, tenantId: r.tenant_id, productId: r.product_id, productName: r.product_name,
@@ -110,13 +101,6 @@ export function mapSupplier(r: Row<'suppliers'>): Supplier {
     address: r.address, city: r.city, country: r.country, website: r.website,
     paymentTerms: r.payment_terms, taxId: r.tax_id, notes: r.notes,
     isActive: r.is_active, createdAt: toDate(r.created_at), updatedAt: toDate(r.updated_at),
-  };
-}
-
-export function mapPayment(r: Row<'payments'>): Payment {
-  return {
-    id: r.id, saleId: r.sale_id, method: r.method, amount: r.amount,
-    reference: r.reference, mobileProvider: r.mobile_provider,
   };
 }
 
@@ -228,31 +212,6 @@ export function mapTransfer(r: Row<'transfers'>, lines: TransferLine[] = []): Tr
     createdAt: toDate(r.created_at), approvedAt: toDateOrNull(r.approved_at),
     shippedAt: toDateOrNull(r.shipped_at), receivedAt: toDateOrNull(r.received_at),
     rejectionReason: r.rejection_reason,
-  };
-}
-
-export function mapAlert(r: Row<'alerts'>): Alert {
-  return {
-    id: r.id, tenantId: r.tenant_id, type: r.type, severity: r.severity,
-    title: r.title, message: r.message ?? '', reference: r.reference, referenceId: r.reference_id,
-    isRead: r.is_read, isResolved: r.is_resolved, resolvedBy: r.resolved_by,
-    resolvedAt: toDateOrNull(r.resolved_at), createdAt: toDate(r.created_at),
-  };
-}
-
-export function mapNotification(r: Row<'notifications'>): Notification {
-  return {
-    id: r.id, userId: r.user_id, title: r.title, message: r.message ?? '',
-    type: r.type ?? '', reference: r.reference, referenceId: r.reference_id,
-    channel: r.channel, isRead: r.is_read, readAt: toDateOrNull(r.read_at),
-    createdAt: toDate(r.created_at),
-  };
-}
-
-export function mapSaleReturnItem(r: Row<'sale_return_items'>): SaleReturnItem {
-  return {
-    productId: r.product_id ?? '', productName: r.product_name, quantity: r.quantity,
-    unitPrice: r.unit_price, total: r.total, restocked: r.restocked,
   };
 }
 
