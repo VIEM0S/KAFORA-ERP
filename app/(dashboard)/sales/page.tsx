@@ -193,6 +193,25 @@ export default function SalesPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur lors du retour');
       setShowReturn(false);
+
+      // Contrairement à handleCancel juste au-dessus, rien ne patchait
+      // `selected`/`saleItems` après un retour — le panneau de détail
+      // continuait d'afficher l'ancien statut ("Complétée") et les anciennes
+      // quantités jusqu'à un rechargement complet de la page. L'API ne
+      // renvoie que le montant remboursé, pas la vente à jour : on la
+      // recharge donc telle quelle plutôt que de recalculer le nouveau statut
+      // (COMPLETED/PARTIALLY_REFUNDED/REFUNDED) côté client, où on risquerait
+      // de diverger de la vraie logique côté serveur (create_sale_return()).
+      const [{ data: freshSale }, { data: freshItems }] = await Promise.all([
+        supabase.from('sales').select('*').eq('id', selected.id).maybeSingle(),
+        supabase.from('sale_items').select('*').eq('sale_id', selected.id),
+      ]);
+      if (freshSale) {
+        const mapped = mapSale(freshSale);
+        setSelected(mapped);
+        setSales(prev => prev.map(s => s.id === mapped.id ? mapped : s));
+      }
+      setSaleItems((freshItems ?? []).map(mapSaleItem));
     } catch (e) {
       setReturnError(e instanceof Error ? e.message : 'Erreur lors du retour');
     } finally {
@@ -200,11 +219,29 @@ export default function SalesPage() {
     }
   };
 
-  const StatusBadge = ({ status }: { status: string }) => (
-    status === 'COMPLETED'
-      ? <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-green-100 text-green-700 font-medium"><CheckCircle2 className="h-3 w-3" />Complétée</span>
-      : <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 font-medium"><XCircle className="h-3 w-3" />Annulée</span>
-  );
+  // Toutes les valeurs de SaleStatus, pas seulement COMPLETED/CANCELLED : un
+  // retour classait une vente REFUNDED/PARTIALLY_REFUNDED comme "Annulée"
+  // (le ternaire d'origine ne connaissait que ces deux cas) — trompeur pour
+  // un commerçant qui consulte l'historique, un remboursement n'est pas une
+  // annulation. Mêmes libellés/couleurs que app/(dashboard)/invoices/page.tsx
+  // pour rester cohérent dans toute l'app.
+  const STATUS_BADGE: Record<string, { label: string; className: string }> = {
+    COMPLETED: { label: 'Complétée', className: 'bg-green-100 text-green-700' },
+    CANCELLED: { label: 'Annulée', className: 'bg-red-100 text-red-700' },
+    REFUNDED: { label: 'Remboursée', className: 'bg-orange-100 text-orange-700' },
+    PARTIALLY_REFUNDED: { label: 'Remb. partiel', className: 'bg-amber-100 text-amber-700' },
+    DRAFT: { label: 'Brouillon', className: 'bg-gray-100 text-gray-700' },
+    PENDING: { label: 'En attente', className: 'bg-gray-100 text-gray-700' },
+  };
+  const StatusBadge = ({ status }: { status: string }) => {
+    const cfg = STATUS_BADGE[status] || { label: status, className: 'bg-gray-100 text-gray-700' };
+    const Icon = status === 'COMPLETED' ? CheckCircle2 : XCircle;
+    return (
+      <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium ${cfg.className}`}>
+        <Icon className="h-3 w-3" />{cfg.label}
+      </span>
+    );
+  };
 
   return (
     <DashboardLayout>
