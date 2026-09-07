@@ -209,7 +209,7 @@ export default function SalesPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Historique des ventes</h1>
             <p className="text-sm text-gray-500 mt-1">
@@ -220,6 +220,7 @@ export default function SalesPage() {
           <Button
             variant="outline"
             size="sm"
+            className="self-start sm:self-auto"
             disabled={filtered.length === 0}
             onClick={() => exportToCsv(`ventes-${new Date().toISOString().slice(0, 10)}`, filtered, [
               { key: 'id', label: 'N° vente' },

@@ -39,13 +39,13 @@ export default function UsersPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Utilisateurs</h1>
             <p className="text-sm text-gray-500 mt-1">{users.filter(u => u.isActive).length} actif{users.filter(u => u.isActive).length !== 1 ? 's' : ''} sur {users.length}</p>
           </div>
           {canManageUsers && (
-            <Button onClick={() => setShowCreateDialog(true)} className="bg-primary-600 hover:bg-primary-700">
+            <Button onClick={() => setShowCreateDialog(true)} className="bg-primary-600 hover:bg-primary-700 self-start sm:self-auto">
               <Plus className="h-4 w-4 mr-2" />Nouveau compte
             </Button>
           )}

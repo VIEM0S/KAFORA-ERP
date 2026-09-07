@@ -389,7 +389,7 @@ export default function CreditsPage() {
       <div className="space-y-6">
 
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Crédits clients</h1>
             <p className="text-sm text-gray-500 mt-1">
@@ -400,6 +400,7 @@ export default function CreditsPage() {
           <Button
             variant="outline"
             size="sm"
+            className="self-start sm:self-auto"
             disabled={filtered.length === 0}
             onClick={() => exportToCsv(`credits-${new Date().toISOString().slice(0, 10)}`, filtered, [
               { key: 'id', label: 'N° créance' },
@@ -517,7 +518,7 @@ export default function CreditsPage() {
                 onChange={e => setSearch(e.target.value)} className="pl-9" />
               {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>}
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {[
                 { val: 'active', label: 'En cours' },
                 { val: 'overdue', label: 'En retard' },

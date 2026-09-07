@@ -296,12 +296,12 @@ export default function AnalyticsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Analytics</h1>
             <p className="text-sm text-gray-500 mt-1">Tableaux de bord et rapports de performance</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 self-start sm:self-auto">
             <Calendar className="h-4 w-4 text-gray-500" />
             <Select value={period} onValueChange={v => setPeriod(v as '3m'|'6m'|'12m')}>
               <SelectTrigger className="w-40 border-2"><SelectValue /></SelectTrigger>

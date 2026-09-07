@@ -138,13 +138,13 @@ export default function SuppliersPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Fournisseurs</h1>
             <p className="text-sm text-gray-500 mt-1">{suppliers.filter(s => s.isActive).length} fournisseur{suppliers.filter(s => s.isActive).length !== 1 ? 's' : ''} actif{suppliers.filter(s => s.isActive).length !== 1 ? 's' : ''}</p>
           </div>
           {canManage && (
-            <Button onClick={openAdd} className="bg-primary-600 hover:bg-primary-700">
+            <Button onClick={openAdd} className="bg-primary-600 hover:bg-primary-700 self-start sm:self-auto">
               <Plus className="h-4 w-4 mr-2" />Nouveau fournisseur
             </Button>
           )}

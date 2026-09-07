@@ -524,7 +524,7 @@ export default function CashRegisterPage() {
 
         {canViewHistory && (
         <Card>
-          <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+          <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between space-y-0">
             <div>
               <CardTitle className="flex items-center gap-2"><History className="h-5 w-5 text-gray-600" />Historique des sessions</CardTitle>
               <CardDescription>Les 10 dernières fermetures de caisse</CardDescription>
@@ -532,6 +532,7 @@ export default function CashRegisterPage() {
             <Button
               variant="outline"
               size="sm"
+              className="self-start sm:self-auto"
               disabled={sessionHistory.length === 0}
               onClick={() => exportToCsv(
                 `clotures-caisse-${new Date().toISOString().slice(0, 10)}`,

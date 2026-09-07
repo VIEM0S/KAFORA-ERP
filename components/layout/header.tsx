@@ -98,7 +98,15 @@ export function Header() {
   const multiStoreAllowed = plan.features.multiStoreEnabled;
 
   return (
-    <header className="h-16 bg-white border-b border-gray-100 flex items-center justify-between px-4 lg:px-6 shadow-sm">
+    // flex-wrap (au lieu d'une hauteur fixe h-16) : le correctif précédent
+    // rendait l'avatar/les icônes atteignables par un glissement horizontal
+    // quand la police système est agrandie, mais ils restaient visuellement
+    // coupés au premier affichage — pas assez bon pour quelque chose d'aussi
+    // visible que son propre avatar. Ici, si tout ne tient pas sur une seule
+    // ligne, le groupe de droite passe entièrement sur une deuxième ligne :
+    // rien n'est jamais coupé ni caché, quitte à ce que le header soit un
+    // peu plus haut dans ce cas (rare, jamais à taille de police normale).
+    <header className="min-h-16 bg-white border-b border-gray-100 flex flex-wrap items-center justify-between gap-y-2 px-4 lg:px-6 py-2 shadow-sm">
 
       {/* Gauche — toggle sidebar + sélecteur magasin */}
       <div className="flex items-center gap-3">

@@ -208,10 +208,13 @@ export default function CustomerDetailPage() {
 
         {/* Onglets */}
         <div>
-          <div className="flex border-b border-gray-200 mb-4">
+          {/* overflow-x-auto : 4 onglets ne tenaient plus sur une ligne sur
+              mobile avec une police système agrandie — "Historique" sortait
+              de l'écran sans aucun indice. Défile plutôt que de couper. */}
+          <div className="flex border-b border-gray-200 mb-4 overflow-x-auto scrollbar-thin">
             {TABS.map(t => (
               <button key={t.key} onClick={() => setTab(t.key as 'sales' | 'credits' | 'quotes' | 'audit')}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex-shrink-0 ${
                   tab === t.key ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
                 {t.label}
               </button>

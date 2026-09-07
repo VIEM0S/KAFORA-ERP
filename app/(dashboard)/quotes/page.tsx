@@ -242,13 +242,13 @@ export default function QuotesPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Devis</h1>
             <p className="text-sm text-gray-500 mt-1">{quotes.length} devis au total</p>
           </div>
           {canManage && (
-            <Button onClick={() => setShowNewQuote(true)} className="bg-primary-600 hover:bg-primary-700">
+            <Button onClick={() => setShowNewQuote(true)} className="bg-primary-600 hover:bg-primary-700 self-start sm:self-auto">
               <Plus className="h-4 w-4 mr-2" />Nouveau devis
             </Button>
           )}

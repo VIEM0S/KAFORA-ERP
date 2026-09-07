@@ -148,7 +148,7 @@ export default function AdminConsolePage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               <Building2 className="h-6 w-6" /> Clients Kafora
@@ -157,7 +157,7 @@ export default function AdminConsolePage() {
               Triés par urgence : les abonnements les plus proches du blocage en premier.
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 self-start sm:self-auto">
             <Button variant="outline" onClick={() => setBroadcastOpen(true)}>
               <Megaphone className="h-4 w-4 mr-2" /> Message aux clients
             </Button>

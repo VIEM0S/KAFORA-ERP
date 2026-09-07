@@ -119,7 +119,7 @@ export default function TransfersPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               <ArrowRightLeft className="h-6 w-6" /> Transferts entre magasins
@@ -130,7 +130,7 @@ export default function TransfersPage() {
             </p>
           </div>
           {stores.length >= 2 && (
-            <Button onClick={() => setShowCreate(true)}>
+            <Button onClick={() => setShowCreate(true)} className="self-start sm:self-auto">
               <Plus className="h-4 w-4 mr-2" /> Nouveau transfert
             </Button>
           )}
