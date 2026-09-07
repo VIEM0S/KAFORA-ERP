@@ -181,7 +181,13 @@ export const SUBSCRIPTION_PLANS = {
       // presque rien de plus à servir, contrairement à un magasin ou un
       // utilisateur supplémentaire.
       maxProducts: 1000,
-      maxCustomers: 500,
+      // 500 -> 1000 (2026-09-07, même raisonnement que maxProducts
+      // ci-dessus) : un commerçant solo qui construit une vraie base de
+      // clients fidèles (suivi de crédit, relances WhatsApp — des
+      // fonctionnalités phares de Kafora) dépasse vite 500 clients en
+      // réussissant exactement ce que le produit vend, sans que ça reflète
+      // un besoin de multi-magasin ou d'Analytics.
+      maxCustomers: 1000,
       posEnabled: true,
       analyticsEnabled: false,
       multiStoreEnabled: false,
