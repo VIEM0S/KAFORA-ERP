@@ -2,6 +2,17 @@ node_modules/
 .next/
 .env
 .env.local
+.env.test.local
+
+# Rapports/artefacts Playwright (screenshots, traces d'échec, résultats HTML)
+# — jamais utiles au dépôt, souvent volumineux, et une trace d'échec peut
+# contenir des données de test.
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+# Session Playwright sauvegardée (storageState) — contient un jeton d'auth réel.
+/.playwright/
 # Ne PAS ignorer package.json / tsconfig.json / package-lock.json — un blanket
 # "*.json" les excluait du dépôt et cassait tout build fait depuis un clone frais
 # (Netlify, nouvelle machine, collaborateur). On ignore seulement les JSON
