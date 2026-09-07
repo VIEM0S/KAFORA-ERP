@@ -61,8 +61,14 @@ function isEcheanceProche(dueDate: Date): boolean {
   return diff > 0 && diff < 48 * 60 * 60 * 1000;
 }
 
+// Un crédit dans un état terminal (soldé, annulé/passé en perte...) ne doit
+// plus jamais être requalifié "en retard" à cause de son échéance passée —
+// trouvé lors de l'audit : un crédit WRITTEN_OFF avec une échéance dépassée
+// remontait comme "En retard" dans la liste (seul PAID était exclu ici),
+// masquant le fait qu'il était déjà réglé.
+const TERMINAL_CREDIT_STATUSES = ['PAID', 'WRITTEN_OFF', 'CANCELLED'];
 function isEnRetard(dueDate: Date, status: string): boolean {
-  if (status === 'PAID') return false;
+  if (TERMINAL_CREDIT_STATUSES.includes(status)) return false;
   return dueDate.getTime() < Date.now();
 }
 
@@ -144,7 +150,7 @@ export default function CreditsPage() {
         // Marquer automatiquement en retard côté client
         const updated = rows.map(r => mapCredit(r)).map(c => ({
           ...c,
-          status: (c.status !== 'PAID' && isEnRetard(c.dueDate, c.status)
+          status: (isEnRetard(c.dueDate, c.status)
             ? 'OVERDUE'
             : c.status) as CreditStatus,
         }));
@@ -316,11 +322,15 @@ export default function CreditsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Erreur lors de l'annulation");
 
-      if (data.status === 'PENDING_APPROVAL') {
-        setSelected(prev => prev ? { ...prev, writeOffStatus: 'PENDING', writeOffReason: writeOffReason.trim() } : null);
-      } else {
-        setSelected(prev => prev ? { ...prev, status: 'WRITTEN_OFF', remainingAmount: 0 } : null);
-      }
+      // Comme handleVersement plus haut : `selected` (panneau de détail) ET
+      // `credits` (ligne dans la liste) doivent être patchés, sinon la ligne
+      // de liste reste affichée avec l'ancien statut ("En retard"...) tant
+      // que la page n'est pas rechargée, alors que le panneau lui est à jour.
+      const patch = data.status === 'PENDING_APPROVAL'
+        ? { writeOffStatus: 'PENDING' as const, writeOffReason: writeOffReason.trim() }
+        : { status: 'WRITTEN_OFF' as const, remainingAmount: 0 };
+      setSelected(prev => prev ? { ...prev, ...patch } : null);
+      setCredits(prev => prev.map(c => c.id === selected.id ? { ...c, ...patch } : c));
       setShowWriteOff(false);
       setWriteOffReason('');
     } catch (e) {
@@ -347,6 +357,7 @@ export default function CreditsPage() {
       if (selected?.id === credit.id) {
         setSelected(prev => prev ? { ...prev, status: 'WRITTEN_OFF', writeOffStatus: 'NONE', remainingAmount: 0 } : null);
       }
+      setCredits(prev => prev.map(c => c.id === credit.id ? { ...c, status: 'WRITTEN_OFF', writeOffStatus: 'NONE', remainingAmount: 0 } : c));
     } catch (e) {
       setDecisionError(e instanceof Error ? e.message : 'Erreur lors de la validation');
     } finally {
@@ -370,6 +381,7 @@ export default function CreditsPage() {
       if (selected?.id === rejectTarget.id) {
         setSelected(prev => prev ? { ...prev, writeOffStatus: 'REJECTED', writeOffRejectedReason: rejectReason.trim() } : null);
       }
+      setCredits(prev => prev.map(c => c.id === rejectTarget.id ? { ...c, writeOffStatus: 'REJECTED', writeOffRejectedReason: rejectReason.trim() } : c));
       setRejectTarget(null);
       setRejectReason('');
     } catch (e) {
