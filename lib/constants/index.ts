@@ -171,7 +171,16 @@ export const SUBSCRIPTION_PLANS = {
     features: {
       maxUsers: 3,
       maxStores: 1,
-      maxProducts: 500,
+      // 500 -> 1000 (2026-09-07, décision fondateur) : le nombre de produits
+      // n'est pas un bon indicateur de "a besoin de Business" — une
+      // quincaillerie/boutique électronique (cibles explicites du produit,
+      // voir solutions/quincaillerie et solutions/electronique-telephonie)
+      // dépasse vite 500 références en restant un commerce à une seule
+      // boutique, gérée par une seule personne. Les vrais déclencheurs de
+      // valeur Business restent multiStoreEnabled/analyticsEnabled — coûte
+      // presque rien de plus à servir, contrairement à un magasin ou un
+      // utilisateur supplémentaire.
+      maxProducts: 1000,
       maxCustomers: 500,
       posEnabled: true,
       analyticsEnabled: false,
