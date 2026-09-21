@@ -209,3 +209,7 @@ revoke select on sale_items from authenticated, anon;
 grant select (id, tenant_id, sale_id, product_id, product_name, product_sku, category_id, quantity,
               unit_price, discount_percent, tax_rate, total, returned_quantity, serial_number, created_at)
   on sale_items to authenticated;
+
+-- 6. Surcharge de compatibilité de adjust_inventory (migration 069) : la route
+--    déployée envoie désormais p_caller_role, plus besoin de l'ancienne signature.
+drop function if exists public.adjust_inventory(uuid, uuid, uuid, text, text, int, boolean, int, text, uuid);
