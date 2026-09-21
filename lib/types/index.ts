@@ -56,6 +56,7 @@ export interface Tenant {
   // annulation de crédit demande une seconde validation du siège au lieu
   // de s'appliquer immédiatement. Réglable par le Propriétaire/Admin.
   writeOffApprovalThreshold: number;
+  expenseApprovalThreshold: number;
 }
 
 // Piste d'audit immuable (migration 045) — alimentée uniquement par les
@@ -706,4 +707,24 @@ export interface SaleReturnItem {
   unitPrice: number;
   total: number;
   restocked: boolean; // false si l'article est retourné défectueux (pas remis en stock)
+}
+
+export type ExpenseCategory = 'RENT' | 'SALARY' | 'UTILITIES' | 'TRANSPORT' | 'SUPPLIES' | 'MAINTENANCE' | 'TAXES' | 'MARKETING' | 'OTHER';
+export type ExpenseStatus = 'APPROVED' | 'PENDING' | 'REJECTED';
+
+export interface Expense {
+  id: string;
+  tenantId: string;
+  storeId: string | null;
+  category: ExpenseCategory;
+  amount: number;
+  description: string;
+  expenseDate: string; // YYYY-MM-DD
+  status: ExpenseStatus;
+  createdBy: string | null;
+  createdByName: string | null;
+  decidedByName: string | null;
+  decidedAt: Date | null;
+  decisionNote: string | null;
+  createdAt: Date;
 }

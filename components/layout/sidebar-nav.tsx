@@ -8,7 +8,7 @@ import {
   Receipt, FileText, Users, CreditCard, Truck,
   DollarSign, BarChart3, Store, Bell, Settings,
   ChevronDown, ChevronRight, LogOut, Tag, AlertTriangle,
-  History, User, PackagePlus
+  History, User, PackagePlus, Wallet
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils/helpers';
@@ -84,6 +84,7 @@ const NAV_ITEMS: NavItem[] = [
   { title: 'Crédits', href: '/credits', icon: CreditCard, badgeKey: 'overdueCredits' },
   { title: 'Fournisseurs', href: '/suppliers', icon: Truck, roles: ['OWNER', 'ADMIN', 'REGIONAL_MANAGER', 'MANAGER'] },
   { title: 'Caisse', href: '/cash-register', icon: DollarSign },
+  { title: 'Dépenses', href: '/expenses', icon: Wallet, roles: ['OWNER', 'ADMIN', 'REGIONAL_MANAGER', 'MANAGER'] },
   { title: 'Factures', href: '/invoices', icon: FileText },
   { title: 'Analytics', href: '/analytics', icon: BarChart3, roles: ['OWNER', 'ADMIN', 'REGIONAL_MANAGER', 'MANAGER'], feature: 'analyticsEnabled' },
   { title: 'Magasins', href: '/stores', icon: Store, roles: ['OWNER', 'ADMIN'] },

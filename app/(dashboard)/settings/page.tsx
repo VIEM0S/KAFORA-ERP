@@ -75,21 +75,25 @@ export default function SettingsPage() {
   // validation (Propriétaire/Admin) au lieu de s'appliquer immédiatement —
   // voir write_off_credit() et app/(dashboard)/credits/page.tsx.
   const [writeOffThreshold, setWriteOffThreshold] = useState(String(tenant?.writeOffApprovalThreshold ?? 100000));
+  // Même principe pour les dépenses (migration 067) : au-dessus, la dépense d'un
+  // Responsable attend la validation du Propriétaire/Administrateur.
+  const [expenseThreshold, setExpenseThreshold] = useState(String(tenant?.expenseApprovalThreshold ?? 50000));
   const [savingThreshold, setSavingThreshold] = useState(false);
   const [thresholdMsg, setThresholdMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const handleSaveThreshold = async () => {
     if (!tenantId) return;
     const value = Number(writeOffThreshold);
-    if (!Number.isFinite(value) || value < 0) {
+    const expenseValue = Number(expenseThreshold);
+    if (!Number.isFinite(value) || value < 0 || !Number.isFinite(expenseValue) || expenseValue < 0) {
       setThresholdMsg({ type: 'error', text: 'Montant invalide' });
       return;
     }
     setSavingThreshold(true); setThresholdMsg(null);
     try {
-      const { error } = await supabase.from('tenants').update({ write_off_approval_threshold: value }).eq('id', tenantId);
+      const { error } = await supabase.from('tenants').update({ write_off_approval_threshold: value, expense_approval_threshold: expenseValue }).eq('id', tenantId);
       if (error) throw error;
-      setTenant({ ...tenant!, writeOffApprovalThreshold: value });
+      setTenant({ ...tenant!, writeOffApprovalThreshold: value, expenseApprovalThreshold: expenseValue });
       setThresholdMsg({ type: 'success', text: 'Seuil mis à jour' });
     } catch (e) {
       setThresholdMsg({ type: 'error', text: 'Erreur lors de la sauvegarde' });
@@ -422,7 +426,7 @@ export default function SettingsPage() {
         {canManageCompany && (
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-red-600" />Gouvernance des crédits</CardTitle>
+              <CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-red-600" />Gouvernance : crédits et dépenses</CardTitle>
               <CardDescription>
                 Au-delà de ce montant, une annulation de crédit demande votre validation (ou celle d&apos;un Administrateur) avant de s&apos;appliquer.
               </CardDescription>
@@ -434,6 +438,13 @@ export default function SettingsPage() {
                 <Input type="number" min="0" value={writeOffThreshold} onChange={e => setWriteOffThreshold(e.target.value)} />
                 <p className="text-xs text-gray-500">
                   En dessous, le magasin d&apos;inscription du client peut annuler un crédit directement.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>Seuil de validation des dépenses (FCFA)</Label>
+                <Input type="number" min="0" value={expenseThreshold} onChange={e => setExpenseThreshold(e.target.value)} />
+                <p className="text-xs text-gray-500">
+                  Au-dessus, la dépense saisie par un Responsable attend votre validation (ou celle d&apos;un Administrateur). Vos propres dépenses sont validées directement.
                 </p>
               </div>
               <div className="flex justify-end">

@@ -4,7 +4,7 @@ import type {
   Sale, SaleItem, Payment, Credit, CreditPayment, Quote, QuoteItem,
   PurchaseOrder, PurchaseOrderItem, Transfer, TransferLine,
   SaleReturn, SaleReturnItem, CashRegisterSession,
-  Tenant, Subscription, User, DailyStat, ProductLot, AuditLogEntry,
+  Tenant, Subscription, User, DailyStat, ProductLot, AuditLogEntry, Expense,
 } from '@/lib/types';
 
 /**
@@ -250,6 +250,7 @@ export function mapTenant(r: Row<'tenants'>): Tenant {
     transferSettings: (r.transfer_settings as unknown as Tenant['transferSettings']) ?? undefined,
     referralCode: r.referral_code, referredByTenantId: r.referred_by_tenant_id,
     writeOffApprovalThreshold: r.write_off_approval_threshold,
+    expenseApprovalThreshold: r.expense_approval_threshold,
   };
 }
 
@@ -293,5 +294,17 @@ export function mapUser(r: Row<'users'>): User {
     mfaEnabled: r.mfa_enabled, lastLoginAt: toDateOrNull(r.last_login_at),
     createdAt: toDate(r.created_at), updatedAt: toDate(r.updated_at),
     workingHours: (r.working_hours as User['workingHours']) ?? undefined,
+  };
+}
+
+export function mapExpense(r: Row<'expenses'>): Expense {
+  return {
+    id: r.id, tenantId: r.tenant_id, storeId: r.store_id,
+    category: r.category as Expense['category'], amount: Number(r.amount),
+    description: r.description, expenseDate: r.expense_date,
+    status: r.status as Expense['status'],
+    createdBy: r.created_by, createdByName: r.created_by_name,
+    decidedByName: r.decided_by_name, decidedAt: toDateOrNull(r.decided_at),
+    decisionNote: r.decision_note, createdAt: toDate(r.created_at),
   };
 }

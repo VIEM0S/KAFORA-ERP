@@ -736,6 +736,75 @@ export type Database = {
           },
         ]
       }
+      expenses: {
+        Row: {
+          amount: number
+          category: string
+          created_at: string
+          created_by: string | null
+          created_by_name: string | null
+          decided_at: string | null
+          decided_by: string | null
+          decided_by_name: string | null
+          decision_note: string | null
+          description: string
+          expense_date: string
+          id: string
+          status: string
+          store_id: string | null
+          tenant_id: string
+        }
+        Insert: {
+          amount: number
+          category: string
+          created_at?: string
+          created_by?: string | null
+          created_by_name?: string | null
+          decided_at?: string | null
+          decided_by?: string | null
+          decided_by_name?: string | null
+          decision_note?: string | null
+          description: string
+          expense_date?: string
+          id?: string
+          status?: string
+          store_id?: string | null
+          tenant_id: string
+        }
+        Update: {
+          amount?: number
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          created_by_name?: string | null
+          decided_at?: string | null
+          decided_by?: string | null
+          decided_by_name?: string | null
+          decision_note?: string | null
+          description?: string
+          expense_date?: string
+          id?: string
+          status?: string
+          store_id?: string | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expenses_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inventory: {
         Row: {
           id: string
@@ -2465,6 +2534,7 @@ export type Database = {
           timezone: string
           transfer_settings: Json | null
           updated_at: string
+          expense_approval_threshold: number
           write_off_approval_threshold: number
         }
         Insert: {
@@ -2490,6 +2560,7 @@ export type Database = {
           timezone?: string
           transfer_settings?: Json | null
           updated_at?: string
+          expense_approval_threshold?: number
           write_off_approval_threshold?: number
         }
         Update: {
@@ -2515,6 +2586,7 @@ export type Database = {
           timezone?: string
           transfer_settings?: Json | null
           updated_at?: string
+          expense_approval_threshold?: number
           write_off_approval_threshold?: number
         }
         Relationships: [
@@ -2886,6 +2958,26 @@ export type Database = {
         }
         Returns: Json
       }
+      create_expense: {
+        Args: {
+          p_amount: number
+          p_category: string
+          p_description: string
+          p_expense_date: string
+          p_store_id: string
+          p_user_name: string
+        }
+        Returns: Json
+      }
+      decide_expense: {
+        Args: {
+          p_approve: boolean
+          p_expense_id: string
+          p_note: string
+          p_user_name: string
+        }
+        Returns: Json
+      }
       create_sale_return: {
         Args: {
           p_caller_id: string
@@ -3064,6 +3156,8 @@ export type Database = {
         | "CREDIT_WRITTEN_OFF"
         | "CREDIT_WRITE_OFF_PENDING"
         | "CREDIT_LIMIT_CHANGED"
+        | "EXPENSE_PENDING"
+        | "EXPENSE_DECIDED"
         | "SUPPORT_TICKET_REPLY"
         | "SUBSCRIPTION_SUSPENDED"
         | "SUBSCRIPTION_REACTIVATED"
@@ -3284,6 +3378,8 @@ export const Constants = {
         "CREDIT_WRITTEN_OFF",
         "CREDIT_WRITE_OFF_PENDING",
         "CREDIT_LIMIT_CHANGED",
+        "EXPENSE_PENDING",
+        "EXPENSE_DECIDED",
         "SUPPORT_TICKET_REPLY",
         "SUBSCRIPTION_SUSPENDED",
         "SUBSCRIPTION_REACTIVATED",
