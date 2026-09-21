@@ -190,30 +190,20 @@ export default function ProductImportPage() {
         if (prodError) throw prodError;
 
         const skuToId = new Map((insertedProducts ?? []).map(p => [p.sku, p.id]));
-        const invRows: { tenant_id: string; product_id: string; store_id: string; quantity: number; min_quantity: number }[] = [];
-        const movRows: { tenant_id: string; product_id: string; product_name: string; store_id: string; type: 'INITIAL'; quantity: number; previous_quantity: number; new_quantity: number; reason: string }[] = [];
+        // Stock + mouvement écrits ensemble côté serveur : l'écriture directe
+        // dans inventory / inventory_movements n'est plus autorisée (066).
+        const stockRows: { product_id: string; quantity: number; min_quantity: number }[] = [];
         chunk.forEach(r => {
           if (r.initialStock > 0) {
             const productId = skuToId.get(r.sku);
             if (!productId) return;
-            invRows.push({
-              tenant_id: tenantId, product_id: productId, store_id: selectedStoreId,
-              quantity: r.initialStock, min_quantity: r.alertThreshold,
-            });
-            movRows.push({
-              tenant_id: tenantId, product_id: productId, product_name: r.name, store_id: selectedStoreId,
-              type: 'INITIAL', quantity: r.initialStock,
-              previous_quantity: 0, new_quantity: r.initialStock,
-              reason: 'Import en masse — stock initial',
-            });
+            stockRows.push({ product_id: productId, quantity: r.initialStock, min_quantity: r.alertThreshold });
           }
         });
-        if (invRows.length > 0) {
-          const { error } = await supabase.from('inventory').insert(invRows);
-          if (error) throw error;
-        }
-        if (movRows.length > 0) {
-          const { error } = await supabase.from('inventory_movements').insert(movRows);
+        if (stockRows.length > 0) {
+          const { error } = await supabase.rpc('import_initial_stock', {
+            p_store_id: selectedStoreId, p_rows: stockRows,
+          });
           if (error) throw error;
         }
 

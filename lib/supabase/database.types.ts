@@ -3038,6 +3038,10 @@ export type Database = {
         Returns: Json
       }
       subscription_active: { Args: { tid: string }; Returns: boolean }
+      import_initial_stock: {
+        Args: { p_store_id: string; p_rows: Json }
+        Returns: Json
+      }
       write_off_credit: {
         Args: { p_credit_id: string; p_reason: string; p_user_name: string }
         Returns: Json
