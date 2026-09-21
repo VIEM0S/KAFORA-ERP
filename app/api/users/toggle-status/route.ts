@@ -41,17 +41,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Seul le Propriétaire peut modifier le statut d\'un Administrateur' }, { status: 403 });
     }
 
-    await supabase.from('users').update({ is_active: isActive }).eq('id', uid);
+    // Bannissement Auth AVANT le drapeau applicatif, comme /api/users/delete :
+    // proxy.ts appelle getUser() à chaque requête, qui rejette un compte banni
+    // immédiatement, et le refresh token ne peut plus émettre de nouveau jeton.
+    // Sans ça, is_active=false seul laissait la session (et le refresh token)
+    // pleinement valides — constaté empiriquement : lecture, écriture et
+    // renouvellement du jeton restaient possibles après désactivation.
+    // Si le bannissement échoue on s'arrête, pour ne jamais afficher
+    // "désactivé" alors que le compte garde son accès.
+    const { error: banError } = await supabase.auth.admin.updateUserById(uid, {
+      ban_duration: isActive ? 'none' : '876000h', // ~100 ans = désactivé
+    });
+    if (banError) {
+      console.error('Toggle user status ban error:', banError);
+      return NextResponse.json({ error: 'Impossible de modifier l\'accès du compte' }, { status: 500 });
+    }
 
-    // Contrairement à /api/users/delete (qui bannit réellement le compte
-    // Supabase Auth), cette bascule ne touche que le profil applicatif — la
-    // session existante reste valide jusqu'à sa prochaine resynchronisation
-    // périodique (hooks/useAuth.ts, ~5 min), qui rejette alors la connexion
-    // via le contrôle is_active de /api/auth/login (403 → déconnexion
-    // côté client). Même caractéristique de délai qu'avec Firebase, où
-    // revokeRefreshTokens forçait un nouveau sign-in qui échouait ensuite
-    // sur ce même contrôle applicatif, l'auth Firebase elle-même restant
-    // valide.
+    await supabase.from('users').update({ is_active: isActive }).eq('id', uid);
 
     return NextResponse.json({ success: true });
   } catch (error) {
