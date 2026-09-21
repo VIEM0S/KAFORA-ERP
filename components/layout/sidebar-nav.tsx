@@ -8,7 +8,7 @@ import {
   Receipt, FileText, Users, CreditCard, Truck,
   DollarSign, BarChart3, Store, Bell, Settings,
   ChevronDown, ChevronRight, LogOut, Tag, AlertTriangle,
-  History, User, PackagePlus, Wallet
+  History, User, PackagePlus, Wallet, ShieldCheck
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils/helpers';
@@ -93,6 +93,7 @@ const NAV_ITEMS: NavItem[] = [
 
 const ADMIN_ITEMS: NavItem[] = [
   { title: 'Utilisateurs', href: '/users', icon: User, roles: ['OWNER', 'ADMIN', 'REGIONAL_MANAGER'] },
+  { title: "Journal d'audit", href: '/audit-log', icon: ShieldCheck, roles: ['OWNER', 'ADMIN'] },
   { title: 'Paramètres', href: '/settings', icon: Settings },
 ];
 
