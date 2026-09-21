@@ -18,7 +18,7 @@ import { supabase } from '@/lib/supabase/client';
 // watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
 // (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
 import { watch } from '@/lib/supabase/watch';
-import { mapProduct, mapInventory } from '@/lib/supabase/mappers';
+import { mapProduct, mapInventory, PRODUCT_WITH_COST } from '@/lib/supabase/mappers';
 import type { Product, Inventory } from '@/lib/types';
 import { estEnAlerte, seuilAlerte } from '@/lib/inventory/alert-threshold';
 
@@ -57,7 +57,7 @@ export default function InventoryPage() {
     if (!tenantId) return;
     return watch(
       'products',
-      () => supabase.from('products').select('*').eq('tenant_id', tenantId).order('name'),
+      () => supabase.from('products').select(PRODUCT_WITH_COST).eq('tenant_id', tenantId).order('name'),
       rows => { setProducts(rows.map(mapProduct)); setIsLoading(false); },
       undefined,
       `tenant_id=eq.${tenantId}`

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { supabaseAdmin, TENANT_ID, STORE_ID, uniqueSuffix } from './helpers/supabase-admin';
+import { setProductCost, supabaseAdmin, TENANT_ID, STORE_ID, uniqueSuffix } from './helpers/supabase-admin';
 
 /**
  * Inventaire physique (migration 069) : un Responsable compte un produit ;
@@ -34,10 +34,11 @@ test.describe('Inventaire physique', () => {
     await cleanup();
     for (const [name, cost, qty] of [[smallName, 1_000, 10], [bigName, 100_000, 5]] as const) {
       const { data: p, error } = await admin.from('products').insert({
-        tenant_id: TENANT_ID, name, sku: `E2E-STK-${name.slice(-8)}-${cost}`, selling_price: cost * 2, purchase_price: cost,
+        tenant_id: TENANT_ID, name, sku: `E2E-STK-${name.slice(-8)}-${cost}`, selling_price: cost * 2,
       }).select('id').single();
       if (error) throw error;
       productIds.push(p.id);
+      await setProductCost(p.id, cost);
       await admin.from('inventory').insert({ tenant_id: TENANT_ID, product_id: p.id, store_id: STORE_ID, quantity: qty });
     }
   });

@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
     const productIds = items.map((it) => it.productId);
     const { data: products } = await supabase
       .from('products')
-      .select('*')
+      .select('*, product_costs(purchase_price)')
       .eq('tenant_id', tenantId)
       .in('id', productIds);
     for (const it of items) {
@@ -177,7 +177,7 @@ export async function POST(request: NextRequest) {
         category_id: l.product.category_id,
         quantity: l.quantity,
         unit_price: l.unitPrice,
-        purchase_price: l.product.purchase_price,
+        purchase_price: (Array.isArray(l.product.product_costs) ? l.product.product_costs[0] : l.product.product_costs)?.purchase_price ?? null,
         discount_percent: l.discount,
         tax_rate: l.tax,
         total: l.lineTotal,

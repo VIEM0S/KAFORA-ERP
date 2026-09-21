@@ -18,7 +18,7 @@ import { supabase } from '@/lib/supabase/client';
 // watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
 // (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
 import { watch } from '@/lib/supabase/watch';
-import { mapSale, mapSaleItem, mapQuote, mapQuoteItem } from '@/lib/supabase/mappers';
+import { mapSale, mapSaleItem, mapQuote, mapQuoteItem, SALE_ITEM_COLUMNS } from '@/lib/supabase/mappers';
 import { generateInvoicePDF, generateThermalReceipt } from '@/lib/utils/pdf';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
@@ -123,7 +123,7 @@ export default function InvoicesPage() {
     if (!tenantId) return;
     setIsGenerating(sale.id);
     try {
-      const { data } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id);
+      const { data } = await supabase.from('sale_items').select(SALE_ITEM_COLUMNS).eq('sale_id', sale.id);
       const items = (data ?? []).map(mapSaleItem);
       const date = sale.createdAt;
 
@@ -200,7 +200,7 @@ export default function InvoicesPage() {
     setPreviewSale(sale);
     setLoadingPreview(true);
     try {
-      const { data } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id);
+      const { data } = await supabase.from('sale_items').select(SALE_ITEM_COLUMNS).eq('sale_id', sale.id);
       setPreviewItems((data ?? []).map(mapSaleItem));
     } finally {
       setLoadingPreview(false);

@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase/client';
 // échouaient silencieusement (refus RLS ou coupure = écran vide, sans
 // explication), signalé dans le plan de migration.
 import { watch } from '@/lib/supabase/watch';
-import { mapProduct, mapCategory } from '@/lib/supabase/mappers';
+import { mapProduct, mapCategory, PRODUCT_WITH_COST } from '@/lib/supabase/mappers';
 import type { Product, Category } from '@/lib/types';
 
 export function useProductsData(tenantId: string | undefined) {
@@ -20,7 +20,7 @@ export function useProductsData(tenantId: string | undefined) {
 
     const unsubProducts = watch(
       'products',
-      () => supabase.from('products').select('*').eq('tenant_id', tenantId).order('name', { ascending: true }),
+      () => supabase.from('products').select(PRODUCT_WITH_COST).eq('tenant_id', tenantId).order('name', { ascending: true }),
       rows => {
         setProducts(rows.map(mapProduct));
         setIsLoading(false);

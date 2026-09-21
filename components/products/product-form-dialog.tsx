@@ -126,9 +126,6 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
       description: form.description.trim() || null,
       category_id: form.categoryId || null,
       unit: form.unit,
-      // null (et non 0) quand le prix n'est pas renseigné : c'est ce qui
-      // permet aux rapports de distinguer « gratuit » de « inconnu ».
-      purchase_price: form.purchasePrice.trim() === '' ? null : Number(form.purchasePrice),
       selling_price: Number(form.sellingPrice),
       tax_rate: Number(form.taxRate) || 0,
       alert_threshold: Number(form.alertThreshold) || 10,
@@ -146,10 +143,30 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
       // uq_products_tenant_sku, supabase/migrations. Un SKU déjà pris est
       // simplement refusé par la base (23505), plus besoin de gérer une
       // réservation séparée à la main.
-      const { error } = editingProduct
-        ? await supabase.from('products').update(payload).eq('id', editingProduct.id)
-        : await supabase.from('products').insert(payload);
-      if (error) throw error;
+      // Le prix d'achat vit dans product_costs (lisible des seuls Managers+,
+      // migration 070). null (et non 0) quand il n'est pas renseigné : c'est
+      // ce qui permet aux rapports de distinguer « gratuit » de « inconnu ».
+      const purchasePrice = form.purchasePrice.trim() === '' ? null : Number(form.purchasePrice);
+      const saveCost = async (productId: string) => {
+        const { error: costError } = await supabase.from('product_costs').upsert(
+          { product_id: productId, tenant_id: tenantId, purchase_price: purchasePrice },
+          { onConflict: 'product_id' }
+        );
+        if (costError) throw costError;
+      };
+
+      if (editingProduct) {
+        // Coût d'abord : la mise à jour du produit qui suit déclenche le
+        // rafraîchissement temps réel, qui doit déjà voir le nouveau coût.
+        await saveCost(editingProduct.id);
+        const { error } = await supabase.from('products').update(payload).eq('id', editingProduct.id);
+        if (error) throw error;
+      } else {
+        const id = crypto.randomUUID();
+        const { error } = await supabase.from('products').insert({ ...payload, id });
+        if (error) throw error;
+        await saveCost(id);
+      }
 
       onOpenChange(false);
     } catch (err) {

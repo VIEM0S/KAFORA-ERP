@@ -182,7 +182,7 @@ export default function ProductImportPage() {
             tenant_id: tenantId, sku: r.sku, barcode: r.barcode, name: r.name,
             description: null,
             category_id: r.categoryName ? (existingCatByName.get(slugify(r.categoryName)) || null) : null,
-            unit: r.unit, purchase_price: r.purchasePrice, selling_price: r.sellingPrice,
+            unit: r.unit, selling_price: r.sellingPrice,
             tax_rate: r.taxRate, track_inventory: true, alert_threshold: r.alertThreshold,
             is_active: true,
           }))
@@ -190,6 +190,17 @@ export default function ProductImportPage() {
         if (prodError) throw prodError;
 
         const skuToId = new Map((insertedProducts ?? []).map(p => [p.sku, p.id]));
+        // Prix d'achat dans product_costs (lisible des seuls Managers+, migration 070).
+        const costRows = chunk.flatMap(r => {
+          const productId = skuToId.get(r.sku);
+          return productId && r.purchasePrice != null
+            ? [{ product_id: productId, tenant_id: tenantId, purchase_price: r.purchasePrice }]
+            : [];
+        });
+        if (costRows.length > 0) {
+          const { error: costError } = await supabase.from('product_costs').upsert(costRows, { onConflict: 'product_id' });
+          if (costError) throw costError;
+        }
         // Stock + mouvement écrits ensemble côté serveur : l'écriture directe
         // dans inventory / inventory_movements n'est plus autorisée (066).
         const stockRows: { product_id: string; quantity: number; min_quantity: number }[] = [];

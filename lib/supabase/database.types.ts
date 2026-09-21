@@ -1231,6 +1231,39 @@ export type Database = {
           },
         ]
       }
+      product_costs: {
+        Row: {
+          product_id: string
+          purchase_price: number | null
+          tenant_id: string
+        }
+        Insert: {
+          product_id: string
+          purchase_price?: number | null
+          tenant_id: string
+        }
+        Update: {
+          product_id?: string
+          purchase_price?: number | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_costs_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: true
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_costs_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       products: {
         Row: {
           alert_threshold: number | null
@@ -1243,7 +1276,6 @@ export type Database = {
           is_active: boolean
           name: string
           name_lower: string | null
-          purchase_price: number | null
           selling_price: number
           sku: string | null
           tax_rate: number
@@ -1265,7 +1297,6 @@ export type Database = {
           is_active?: boolean
           name: string
           name_lower?: string | null
-          purchase_price?: number | null
           selling_price: number
           sku?: string | null
           tax_rate?: number
@@ -1287,7 +1318,6 @@ export type Database = {
           is_active?: boolean
           name?: string
           name_lower?: string | null
-          purchase_price?: number | null
           selling_price?: number
           sku?: string | null
           tax_rate?: number
@@ -1767,7 +1797,6 @@ export type Database = {
           product_id: string | null
           product_name: string
           product_sku: string | null
-          purchase_price: number | null
           quantity: number
           returned_quantity: number
           sale_id: string
@@ -1785,7 +1814,6 @@ export type Database = {
           product_id?: string | null
           product_name: string
           product_sku?: string | null
-          purchase_price?: number | null
           quantity: number
           returned_quantity?: number
           sale_id: string
@@ -1803,7 +1831,6 @@ export type Database = {
           product_id?: string | null
           product_name?: string
           product_sku?: string | null
-          purchase_price?: number | null
           quantity?: number
           returned_quantity?: number
           sale_id?: string

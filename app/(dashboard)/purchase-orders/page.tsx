@@ -19,7 +19,7 @@ import { supabase } from '@/lib/supabase/client';
 // watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
 // (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
 import { watch } from '@/lib/supabase/watch';
-import { mapPurchaseOrder, mapPurchaseOrderItem, mapSupplier, mapProduct } from '@/lib/supabase/mappers';
+import { mapPurchaseOrder, mapPurchaseOrderItem, mapSupplier, mapProduct, PRODUCT_WITH_COST } from '@/lib/supabase/mappers';
 import { formatCurrency } from '@/lib/utils/helpers';
 import { exportToCsv, formatDateForCsv } from '@/lib/utils/export';
 import { PO_REORDER_SUGGESTION_KEY, type ReorderSuggestionLine } from '@/lib/purchase-orders/reorder-suggestion';
@@ -96,7 +96,7 @@ export default function PurchaseOrdersPage() {
     );
     const unsub3 = watch(
       'products',
-      () => supabase.from('products').select('*').eq('tenant_id', tenantId).order('name', { ascending: true }),
+      () => supabase.from('products').select(PRODUCT_WITH_COST).eq('tenant_id', tenantId).order('name', { ascending: true }),
       rows => setProducts(rows.map(mapProduct)),
       undefined,
       `tenant_id=eq.${tenantId}`

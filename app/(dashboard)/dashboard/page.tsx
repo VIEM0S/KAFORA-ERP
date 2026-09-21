@@ -17,7 +17,7 @@ import { supabase } from '@/lib/supabase/client';
 // watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
 // (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
 import { watch } from '@/lib/supabase/watch';
-import { mapSale, mapProduct, mapInventory, mapCredit, mapCategory } from '@/lib/supabase/mappers';
+import { mapSale, mapProduct, mapInventory, mapCredit, mapCategory, PRODUCT_WITH_COST } from '@/lib/supabase/mappers';
 import { isManagerPlus as isManagerPlusRole } from '@/lib/auth/roles';
 import type { Sale, Product, Inventory, Credit, Category } from '@/lib/types';
 
@@ -51,7 +51,7 @@ function useDashboardData(tenantId: string | undefined, storeId: string | undefi
     );
     const unsubP = watch(
       'products',
-      () => supabase.from('products').select('*').eq('tenant_id', tenantId).eq('is_active', true),
+      () => supabase.from('products').select(PRODUCT_WITH_COST).eq('tenant_id', tenantId).eq('is_active', true),
       rows => { setProducts(rows.map(mapProduct)); checkDone(); },
       undefined,
       `tenant_id=eq.${tenantId}`

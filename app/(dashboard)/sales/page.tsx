@@ -25,7 +25,7 @@ import { supabase } from '@/lib/supabase/client';
 // watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
 // (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
 import { watch } from '@/lib/supabase/watch';
-import { mapSale, mapSaleItem } from '@/lib/supabase/mappers';
+import { mapSale, mapSaleItem, SALE_ITEM_COLUMNS } from '@/lib/supabase/mappers';
 import { describeSupabaseError, type ReadableError } from '@/lib/utils/supabase-errors';
 import type { Sale, SaleItem } from '@/lib/types';
 
@@ -100,7 +100,7 @@ export default function SalesPage() {
     if (!tenantId || !selected) { setSaleItems([]); return; }
     setLoadingItems(true);
     (async () => {
-      const { data } = await supabase.from('sale_items').select('*').eq('sale_id', selected.id);
+      const { data } = await supabase.from('sale_items').select(SALE_ITEM_COLUMNS).eq('sale_id', selected.id);
       setSaleItems((data ?? []).map(mapSaleItem));
       setLoadingItems(false);
     })();
@@ -204,7 +204,7 @@ export default function SalesPage() {
       // de diverger de la vraie logique côté serveur (create_sale_return()).
       const [{ data: freshSale }, { data: freshItems }] = await Promise.all([
         supabase.from('sales').select('*').eq('id', selected.id).maybeSingle(),
-        supabase.from('sale_items').select('*').eq('sale_id', selected.id),
+        supabase.from('sale_items').select(SALE_ITEM_COLUMNS).eq('sale_id', selected.id),
       ]);
       if (freshSale) {
         const mapped = mapSale(freshSale);

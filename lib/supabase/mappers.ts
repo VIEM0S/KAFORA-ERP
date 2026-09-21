@@ -44,11 +44,26 @@ export function mapCategory(r: Row<'categories'>): Category {
   };
 }
 
-export function mapProduct(r: Row<'products'>): Product {
+// Le prix d'achat vit dans product_costs (migration 070), lisible des seuls
+// Managers+ : les requêtes qui en ont besoin joignent `product_costs(purchase_price)`.
+// Pour un Caissier (ou une requête sans jointure), la valeur est simplement null.
+type CostEmbed = { purchase_price: number | null };
+export type ProductRow = Row<'products'> & { product_costs?: CostEmbed | CostEmbed[] | null };
+
+/** Sélection standard d'un produit AVEC son prix d'achat (Managers+). */
+export const PRODUCT_WITH_COST = '*, product_costs(purchase_price)';
+
+const costOf = (r: ProductRow): number | null => {
+  const c = r.product_costs;
+  const one = Array.isArray(c) ? c[0] : c;
+  return one?.purchase_price ?? null;
+};
+
+export function mapProduct(r: ProductRow): Product {
   return {
     id: r.id, tenantId: r.tenant_id, sku: r.sku ?? '', barcode: r.barcode,
     name: r.name, description: r.description, categoryId: r.category_id,
-    unit: r.unit ?? 'unité', purchasePrice: r.purchase_price, sellingPrice: r.selling_price,
+    unit: r.unit ?? 'unité', purchasePrice: costOf(r), sellingPrice: r.selling_price,
     taxRate: r.tax_rate, alertThreshold: r.alert_threshold ?? 0, imageData: r.image_data,
     isActive: r.is_active, trackInventory: r.track_inventory,
     trackExpiry: r.track_expiry, trackSerial: r.track_serial,
@@ -104,11 +119,16 @@ export function mapSupplier(r: Row<'suppliers'>): Supplier {
   };
 }
 
+// sale_items.purchase_price (coût d'achat de la ligne) n'est plus lisible côté
+// client (migration 072) : lire ces colonnes explicitement, jamais select('*').
+export const SALE_ITEM_COLUMNS =
+  'id, tenant_id, sale_id, product_id, product_name, product_sku, category_id, quantity, unit_price, discount_percent, tax_rate, total, returned_quantity, serial_number, created_at';
+
 export function mapSaleItem(r: Row<'sale_items'>): SaleItem {
   return {
     id: r.id, saleId: r.sale_id, productId: r.product_id ?? '', productName: r.product_name,
     productSku: r.product_sku ?? '', quantity: r.quantity, unitPrice: r.unit_price,
-    purchasePrice: r.purchase_price ?? 0, discountPercent: r.discount_percent,
+    discountPercent: r.discount_percent,
     taxRate: r.tax_rate, total: r.total, returnedQuantity: r.returned_quantity,
     serialNumber: r.serial_number,
   };

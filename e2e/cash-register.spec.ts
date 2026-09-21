@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { supabaseAdmin, TENANT_ID, STORE_ID, uniqueSuffix } from './helpers/supabase-admin';
+import { setProductCost, supabaseAdmin, TENANT_ID, STORE_ID, uniqueSuffix } from './helpers/supabase-admin';
 
 /**
  * Ouverture, une vente, fermeture avec rapprochement exact — le calcul
@@ -23,13 +23,13 @@ test.describe('Caisse — ouverture, vente, fermeture', () => {
         name: 'Produit Caisse E2E',
         sku: `E2E-CASH-${uniqueSuffix()}`,
         selling_price: 500,
-        purchase_price: 300,
         is_active: true,
       })
       .select('id')
       .single();
     if (error) throw error;
     productId = product.id;
+    await setProductCost(productId, 300);
 
     const { error: invError } = await admin
       .from('inventory')

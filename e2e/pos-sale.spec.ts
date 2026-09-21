@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { supabaseAdmin, TENANT_ID, STORE_ID, uniqueSuffix } from './helpers/supabase-admin';
+import { setProductCost, supabaseAdmin, TENANT_ID, STORE_ID, uniqueSuffix } from './helpers/supabase-admin';
 
 /**
  * Vente au comptant au POS — le flux le plus fréquent de l'app. Vérifie que
@@ -20,13 +20,13 @@ test.describe('Vente POS (espèces)', () => {
         name: 'Produit Test E2E',
         sku,
         selling_price: 2500,
-        purchase_price: 1500,
         is_active: true,
       })
       .select('id')
       .single();
     if (error) throw error;
     productId = product.id;
+    await setProductCost(productId, 1500);
     initialQty = 10;
 
     const { error: invError } = await admin

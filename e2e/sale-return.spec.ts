@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { supabaseAdmin, TENANT_ID, STORE_ID, uniqueSuffix } from './helpers/supabase-admin';
+import { setProductCost, supabaseAdmin, TENANT_ID, STORE_ID, uniqueSuffix } from './helpers/supabase-admin';
 
 /**
  * Régression directe de deux bugs trouvés le 2026-09-07 :
@@ -23,13 +23,13 @@ test.describe('Vente — retour client', () => {
         name: 'Produit Retour E2E',
         sku: `E2E-RET-${suffix}`,
         selling_price: 3000,
-        purchase_price: 1800,
         is_active: true,
       })
       .select('id')
       .single();
     if (prodError) throw prodError;
     productId = product.id;
+    await setProductCost(productId, 1800);
 
     await admin.from('inventory').insert({ tenant_id: TENANT_ID, product_id: productId, store_id: STORE_ID, quantity: 5 });
 

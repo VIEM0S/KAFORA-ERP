@@ -376,7 +376,6 @@ export interface SaleItem {
   productSku: string;
   quantity: number;
   unitPrice: number;
-  purchasePrice: number;
   discountPercent: number;
   taxRate: number;
   total: number;

@@ -23,3 +23,11 @@ export const STORE_ID = process.env.E2E_STORE_ID || 'b1a0ea3b-b139-4fc8-bf16-be1
 export function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
+
+/** Pose le prix d'achat d'un produit de test (table product_costs, migration 070). */
+export async function setProductCost(productId: string, purchasePrice: number) {
+  const { error } = await supabaseAdmin()
+    .from('product_costs')
+    .upsert({ product_id: productId, tenant_id: TENANT_ID, purchase_price: purchasePrice }, { onConflict: 'product_id' });
+  if (error) throw error;
+}
