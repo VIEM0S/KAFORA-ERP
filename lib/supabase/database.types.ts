@@ -2087,6 +2087,104 @@ export type Database = {
           },
         ]
       }
+      stocktake_lines: {
+        Row: {
+          counted_qty: number | null
+          expected_qty: number
+          id: string
+          product_id: string
+          product_name: string
+          sku: string | null
+          stocktake_id: string
+          store_id: string
+          tenant_id: string
+          unit_cost: number
+        }
+        Insert: {
+          counted_qty?: number | null
+          expected_qty: number
+          id?: string
+          product_id: string
+          product_name: string
+          sku?: string | null
+          stocktake_id: string
+          store_id: string
+          tenant_id: string
+          unit_cost?: number
+        }
+        Update: {
+          counted_qty?: number | null
+          expected_qty?: number
+          id?: string
+          product_id?: string
+          product_name?: string
+          sku?: string | null
+          stocktake_id?: string
+          store_id?: string
+          tenant_id?: string
+          unit_cost?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stocktake_lines_stocktake_id_fkey"
+            columns: ["stocktake_id"]
+            isOneToOne: false
+            referencedRelation: "stocktakes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stocktakes: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          created_by: string | null
+          created_by_name: string | null
+          decided_at: string | null
+          decided_by: string | null
+          decided_by_name: string | null
+          decision_note: string | null
+          id: string
+          loss_value: number | null
+          status: string
+          store_id: string
+          submitted_at: string | null
+          tenant_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          created_by_name?: string | null
+          decided_at?: string | null
+          decided_by?: string | null
+          decided_by_name?: string | null
+          decision_note?: string | null
+          id?: string
+          loss_value?: number | null
+          status?: string
+          store_id: string
+          submitted_at?: string | null
+          tenant_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          created_by_name?: string | null
+          decided_at?: string | null
+          decided_by?: string | null
+          decided_by_name?: string | null
+          decision_note?: string | null
+          id?: string
+          loss_value?: number | null
+          status?: string
+          store_id?: string
+          submitted_at?: string | null
+          tenant_id?: string
+        }
+        Relationships: []
+      }
       stores: {
         Row: {
           address: string | null
@@ -2535,6 +2633,7 @@ export type Database = {
           transfer_settings: Json | null
           updated_at: string
           expense_approval_threshold: number
+          stock_loss_approval_threshold: number
           write_off_approval_threshold: number
         }
         Insert: {
@@ -2561,6 +2660,7 @@ export type Database = {
           transfer_settings?: Json | null
           updated_at?: string
           expense_approval_threshold?: number
+          stock_loss_approval_threshold?: number
           write_off_approval_threshold?: number
         }
         Update: {
@@ -2587,6 +2687,7 @@ export type Database = {
           transfer_settings?: Json | null
           updated_at?: string
           expense_approval_threshold?: number
+          stock_loss_approval_threshold?: number
           write_off_approval_threshold?: number
         }
         Relationships: [
@@ -2875,6 +2976,7 @@ export type Database = {
         Args: {
           p_amount: number
           p_caller_id: string
+          p_caller_role: string
           p_has_min_quantity: boolean
           p_min_quantity: number
           p_mode: string
@@ -2976,6 +3078,26 @@ export type Database = {
           p_note: string
           p_user_name: string
         }
+        Returns: Json
+      }
+      start_stocktake: {
+        Args: { p_store_id: string; p_user_name: string }
+        Returns: Json
+      }
+      save_stocktake_counts: {
+        Args: { p_counts: Json; p_id: string }
+        Returns: Json
+      }
+      submit_stocktake: {
+        Args: { p_id: string; p_user_name: string }
+        Returns: Json
+      }
+      decide_stocktake: {
+        Args: { p_approve: boolean; p_id: string; p_note: string; p_user_name: string }
+        Returns: Json
+      }
+      cancel_stocktake: {
+        Args: { p_id: string; p_user_name: string }
         Returns: Json
       }
       create_sale_return: {
@@ -3158,6 +3280,8 @@ export type Database = {
         | "CREDIT_LIMIT_CHANGED"
         | "EXPENSE_PENDING"
         | "EXPENSE_DECIDED"
+        | "STOCKTAKE_PENDING"
+        | "STOCKTAKE_DECIDED"
         | "SUPPORT_TICKET_REPLY"
         | "SUBSCRIPTION_SUSPENDED"
         | "SUBSCRIPTION_REACTIVATED"
@@ -3380,6 +3504,8 @@ export const Constants = {
         "CREDIT_LIMIT_CHANGED",
         "EXPENSE_PENDING",
         "EXPENSE_DECIDED",
+        "STOCKTAKE_PENDING",
+        "STOCKTAKE_DECIDED",
         "SUPPORT_TICKET_REPLY",
         "SUBSCRIPTION_SUSPENDED",
         "SUBSCRIPTION_REACTIVATED",

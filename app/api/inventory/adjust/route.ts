@@ -52,6 +52,9 @@ export async function POST(request: NextRequest) {
       p_min_quantity: (hasMinQuantity ? Math.trunc(Number(minQuantity) || 0) : null) as number,
       p_reason: (reason || null) as string,
       p_caller_id: session.uid,
+      // Les sorties au-dessus du seuil de perte (tenants.stock_loss_approval_threshold)
+      // sont réservées au Propriétaire/Administrateur — voir migration 069.
+      p_caller_role: session.role,
     });
     if (rpcError) throw rpcError;
 

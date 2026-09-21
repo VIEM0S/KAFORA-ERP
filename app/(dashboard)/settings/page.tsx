@@ -78,6 +78,10 @@ export default function SettingsPage() {
   // Même principe pour les dépenses (migration 067) : au-dessus, la dépense d'un
   // Responsable attend la validation du Propriétaire/Administrateur.
   const [expenseThreshold, setExpenseThreshold] = useState(String(tenant?.expenseApprovalThreshold ?? 50000));
+  // Pertes de stock (migration 069) : au-dessus, un inventaire physique demande
+  // la validation du Propriétaire/Administrateur, et un Responsable ne peut plus
+  // retirer du stock à la main.
+  const [stockLossThreshold, setStockLossThreshold] = useState(String(tenant?.stockLossApprovalThreshold ?? 50000));
   const [savingThreshold, setSavingThreshold] = useState(false);
   const [thresholdMsg, setThresholdMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -85,15 +89,16 @@ export default function SettingsPage() {
     if (!tenantId) return;
     const value = Number(writeOffThreshold);
     const expenseValue = Number(expenseThreshold);
-    if (!Number.isFinite(value) || value < 0 || !Number.isFinite(expenseValue) || expenseValue < 0) {
+    const stockLossValue = Number(stockLossThreshold);
+    if (!Number.isFinite(value) || value < 0 || !Number.isFinite(expenseValue) || expenseValue < 0 || !Number.isFinite(stockLossValue) || stockLossValue < 0) {
       setThresholdMsg({ type: 'error', text: 'Montant invalide' });
       return;
     }
     setSavingThreshold(true); setThresholdMsg(null);
     try {
-      const { error } = await supabase.from('tenants').update({ write_off_approval_threshold: value, expense_approval_threshold: expenseValue }).eq('id', tenantId);
+      const { error } = await supabase.from('tenants').update({ write_off_approval_threshold: value, expense_approval_threshold: expenseValue, stock_loss_approval_threshold: stockLossValue }).eq('id', tenantId);
       if (error) throw error;
-      setTenant({ ...tenant!, writeOffApprovalThreshold: value, expenseApprovalThreshold: expenseValue });
+      setTenant({ ...tenant!, writeOffApprovalThreshold: value, expenseApprovalThreshold: expenseValue, stockLossApprovalThreshold: stockLossValue });
       setThresholdMsg({ type: 'success', text: 'Seuil mis à jour' });
     } catch (e) {
       setThresholdMsg({ type: 'error', text: 'Erreur lors de la sauvegarde' });
@@ -426,7 +431,7 @@ export default function SettingsPage() {
         {canManageCompany && (
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-red-600" />Gouvernance : crédits et dépenses</CardTitle>
+              <CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-red-600" />Gouvernance : crédits, dépenses et stock</CardTitle>
               <CardDescription>
                 Au-delà de ce montant, une annulation de crédit demande votre validation (ou celle d&apos;un Administrateur) avant de s&apos;appliquer.
               </CardDescription>
@@ -445,6 +450,13 @@ export default function SettingsPage() {
                 <Input type="number" min="0" value={expenseThreshold} onChange={e => setExpenseThreshold(e.target.value)} />
                 <p className="text-xs text-gray-500">
                   Au-dessus, la dépense saisie par un Responsable attend votre validation (ou celle d&apos;un Administrateur). Vos propres dépenses sont validées directement.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>Seuil de validation des pertes de stock (FCFA)</Label>
+                <Input type="number" min="0" value={stockLossThreshold} onChange={e => setStockLossThreshold(e.target.value)} />
+                <p className="text-xs text-gray-500">
+                  Valeur au prix d&apos;achat. Au-dessus, un Responsable ne peut plus retirer du stock à la main : il doit faire un inventaire physique, à faire valider par vous ou un Administrateur.
                 </p>
               </div>
               <div className="flex justify-end">

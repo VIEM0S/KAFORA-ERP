@@ -8,7 +8,7 @@ import {
   Receipt, FileText, Users, CreditCard, Truck,
   DollarSign, BarChart3, Store, Bell, Settings,
   ChevronDown, ChevronRight, LogOut, Tag, AlertTriangle,
-  History, User, PackagePlus, Wallet, ShieldCheck
+  History, User, PackagePlus, Wallet, ShieldCheck, ClipboardCheck
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils/helpers';
@@ -69,6 +69,7 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { title: 'Inventaire', href: '/inventory', icon: Warehouse },
       { title: 'Mouvements', href: '/inventory/movements', icon: History },
+      { title: 'Inventaire physique', href: '/inventory/stocktake', icon: ClipboardCheck },
       { title: 'Alertes', href: '/inventory/alerts', icon: AlertTriangle, badgeKey: 'lowStock' },
       { title: 'Bons de commande', href: '/purchase-orders', icon: PackagePlus, roles: ['OWNER', 'ADMIN', 'MANAGER'] },
       { title: 'Transferts', href: '/transfers', icon: ArrowRightLeft, roles: ['OWNER', 'ADMIN', 'MANAGER'], feature: 'multiStoreEnabled' },

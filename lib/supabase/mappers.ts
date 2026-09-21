@@ -4,7 +4,7 @@ import type {
   Sale, SaleItem, Payment, Credit, CreditPayment, Quote, QuoteItem,
   PurchaseOrder, PurchaseOrderItem, Transfer, TransferLine,
   SaleReturn, SaleReturnItem, CashRegisterSession,
-  Tenant, Subscription, User, DailyStat, ProductLot, AuditLogEntry, Expense,
+  Tenant, Subscription, User, DailyStat, ProductLot, AuditLogEntry, Expense, Stocktake, StocktakeLine,
 } from '@/lib/types';
 
 /**
@@ -251,6 +251,7 @@ export function mapTenant(r: Row<'tenants'>): Tenant {
     referralCode: r.referral_code, referredByTenantId: r.referred_by_tenant_id,
     writeOffApprovalThreshold: r.write_off_approval_threshold,
     expenseApprovalThreshold: r.expense_approval_threshold,
+    stockLossApprovalThreshold: r.stock_loss_approval_threshold,
   };
 }
 
@@ -306,5 +307,26 @@ export function mapExpense(r: Row<'expenses'>): Expense {
     createdBy: r.created_by, createdByName: r.created_by_name,
     decidedByName: r.decided_by_name, decidedAt: toDateOrNull(r.decided_at),
     decisionNote: r.decision_note, createdAt: toDate(r.created_at),
+  };
+}
+
+export function mapStocktake(r: Row<'stocktakes'>): Stocktake {
+  return {
+    id: r.id, tenantId: r.tenant_id, storeId: r.store_id,
+    status: r.status as Stocktake['status'],
+    createdBy: r.created_by, createdByName: r.created_by_name, createdAt: toDate(r.created_at),
+    submittedAt: toDateOrNull(r.submitted_at),
+    lossValue: r.loss_value === null ? null : Number(r.loss_value),
+    decidedByName: r.decided_by_name, decidedAt: toDateOrNull(r.decided_at),
+    decisionNote: r.decision_note, completedAt: toDateOrNull(r.completed_at),
+  };
+}
+
+export function mapStocktakeLine(r: Row<'stocktake_lines'>): StocktakeLine {
+  return {
+    id: r.id, stocktakeId: r.stocktake_id, productId: r.product_id, productName: r.product_name,
+    sku: r.sku, expectedQty: Number(r.expected_qty),
+    countedQty: r.counted_qty === null ? null : Number(r.counted_qty),
+    unitCost: Number(r.unit_cost),
   };
 }

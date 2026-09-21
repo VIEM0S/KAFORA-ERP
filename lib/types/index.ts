@@ -57,6 +57,7 @@ export interface Tenant {
   // de s'appliquer immédiatement. Réglable par le Propriétaire/Admin.
   writeOffApprovalThreshold: number;
   expenseApprovalThreshold: number;
+  stockLossApprovalThreshold: number;
 }
 
 // Piste d'audit immuable (migration 045) — alimentée uniquement par les
@@ -528,7 +529,7 @@ export interface Alert {
   createdAt: Date;
 }
 
-export type AlertType = 'LOW_STOCK' | 'OUT_OF_STOCK' | 'OVERDUE_CREDIT' | 'LARGE_DISCOUNT' | 'REFUND' | 'CASH_VARIANCE' | 'FAILED_PAYMENT' | 'SUSPICIOUS_ACTIVITY' | 'OFFLINE_SYNC_CONFLICT' | 'USER_DELETION_REQUEST' | 'USER_DELETION_RESOLVED' | 'CREDIT_WRITTEN_OFF' | 'CREDIT_WRITE_OFF_PENDING' | 'CREDIT_LIMIT_CHANGED' | 'EXPENSE_PENDING' | 'EXPENSE_DECIDED' | 'SUPPORT_TICKET_REPLY' | 'SUBSCRIPTION_SUSPENDED' | 'SUBSCRIPTION_REACTIVATED' | 'SUBSCRIPTION_EXTENDED' | 'KAFORA_ANNOUNCEMENT' | 'SUBSCRIPTION_EXPIRING_SOON';
+export type AlertType = 'LOW_STOCK' | 'OUT_OF_STOCK' | 'OVERDUE_CREDIT' | 'LARGE_DISCOUNT' | 'REFUND' | 'CASH_VARIANCE' | 'FAILED_PAYMENT' | 'SUSPICIOUS_ACTIVITY' | 'OFFLINE_SYNC_CONFLICT' | 'USER_DELETION_REQUEST' | 'USER_DELETION_RESOLVED' | 'CREDIT_WRITTEN_OFF' | 'CREDIT_WRITE_OFF_PENDING' | 'CREDIT_LIMIT_CHANGED' | 'EXPENSE_PENDING' | 'EXPENSE_DECIDED' | 'STOCKTAKE_PENDING' | 'STOCKTAKE_DECIDED' | 'SUPPORT_TICKET_REPLY' | 'SUBSCRIPTION_SUSPENDED' | 'SUBSCRIPTION_REACTIVATED' | 'SUBSCRIPTION_EXTENDED' | 'KAFORA_ANNOUNCEMENT' | 'SUBSCRIPTION_EXPIRING_SOON';
 export type AlertSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
 export interface Notification {
@@ -727,4 +728,33 @@ export interface Expense {
   decidedAt: Date | null;
   decisionNote: string | null;
   createdAt: Date;
+}
+
+export type StocktakeStatus = 'IN_PROGRESS' | 'PENDING_APPROVAL' | 'COMPLETED' | 'REJECTED' | 'CANCELLED';
+
+export interface Stocktake {
+  id: string;
+  tenantId: string;
+  storeId: string;
+  status: StocktakeStatus;
+  createdBy: string | null;
+  createdByName: string | null;
+  createdAt: Date;
+  submittedAt: Date | null;
+  lossValue: number | null;
+  decidedByName: string | null;
+  decidedAt: Date | null;
+  decisionNote: string | null;
+  completedAt: Date | null;
+}
+
+export interface StocktakeLine {
+  id: string;
+  stocktakeId: string;
+  productId: string;
+  productName: string;
+  sku: string | null;
+  expectedQty: number;
+  countedQty: number | null;
+  unitCost: number;
 }
