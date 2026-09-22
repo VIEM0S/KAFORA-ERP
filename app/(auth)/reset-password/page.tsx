@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Store, Loader2, CheckCircle2 } from 'lucide-react';
@@ -12,10 +12,26 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { supabase } from '@/lib/supabase/client';
 
 /**
- * Page d'atterrissage du lien envoyé par resetPasswordForEmail() —
- * équivalent du gestionnaire d'action Firebase (/__/auth/action). Supabase
- * établit déjà une session temporaire via le lien avant que cette page ne se
- * charge : il suffit d'appeler updateUser({ password }) sur cette session.
+ * Page d'atterrissage du lien envoyé par resetPasswordForEmail()/
+ * admin.generateLink({ type: 'recovery' }) — équivalent du gestionnaire
+ * d'action Firebase (/__/auth/action).
+ *
+ * Contrairement au client supabase-js par défaut (detectSessionInUrl: true,
+ * stockage localStorage), le client créé par @supabase/ssr (createBrowserClient,
+ * voir lib/supabase/client.ts — nécessaire pour que le serveur lise la session
+ * via cookies) NE consomme PAS automatiquement les jetons #access_token=...
+ * déposés dans l'URL par Supabase Auth : constaté en direct, aucun cookie ni
+ * entrée localStorage n'apparaissait après avoir suivi un lien de
+ * récupération valide, laissant cette page appeler updateUser() sans aucune
+ * session — d'où "Lien invalide ou expiré" à chaque tentative, y compris
+ * juste après avoir généré un lien tout neuf.
+ *
+ * On établit donc la session nous-mêmes au montage, avant d'afficher le
+ * formulaire : setSession() pour un lien "recovery" classique (#access_token
+ * dans le fragment), ou exchangeCodeForSession() si un jour un lien PKCE
+ * (?code=...) est utilisé à la place. Le fragment est ensuite retiré de
+ * l'URL (replaceState) pour ne pas laisser le jeton visible dans l'historique
+ * du navigateur.
  */
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -24,6 +40,34 @@ export default function ResetPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [checkingLink, setCheckingLink] = useState(true);
+  const [linkValid, setLinkValid] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
+      const code = new URLSearchParams(window.location.search).get('code');
+
+      let sessionError: string | null = null;
+      if (accessToken && refreshToken) {
+        const { error: setErr } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+        sessionError = setErr?.message ?? null;
+      } else if (code) {
+        const { error: exErr } = await supabase.auth.exchangeCodeForSession(code);
+        sessionError = exErr?.message ?? null;
+      } else {
+        sessionError = 'missing';
+      }
+
+      // Retire le jeton de l'URL/historique qu'il ait été consommé ou non.
+      window.history.replaceState(null, '', window.location.pathname);
+
+      setLinkValid(!sessionError);
+      setCheckingLink(false);
+    })();
+  }, []);
 
   const handleSubmit = async () => {
     setError(null);
@@ -70,7 +114,18 @@ export default function ResetPasswordPage() {
             <CardDescription className="text-center">Choisissez un nouveau mot de passe</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {done ? (
+            {checkingLink ? (
+              <div className="flex items-center justify-center py-6 text-gray-500">
+                <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                Vérification du lien…
+              </div>
+            ) : !linkValid ? (
+              <Alert variant="destructive">
+                <AlertDescription>
+                  Lien invalide ou expiré. Redemandez une réinitialisation.
+                </AlertDescription>
+              </Alert>
+            ) : done ? (
               <Alert className="bg-green-50 border-green-200">
                 <CheckCircle2 className="h-4 w-4 text-green-600" />
                 <AlertDescription className="text-green-800">
