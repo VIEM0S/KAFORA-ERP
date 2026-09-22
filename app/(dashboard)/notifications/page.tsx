@@ -170,6 +170,7 @@ function useFirestoreAlerts(tenantId: string | undefined, userRole: string | und
   const [alerts, setAlerts] = useState<Notification[]>([]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!tenantId || !userRole) { setAlerts([]); return; }
     return watch(
       'alerts',

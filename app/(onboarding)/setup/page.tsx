@@ -59,6 +59,7 @@ export default function SetupPage() {
   const [referralCode, setReferralCode] = useState('');
   useEffect(() => {
     const ref = new URLSearchParams(window.location.search).get('ref');
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (ref) setReferralCode(ref);
   }, []);
 

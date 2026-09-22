@@ -44,6 +44,7 @@ export function usePosData(tenantId: string | undefined, storeId: string | undef
   useEffect(() => {
     if (!tenantId || search.trim()) return;
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsLoading(true);
     return watch(
       'products',
@@ -81,6 +82,7 @@ export function usePosData(tenantId: string | undefined, storeId: string | undef
     if (!tenantId || !term) return;
 
     const seq = ++searchSeq.current;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsSearching(true);
 
     // Débounce : on ne part pas en requête à chaque frappe.

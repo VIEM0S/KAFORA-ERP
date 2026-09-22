@@ -99,6 +99,9 @@ export default function AdminConsolePage() {
   // console restaient visibles à n'importe qui. Le 404 de l'API dit
   // explicitement "ne pas confirmer que cette console existe" ; la page
   // doit refléter la même intention plutôt que juste bloquer les données.
+  // Chargement au montage (dès que le rôle est connu) — usage légitime d'un
+  // effet pour synchroniser avec le serveur, pas un anti-pattern.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (isAllowed) load(); }, [isAllowed]);
 
   if (!isAllowed) {
@@ -376,8 +379,13 @@ function PaymentDialog({
   const [isSaving, setIsSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // `tenant` passe à null DÈS la fermeture (onClose du parent, avant la fin
+  // de l'animation) — comme edit-user-dialog.tsx, le garde `if (tenant)`
+  // est ce qui évite d'effacer visiblement le formulaire pendant que le
+  // dialogue se referme ; remonter par `key` perdrait cette protection.
   useEffect(() => {
     if (tenant) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMonths('1'); setPlan(tenant.plan || ''); setAmount('');
       setMethod(''); setNote(''); setErr(null);
     }
@@ -485,6 +493,8 @@ function SuspendDialog({
   const [isSaving, setIsSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Même raison que PaymentDialog plus haut : `tenant` nul dès la fermeture.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (tenant) { setReason(''); setErr(null); } }, [tenant]);
 
   const submit = async () => {
@@ -556,8 +566,11 @@ function UsersDialog({
   const [resetLink, setResetLink] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  // Fetch au changement de cible (même modèle que PaymentDialog/SuspendDialog
+  // plus haut : `tenant` nul dès la fermeture).
   useEffect(() => {
     if (!tenant) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setUsers([]); setMsg(null); setErr(null); setIsLoading(true);
     fetch(`/api/admin/tenant-users?tenantId=${encodeURIComponent(tenant.id)}`)
       .then(async res => {
@@ -692,6 +705,8 @@ function SupportTicketsPanel() {
       .catch(e => setError(e instanceof Error ? e.message : 'Erreur inconnue'))
       .finally(() => setIsLoading(false));
   };
+  // Chargement au montage — usage légitime d'un effet, pas un anti-pattern.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(load, []);
 
   const visible = tickets.filter(t => filter === 'ALL' || t.status === filter);
@@ -759,8 +774,10 @@ function TicketDialog({ ticket, onClose, onDone }: { ticket: Ticket | null; onCl
   const [isSending, setIsSending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Fetch au changement de cible (`ticket` nul dès la fermeture).
   useEffect(() => {
     if (!ticket) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setReplies([]); setReply(''); setErr(null); setIsLoading(true);
     fetch(`/api/admin/tickets/${ticket.id}/replies`)
       .then(async res => {
@@ -903,7 +920,8 @@ function PaymentsPanel({ tenants }: { tenants: TenantRow[] }) {
       .catch(e => setError(e instanceof Error ? e.message : 'Erreur inconnue'))
       .finally(() => setIsLoading(false));
   };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Chargement au montage/changement de filtre — usage légitime d'un effet.
+  // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
   useEffect(load, [tenantId, plan]);
 
   const handleExport = () => exportToCsv(
@@ -1140,8 +1158,10 @@ function TenantHistoryDialog({ tenant, onClose }: { tenant: TenantRow | null; on
   const [isLoading, setIsLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Fetch au changement de cible (`tenant` nul dès la fermeture).
   useEffect(() => {
     if (!tenant) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setEvents([]); setErr(null); setIsLoading(true);
     fetch(`/api/admin/tenant-history?tenantId=${encodeURIComponent(tenant.id)}`)
       .then(async res => {

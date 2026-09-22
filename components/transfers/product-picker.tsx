@@ -49,6 +49,7 @@ export function ProductPicker({ tenantId, storeId, onPick, alreadyPicked = [] }:
   useEffect(() => {
     const t = term.trim();
     if (!tenantId || t.length < 2) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setHits([]);
       return;
     }

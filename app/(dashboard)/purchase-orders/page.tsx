@@ -126,6 +126,10 @@ export default function PurchaseOrdersPage() {
         })
         .filter((l): l is DraftLine => l !== null);
       if (prefilled.length === 0) return;
+      // Consommation unique d'un dépôt sessionStorage (garde `suggestionConsumed`
+      // ci-dessus) — pas dérivable pendant le rendu, sessionStorage est une API
+      // navigateur.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSupplierId(''); setExpectedDate(''); setNotes('');
       setLines(prefilled);
       setCreateError(null);

@@ -43,9 +43,17 @@ export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogP
   const [isEditSaving, setIsEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
-  // Recharge le formulaire à chaque fois qu'un nouvel utilisateur est ouvert en édition.
+  // Recharge le formulaire à chaque fois qu'un nouvel utilisateur est ouvert
+  // en édition. Reste un effet plutôt qu'un remount par `key` (contrairement
+  // à ProductFormDialog, qui suit ce modèle) : ici la page met `user` à
+  // `null` DÈS la fermeture (onOpenChange), avant la fin de l'animation —
+  // remonter sur ce changement de clé effacerait visiblement le formulaire
+  // pendant que le dialogue se referme. Le garde `if (!user) return` est
+  // precisement ce qui évite ce flash, en laissant le dernier contenu
+  // affiché jusqu'à la prochaine vraie cible.
   useEffect(() => {
     if (!user) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setEditForm({
       uid: user.id,
       email: user.email,

@@ -111,6 +111,11 @@ function NavItemComponent({
   const badge = getBadge(item.badgeKey, item.badge);
 
   useEffect(() => {
+    // Ouvre automatiquement le sous-menu en arrivant sur une de ses pages ;
+    // `open` reste ensuite un état à part entière pour que l'utilisateur
+    // puisse le refermer manuellement (onClick plus haut) sans qu'il se
+    // rouvre tout seul au rendu suivant.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (isActive && hasChildren) setOpen(true);
     // isActive/hasChildren : booléens recalculés à chaque rendu depuis
     // pathname/item (tous deux stables ici, NAV_ITEMS est une constante de

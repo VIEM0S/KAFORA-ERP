@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,36 +48,37 @@ interface ProductFormDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+function formFromProduct(editingProduct: Product | null): ProductForm {
+  if (!editingProduct) return EMPTY_FORM;
+  return {
+    sku: editingProduct.sku,
+    barcode: editingProduct.barcode || '',
+    name: editingProduct.name,
+    description: editingProduct.description || '',
+    categoryId: editingProduct.categoryId || '',
+    unit: editingProduct.unit,
+    purchasePrice: editingProduct.purchasePrice == null ? '' : String(editingProduct.purchasePrice),
+    sellingPrice: String(editingProduct.sellingPrice),
+    taxRate: String(editingProduct.taxRate),
+    alertThreshold: String(editingProduct.alertThreshold),
+    isActive: editingProduct.isActive,
+    trackInventory: editingProduct.trackInventory,
+    trackExpiry: editingProduct.trackExpiry,
+    trackSerial: editingProduct.trackSerial,
+  };
+}
+
 export function ProductFormDialog({ tenantId, open, editingProduct, categories, onOpenChange }: ProductFormDialogProps) {
-  const [form, setForm] = useState<ProductForm>(EMPTY_FORM);
+  // Le formulaire se réinitialise en changeant de produit, pas en rouvrant
+  // le dialogue avec la même cible — voir le `key={editingProduct?.id}`
+  // posé sur ce composant dans app/(dashboard)/products/page.tsx. Remonter
+  // le composant plutôt que le réinitialiser dans un effet évite un rendu
+  // "vide" intermédiaire avant que les vraies valeurs n'arrivent, et
+  // n'efface jamais le contenu pendant l'animation de fermeture (rien ne
+  // change tant que `editingProduct` lui-même ne change pas).
+  const [form, setForm] = useState<ProductForm>(() => formFromProduct(editingProduct));
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-
-  // Recharge le formulaire à chaque ouverture (création ou édition)
-  useEffect(() => {
-    if (!open) return;
-    if (editingProduct) {
-      setForm({
-        sku: editingProduct.sku,
-        barcode: editingProduct.barcode || '',
-        name: editingProduct.name,
-        description: editingProduct.description || '',
-        categoryId: editingProduct.categoryId || '',
-        unit: editingProduct.unit,
-        purchasePrice: editingProduct.purchasePrice == null ? '' : String(editingProduct.purchasePrice),
-        sellingPrice: String(editingProduct.sellingPrice),
-        taxRate: String(editingProduct.taxRate),
-        alertThreshold: String(editingProduct.alertThreshold),
-        isActive: editingProduct.isActive,
-        trackInventory: editingProduct.trackInventory,
-        trackExpiry: editingProduct.trackExpiry,
-        trackSerial: editingProduct.trackSerial,
-      });
-    } else {
-      setForm(EMPTY_FORM);
-    }
-    setFormError(null);
-  }, [open, editingProduct]);
 
   const f = (field: keyof ProductForm, value: string | boolean) =>
     setForm((prev) => ({ ...prev, [field]: value }));

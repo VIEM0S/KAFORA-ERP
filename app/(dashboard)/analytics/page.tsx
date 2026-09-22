@@ -81,6 +81,7 @@ export default function AnalyticsPage() {
   // chaque ouverture coûtait des centaines de lectures Firestore.
   useEffect(() => {
     if (!tenantId || !analyticsAllowed) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsLoading(true);
 
     const from = new Date();
@@ -122,6 +123,7 @@ export default function AnalyticsPage() {
   const topProductIds = useMemo(() => topProducts.map(p => p.productId).sort().join(','), [topProducts]);
   useEffect(() => {
     const ids = topProductIds ? topProductIds.split(',') : [];
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!tenantId || ids.length === 0) { setStockLevels({}); return; }
     return watch(
       'inventory',
@@ -177,6 +179,10 @@ export default function AnalyticsPage() {
       });
     }
     return data;
+    // `now` volontairement absent : recalculé (non mémoïsé) à CHAQUE rendu
+    // (ligne juste au-dessus) — l'inclure ferait recalculer ce tableau à
+    // chaque rendu, ce que ce useMemo existe justement pour éviter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dailyStats, monthsCount]);
 
   const weeklyData = useMemo(() => {

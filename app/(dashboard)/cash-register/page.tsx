@@ -110,7 +110,12 @@ export default function CashRegisterPage() {
   // credit_payments est une table de premier niveau (tenant_id/store_id
   // directs) — plus besoin de la requête par groupe de collections que
   // Firestore imposait pour une sous-collection.
+  //
+  // Les 4 effets de synchronisation qui suivent sur cette page suivent tous
+  // le même schéma volontaire (garde puis `watch()`) — chargement/écoute au
+  // montage ou au changement de dépendance, pas un anti-pattern.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!tenantId || !storeId || !user?.id) { setCreditRepaymentTotal(0); return; }
     const sinceStart = session?.status === 'OPEN'
       ? session.openedAt
@@ -141,6 +146,7 @@ export default function CashRegisterPage() {
   // On ne compte que `cash_refund`, pas `refund_amount` : la part imputée sur
   // une dette client n'a jamais quitté le tiroir.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!tenantId || !storeId || !user?.id) { setCashRefundTotal(0); return; }
     const sinceStart = session?.status === 'OPEN'
       ? session.openedAt
@@ -164,6 +170,7 @@ export default function CashRegisterPage() {
   // clôtures passées (CA d'autres jours/caissiers/magasins).
   const canViewHistory = isManagerPlusRole(user?.role);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!tenantId || !storeId || !canViewHistory) { setSessionHistory([]); return; }
     return watch(
       'cash_sessions',
@@ -192,6 +199,7 @@ export default function CashRegisterPage() {
   // que app/api/cash-register/close/route.ts).
   const [otherOpenSessions, setOtherOpenSessions] = useState<CashRegisterSession[]>([]);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!tenantId || !storeId || !canViewHistory) { setOtherOpenSessions([]); return; }
     return watch(
       'cash_sessions',

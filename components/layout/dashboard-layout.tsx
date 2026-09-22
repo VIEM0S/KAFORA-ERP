@@ -69,6 +69,7 @@ function SubscriptionBanner() {
   // `null` le temps du premier rendu (bandeau simplement absent avant
   // l'hydratation), rempli juste après via l'effet.
   const [now, setNow] = useState<number | null>(null);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setNow(Date.now()); }, []);
 
   const expiry = subscription ? getExpiryDate(subscription) : null;
@@ -150,6 +151,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   // s'arrêtera jamais, sans aucun moyen de comprendre ce qui se passe.
   const [loadingTimedOut, setLoadingTimedOut] = useState(false);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!isLoading) { setLoadingTimedOut(false); return; }
     const timer = setTimeout(() => setLoadingTimedOut(true), 15000);
     return () => clearTimeout(timer);

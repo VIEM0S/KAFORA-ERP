@@ -7,6 +7,9 @@ export function useWorkingHoursWarning(workingHours: { start: string; end: strin
   const [outsideHours, setOutsideHours] = useState(false);
 
   useEffect(() => {
+    // Dépend de l'heure actuelle (new Date()), non déterministe — ne peut
+    // pas être calculé pendant le rendu, recalculé ici toutes les minutes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!workingHours?.start || !workingHours?.end) { setOutsideHours(false); return; }
     const check = () => {
       const now = new Date();

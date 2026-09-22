@@ -142,6 +142,7 @@ export default function SettingsPage() {
   // `window` n'existe pas côté serveur : calculé après montage pour éviter un
   // décalage d'hydratation entre le rendu serveur et le rendu client.
   const [origin, setOrigin] = useState('');
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setOrigin(window.location.origin); }, []);
 
   useEffect(() => {
@@ -160,8 +161,12 @@ export default function SettingsPage() {
     );
   }, [tenantId]);
 
+  // Hydrate les brouillons locaux depuis le tenant/utilisateur chargés
+  // globalement (store Zustand) — pas dérivable pendant le rendu, `company`/
+  // `profile` sont ensuite modifiés localement par la saisie avant sauvegarde.
   useEffect(() => {
     if (tenant) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCompany({
         name: tenant.name || '',
         email: tenant.email || '',

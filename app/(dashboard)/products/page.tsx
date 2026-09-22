@@ -35,8 +35,10 @@ function ProductsPageInner() {
   const openAdd = () => { setEditingProduct(null); setShowDialog(true); };
   const openEdit = (p: Product) => { setEditingProduct(p); setShowDialog(true); };
 
-  // Ouvrir le dialog si ?new=1
+  // Ouvrir le dialog si ?new=1 — lu depuis l'URL au montage/changement de
+  // paramètre, pas dérivable pendant le rendu.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (searchParams.get('new') === '1') openAdd();
   }, [searchParams]);
 
@@ -104,6 +106,7 @@ function ProductsPageInner() {
       </div>
 
       <ProductFormDialog
+        key={editingProduct?.id ?? 'new'}
         tenantId={tenantId}
         open={showDialog}
         editingProduct={editingProduct}

@@ -20,6 +20,9 @@ export function useOfflineSync() {
   };
 
   useEffect(() => {
+    // navigator.onLine et localStorage (via refreshQueue) sont des API
+    // navigateur, indisponibles/non fiables pendant le rendu serveur.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refreshQueue();
     setIsOnline(typeof navigator !== 'undefined' ? navigator.onLine : true);
 

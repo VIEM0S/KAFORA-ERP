@@ -61,6 +61,7 @@ export function SessionJournalDialog({ tenantId, storeId, session, onOpenChange 
     // d'un open_cash_register() qui l'exige), mais le type le permet — sans
     // titulaire, aucune transaction ne peut lui être attribuée avec
     // certitude, donc journal vide plutôt qu'une requête non filtrée.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!session.openedBy) { setEntries([]); setIsLoading(false); return; }
     const openedBy = session.openedBy;
     let cancelled = false;

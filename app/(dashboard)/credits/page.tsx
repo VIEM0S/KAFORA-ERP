@@ -177,6 +177,7 @@ export default function CreditsPage() {
 
   // Charger les versements du crédit sélectionné
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!tenantId || !selected) { setVersements([]); return; }
     return watch(
       'credit_payments',
@@ -185,12 +186,19 @@ export default function CreditsPage() {
       undefined,
       `credit_id=eq.${selected.id}`
     );
+    // `selected` (l'objet entier, pas juste son id) volontairement absent :
+    // il change d'identité à chaque mise à jour temps réel du MÊME crédit
+    // (montant versé, statut...) — l'inclure redéclencherait ce fetch à
+    // chaque mise à jour au lieu de seulement au changement de crédit
+    // sélectionné.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, selected?.id]);
 
   // Résout le magasin d'inscription du client, uniquement pour décider si
   // le bouton "Annuler ce crédit" doit s'afficher — undefined = pas encore
   // chargé (bouton masqué par prudence le temps du fetch).
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedCustomerStoreId(undefined);
     if (!selected?.customerId) { setSelectedCustomerStoreId(null); return; }
     let cancelled = false;
@@ -202,6 +210,7 @@ export default function CreditsPage() {
   // Piste d'audit du crédit sélectionné (migration 045) — lecture seule,
   // alimentée uniquement par les RPC de gouvernance (jamais par le client).
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!selected?.id) { setAuditTrail([]); return; }
     return watch(
       'audit_log',

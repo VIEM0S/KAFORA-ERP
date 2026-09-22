@@ -118,6 +118,7 @@ export default function SalesPage() {
 
   // Charger les articles de la vente sélectionnée
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!tenantId || !selected) { setSaleItems([]); return; }
     setLoadingItems(true);
     (async () => {
@@ -125,6 +126,10 @@ export default function SalesPage() {
       setSaleItems((data ?? []).map(mapSaleItem));
       setLoadingItems(false);
     })();
+    // `selected` (l'objet entier) volontairement absent : même raison que
+    // credits/page.tsx — ne recharger qu'au changement de vente sélectionnée,
+    // pas à chaque mise à jour temps réel de la même vente.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, selected?.id]);
 
   const filtered = sales.filter(s => {

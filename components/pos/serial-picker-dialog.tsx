@@ -24,6 +24,7 @@ export function SerialPickerDialog({ product, storeId, onClose }: SerialPickerDi
   const [search, setSearch] = useState('');
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!product || !storeId) { setAvailable([]); return; }
     setIsLoading(true);
     setSearch('');
