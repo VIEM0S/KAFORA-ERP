@@ -17,11 +17,15 @@ import { mapAuditLog } from '@/lib/supabase/mappers';
 import { formatCurrency, formatDateTime } from '@/lib/utils/helpers';
 import type { AuditLogEntry } from '@/lib/types';
 
-// Piste d'audit immuable (audit_log, migrations 045/067/068) : lecture seule.
-type Category = 'credit' | 'customer' | 'expense' | 'product';
+// Piste d'audit immuable (audit_log, migrations 045/067/068/073) : lecture
+// seule. entity_type est du texte libre (pas un enum) — étendre la
+// couverture (comptes, ventes...) n'a demandé aucune migration, seulement de
+// brancher writeGovernanceLog() dans les routes concernées.
+type Category = 'credit' | 'customer' | 'expense' | 'product' | 'user' | 'sale' | 'stocktake';
 
 const CATEGORY_LABEL: Record<Category, string> = {
   credit: 'Crédits', customer: 'Clients', expense: 'Dépenses', product: 'Prix des produits',
+  user: 'Comptes', sale: 'Ventes', stocktake: 'Inventaires',
 };
 
 const ACTION_LABEL: Record<string, string> = {
@@ -35,6 +39,18 @@ const ACTION_LABEL: Record<string, string> = {
   EXPENSE_APPROVED: 'Dépense validée',
   EXPENSE_REJECTED: 'Dépense refusée',
   PRODUCT_PRICE_CHANGED: 'Prix modifié',
+  STOCKTAKE_STARTED: 'Inventaire démarré',
+  STOCKTAKE_SUBMITTED: 'Inventaire soumis à validation',
+  STOCKTAKE_COMPLETED: 'Inventaire terminé',
+  STOCKTAKE_APPROVED: 'Inventaire validé',
+  STOCKTAKE_REJECTED: 'Inventaire refusé',
+  STOCKTAKE_CANCELLED: 'Inventaire annulé',
+  ROLE_CHANGED: 'Rôle modifié',
+  USER_DEACTIVATED: 'Compte désactivé',
+  USER_REACTIVATED: 'Compte réactivé',
+  USER_DELETED: 'Compte supprimé',
+  USER_RESTORED: 'Compte restauré',
+  SALE_CANCELLED: 'Vente annulée',
 };
 
 const num = (v: unknown): number | null =>
@@ -66,14 +82,31 @@ function summarize(e: AuditLogEntry): string {
       const note = typeof d.note === 'string' && d.note ? ` — ${d.note}` : '';
       return `${money(d.amount)} · ${String(d.description ?? '')}${note}`;
     }
+    case 'ROLE_CHANGED':
+      return `${String(d.targetName ?? '')} : ${String(d.from ?? '?')} → ${String(d.to ?? '?')}`;
+    case 'USER_DEACTIVATED':
+    case 'USER_REACTIVATED':
+    case 'USER_DELETED':
+    case 'USER_RESTORED':
+      return `${String(d.targetName ?? '')}${d.targetRole ? ` (${String(d.targetRole)})` : ''}`;
+    case 'SALE_CANCELLED':
+      return `${String(d.reference ?? '')} · ${money(d.total)}${reason}`;
+    case 'STOCKTAKE_STARTED':
+      return `${String(d.products ?? '?')} produit(s) à compter`;
+    case 'STOCKTAKE_SUBMITTED':
+    case 'STOCKTAKE_COMPLETED':
+      return `écart estimé ${money(d.loss_value)}${d.threshold != null ? ` (seuil ${money(d.threshold)})` : ''}`;
+    case 'STOCKTAKE_APPROVED':
+    case 'STOCKTAKE_REJECTED':
+      return `écart ${money(d.loss_value)}${reason}`;
     default:
       return d.amount != null ? `${money(d.amount)}${reason}` : reason.replace(/^ — /, '');
   }
 }
 
 function actionBadge(action: string) {
-  const danger = /REJECTED|WRITTEN_OFF|WRITE_OFF_REQUESTED/.test(action);
-  const warn = /REQUESTED|PRICE_CHANGED|LIMIT_CHANGED/.test(action);
+  const danger = /REJECTED|WRITTEN_OFF|WRITE_OFF_REQUESTED|DEACTIVATED|DELETED|CANCELLED/.test(action);
+  const warn = /REQUESTED|PRICE_CHANGED|LIMIT_CHANGED|SUBMITTED|CHANGED/.test(action);
   const cls = danger
     ? 'bg-red-100 text-red-700 hover:bg-red-100'
     : warn

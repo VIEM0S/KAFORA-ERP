@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
-import { writeAuditLog } from '@/lib/supabase/audit-log';
+import { writeAuditLog, writeGovernanceLog, getActorName } from '@/lib/supabase/audit-log';
 import { getErrorMessage } from '@/lib/utils/errors';
 
 // Annule une vente complétée et restaure le stock.
@@ -47,6 +47,13 @@ export async function POST(request: NextRequest) {
     await writeAuditLog({
       tenantId, userId: session.uid, action: 'SALE_CANCELLED',
       entity: 'sales', entityId: saleId, details: motif.trim(),
+    });
+    const { data: cancelledSale } = await supabase.from('sales').select('reference, store_id, total').eq('id', saleId).maybeSingle();
+    await writeGovernanceLog({
+      tenantId, action: 'SALE_CANCELLED', entityType: 'sale', entityId: saleId,
+      actorId: session.uid, actorName: await getActorName(session.uid), actorRole: session.role,
+      storeId: cancelledSale?.store_id ?? null,
+      details: { reference: cancelledSale?.reference, total: cancelledSale?.total, reason: motif.trim() },
     });
 
     return NextResponse.json({ success: true });

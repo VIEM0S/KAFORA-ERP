@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
+import { writeGovernanceLog, getActorName } from '@/lib/supabase/audit-log';
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
     const supabase = createServiceRoleClient();
     const { data: existing } = await supabase
       .from('users')
-      .select('id')
+      .select('id, role, first_name, last_name')
       .eq('id', uid)
       .eq('tenant_id', tenantId)
       .maybeSingle();
@@ -38,6 +39,13 @@ export async function POST(request: NextRequest) {
         restored_by: session.uid,
       })
       .eq('id', uid);
+
+    const targetName = `${existing.first_name || ''} ${existing.last_name || ''}`.trim() || uid;
+    await writeGovernanceLog({
+      tenantId, action: 'USER_RESTORED', entityType: 'user', entityId: uid,
+      actorId: session.uid, actorName: await getActorName(session.uid), actorRole: session.role,
+      details: { targetName, targetRole: existing.role },
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

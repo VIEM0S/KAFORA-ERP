@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
-import { writeAuditLog } from '@/lib/supabase/audit-log';
+import { writeAuditLog, writeGovernanceLog, getActorName } from '@/lib/supabase/audit-log';
 import { isSubsetOf, REGIONAL_MANAGER_ASSIGNABLE_ROLES } from '@/lib/api/regional-scope';
 import type { Database } from '@/lib/supabase/database.types';
 
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     const supabase = createServiceRoleClient();
     const { data: existing } = await supabase
       .from('users')
-      .select('role, store_ids')
+      .select('role, store_ids, first_name, last_name')
       .eq('id', uid)
       .eq('tenant_id', tenantId)
       .maybeSingle();
@@ -129,6 +129,12 @@ export async function POST(request: NextRequest) {
         tenantId, userId: callerUid, action: 'ROLE_CHANGED',
         entity: 'users', entityId: uid,
         details: `${existing.role || '?'} → ${role}`,
+      });
+      const targetName = `${existing.first_name || ''} ${existing.last_name || ''}`.trim() || uid;
+      await writeGovernanceLog({
+        tenantId, action: 'ROLE_CHANGED', entityType: 'user', entityId: uid,
+        actorId: callerUid, actorName: await getActorName(callerUid), actorRole: callerRole,
+        details: { targetName, from: existing.role, to: role },
       });
     }
 

@@ -2,13 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
 import { notifyRole } from '@/lib/api/notify-role';
+import { writeGovernanceLog, getActorName } from '@/lib/supabase/audit-log';
 
 // Fix (demande explicite) : une suppression définitive ne laisse aucune place
 // à l'erreur — on désactive donc le compte au lieu de le détruire : l'accès
 // est bloqué immédiatement (déconnexion forcée, connexion impossible — même
 // effet de sécurité qu'une suppression), mais les données restent et un
 // Propriétaire peut restaurer le compte à tout moment via /api/users/restore.
-async function performSoftDelete(tenantId: string, uid: string, deletedBy: string) {
+async function performSoftDelete(
+  tenantId: string, uid: string, deletedBy: string,
+  targetName: string, targetRole: string, actorRole: string
+) {
   const supabase = createServiceRoleClient();
   // ban_duration bloque immédiatement toute nouvelle vérification de session
   // (getUser() interroge le serveur Supabase Auth à chaque requête — voir
@@ -20,6 +24,12 @@ async function performSoftDelete(tenantId: string, uid: string, deletedBy: strin
     .update({ is_active: false, deleted_at: new Date().toISOString(), deleted_by: deletedBy })
     .eq('id', uid)
     .eq('tenant_id', tenantId);
+
+  await writeGovernanceLog({
+    tenantId, action: 'USER_DELETED', entityType: 'user', entityId: uid,
+    actorId: deletedBy, actorName: await getActorName(deletedBy), actorRole,
+    details: { targetName, targetRole },
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -66,7 +76,7 @@ export async function POST(request: NextRequest) {
     // vérification pour lui. Transparence : les Admins du tenant sont
     // notifiés après coup.
     if (callerRole === 'OWNER') {
-      await performSoftDelete(tenantId, uid, callerUid);
+      await performSoftDelete(tenantId, uid, callerUid, targetName, targetRole, callerRole);
       await notifyRole(tenantId, 'ADMIN', {
         type: 'USER_DELETION_RESOLVED', severity: 'MEDIUM',
         title: 'Suppression effectuée par le Propriétaire',
@@ -93,7 +103,7 @@ export async function POST(request: NextRequest) {
       if (reqData.status !== 'APPROVED') {
         return NextResponse.json({ error: "Cette demande n'a pas encore été approuvée par le Propriétaire" }, { status: 400 });
       }
-      await performSoftDelete(tenantId, uid, callerUid);
+      await performSoftDelete(tenantId, uid, callerUid, targetName, targetRole, callerRole);
       await supabase
         .from('user_deletion_requests')
         .update({ status: 'COMPLETED', completed_at: new Date().toISOString() })
