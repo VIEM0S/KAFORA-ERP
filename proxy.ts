@@ -89,7 +89,15 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Toutes les routes sauf les assets statiques Next.js
-    '/((?!_next/static|_next/image|favicon.ico).*)',
+    // Toutes les routes sauf les assets statiques Next.js ET les fonctions
+    // planifiées Netlify (netlify/functions/*, ex. aggregate-daily-stats,
+    // subscription-reminders) — sans cette exclusion, le déclenchement cron
+    // de Netlify (qui n'envoie aucun cookie de session) était redirigé vers
+    // /login par ce middleware AVANT même d'atteindre la fonction, qui ne
+    // s'exécutait donc jamais. Confirmé en direct : daily_stats et les
+    // alertes SUBSCRIPTION_EXPIRING_SOON étaient vides pour TOUS les
+    // tenants depuis la création de ces fonctions (migration du
+    // 2026-08-27), silencieusement, sans aucune erreur visible nulle part.
+    '/((?!_next/static|_next/image|favicon.ico|\\.netlify/functions).*)',
   ],
 };
