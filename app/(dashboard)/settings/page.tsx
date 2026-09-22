@@ -29,6 +29,18 @@ const COUNTRIES = [
   'Niger', 'Togo', 'Bénin', 'Guinée-Bissau',
 ];
 
+// Niveau module (pas dans la page, où il était redéfini 4 fois par rendu,
+// un par section) — voir react-hooks/static-components.
+function Msg({ msg }: { msg: { type: 'success' | 'error'; text: string } | null }) {
+  if (!msg) return null;
+  return (
+    <div className={`flex items-center gap-2 rounded-lg px-4 py-3 text-sm ${msg.type === 'success' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+      {msg.type === 'success' ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+      {msg.text}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { tenant, user, setTenant } = useAuthStore();
   const tenantId = tenant?.id;
@@ -244,16 +256,6 @@ export default function SettingsPage() {
       setSavingPw(false);
       setTimeout(() => setPwMsg(null), 4000);
     }
-  };
-
-  const Msg = ({ msg }: { msg: { type: 'success' | 'error'; text: string } | null }) => {
-    if (!msg) return null;
-    return (
-      <div className={`flex items-center gap-2 rounded-lg px-4 py-3 text-sm ${msg.type === 'success' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
-        {msg.type === 'success' ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
-        {msg.text}
-      </div>
-    );
   };
 
   return (

@@ -120,6 +120,13 @@ export function useAuth() {
     });
 
     return () => subscription.unsubscribe();
+    // Abonnement à monter UNE seule fois pour toute la durée de vie du
+    // composant (pas à chaque changement de session, sans quoi on
+    // ré-abonnerait/désabonnerait en boucle) — setUser/setTenant/setStores/
+    // setCurrentStore/setLoading/logout (actions Zustand) et router (stable
+    // dans l'App Router) ne changent de toute façon jamais entre deux
+    // rendus ; les omettre ici est intentionnel, pas un oubli.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }
 

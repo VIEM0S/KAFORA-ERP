@@ -38,7 +38,6 @@ function ProductsPageInner() {
   // Ouvrir le dialog si ?new=1
   useEffect(() => {
     if (searchParams.get('new') === '1') openAdd();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   const filtered = products.filter((p) => {

@@ -73,7 +73,9 @@ export default function StoresPage() {
       undefined,
       `tenant_id=eq.${tenantId}`
     );
-  }, [tenantId]);
+    // setStores : action Zustand, référence stable — l'ajouter ne change
+    // rien au comportement, seulement à la satisfaction du lint.
+  }, [tenantId, setStores]);
 
   const f = (field: keyof StoreForm, value: string | boolean) => setForm(p => ({ ...p, [field]: value }));
 

@@ -64,6 +64,13 @@ export function EditUserDialog({ tenantId, user, onOpenChange }: EditUserDialogP
     });
     setEditError(null);
     setShowEditPassword(false);
+    // `stores` volontairement absent des dépendances : cet effet doit
+    // réinitialiser le formulaire uniquement quand la CIBLE change (`user`),
+    // pas à chaque mise à jour de la liste des magasins pendant que le
+    // dialogue est ouvert — sinon une saisie en cours serait effacée sous
+    // les doigts de l'utilisateur. `stores` n'est lu qu'une fois, à
+    // l'ouverture, ce qui est le comportement voulu.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const ef = (field: keyof EditForm, value: string) => setEditForm(p => ({ ...p, [field]: value }));

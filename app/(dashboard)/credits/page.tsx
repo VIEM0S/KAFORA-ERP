@@ -46,6 +46,19 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof
   WRITTEN_OFF:    { label: 'Annulé',        color: 'bg-gray-100 text-gray-600',    icon: Ban },
 };
 
+// Déclaré au niveau module (pas dans le composant de page) : redéfini à
+// chaque rendu, ce composant perdrait toute optimisation React et se
+// remonterait inutilement — voir react-hooks/static-components.
+function StatusBadge({ status }: { status: CreditStatus }) {
+  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.PENDING;
+  const Icon = cfg.icon;
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium ${cfg.color}`}>
+      <Icon className="h-3 w-3" />{cfg.label}
+    </span>
+  );
+}
+
 // Piste d'audit (migration 045) — libellés lisibles pour les actions
 // enregistrées par les RPC de gouvernance.
 const AUDIT_ACTION_LABELS: Record<string, string> = {
@@ -394,16 +407,6 @@ export default function CreditsPage() {
   const pendingWriteOffs = credits.filter(c => c.writeOffStatus === 'PENDING');
 
   // ─── Render ─────────────────────────────────────────────────────────────────
-
-  const StatusBadge = ({ status }: { status: Credit['status'] }) => {
-    const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.PENDING;
-    const Icon = cfg.icon;
-    return (
-      <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium ${cfg.color}`}>
-        <Icon className="h-3 w-3" />{cfg.label}
-      </span>
-    );
-  };
 
   return (
     <DashboardLayout>

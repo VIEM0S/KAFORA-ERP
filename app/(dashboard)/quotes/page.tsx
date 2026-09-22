@@ -47,6 +47,13 @@ const STATUS_CONFIG: Record<QuoteStatus, { label: string; color: string; icon: t
   EXPIRED:   { label: 'Expiré',     color: 'bg-gray-100 text-gray-500',    icon: AlertCircle },
 };
 
+// Niveau module (pas dans la page) — voir react-hooks/static-components.
+function StatusBadge({ status }: { status: QuoteStatus }) {
+  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.PENDING;
+  const Icon = cfg.icon;
+  return <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium ${cfg.color}`}><Icon className="h-3 w-3" />{cfg.label}</span>;
+}
+
 export default function QuotesPage() {
   const { tenant, user, currentStore } = useAuthStore();
   const { addItem, updateItemPrice, setCustomer, clearCart, setNotes, setSourceQuoteId } = useCartStore();
@@ -238,11 +245,6 @@ export default function QuotesPage() {
     router.push('/pos');
   };
 
-  const StatusBadge = ({ status }: { status: Quote['status'] }) => {
-    const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.PENDING;
-    const Icon = cfg.icon;
-    return <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium ${cfg.color}`}><Icon className="h-3 w-3" />{cfg.label}</span>;
-  };
 
   return (
     <DashboardLayout>

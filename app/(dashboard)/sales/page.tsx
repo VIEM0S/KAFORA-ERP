@@ -36,6 +36,27 @@ const PM_LABELS: Record<string, { label: string; icon: typeof Banknote }> = {
   CREDIT:       { label: 'Crédit',       icon: Users },
 };
 
+// Mêmes libellés/couleurs que app/(dashboard)/invoices/page.tsx, pour rester
+// cohérent dans toute l'app. Niveau module (pas dans la page) — voir
+// react-hooks/static-components.
+const STATUS_BADGE: Record<string, { label: string; className: string }> = {
+  COMPLETED: { label: 'Complétée', className: 'bg-green-100 text-green-700' },
+  CANCELLED: { label: 'Annulée', className: 'bg-red-100 text-red-700' },
+  REFUNDED: { label: 'Remboursée', className: 'bg-orange-100 text-orange-700' },
+  PARTIALLY_REFUNDED: { label: 'Remb. partiel', className: 'bg-amber-100 text-amber-700' },
+  DRAFT: { label: 'Brouillon', className: 'bg-gray-100 text-gray-700' },
+  PENDING: { label: 'En attente', className: 'bg-gray-100 text-gray-700' },
+};
+function StatusBadge({ status }: { status: string }) {
+  const cfg = STATUS_BADGE[status] || { label: status, className: 'bg-gray-100 text-gray-700' };
+  const Icon = status === 'COMPLETED' ? CheckCircle2 : XCircle;
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium ${cfg.className}`}>
+      <Icon className="h-3 w-3" />{cfg.label}
+    </span>
+  );
+}
+
 export default function SalesPage() {
   const { tenant, user, currentStore } = useAuthStore();
   const tenantId = tenant?.id;
@@ -223,25 +244,7 @@ export default function SalesPage() {
   // retour classait une vente REFUNDED/PARTIALLY_REFUNDED comme "Annulée"
   // (le ternaire d'origine ne connaissait que ces deux cas) — trompeur pour
   // un commerçant qui consulte l'historique, un remboursement n'est pas une
-  // annulation. Mêmes libellés/couleurs que app/(dashboard)/invoices/page.tsx
-  // pour rester cohérent dans toute l'app.
-  const STATUS_BADGE: Record<string, { label: string; className: string }> = {
-    COMPLETED: { label: 'Complétée', className: 'bg-green-100 text-green-700' },
-    CANCELLED: { label: 'Annulée', className: 'bg-red-100 text-red-700' },
-    REFUNDED: { label: 'Remboursée', className: 'bg-orange-100 text-orange-700' },
-    PARTIALLY_REFUNDED: { label: 'Remb. partiel', className: 'bg-amber-100 text-amber-700' },
-    DRAFT: { label: 'Brouillon', className: 'bg-gray-100 text-gray-700' },
-    PENDING: { label: 'En attente', className: 'bg-gray-100 text-gray-700' },
-  };
-  const StatusBadge = ({ status }: { status: string }) => {
-    const cfg = STATUS_BADGE[status] || { label: status, className: 'bg-gray-100 text-gray-700' };
-    const Icon = status === 'COMPLETED' ? CheckCircle2 : XCircle;
-    return (
-      <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium ${cfg.className}`}>
-        <Icon className="h-3 w-3" />{cfg.label}
-      </span>
-    );
-  };
+  // annulation.
 
   return (
     <DashboardLayout>

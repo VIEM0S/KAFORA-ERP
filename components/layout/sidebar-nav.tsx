@@ -112,7 +112,10 @@ function NavItemComponent({
 
   useEffect(() => {
     if (isActive && hasChildren) setOpen(true);
-  }, [pathname]);
+    // isActive/hasChildren : booléens recalculés à chaque rendu depuis
+    // pathname/item (tous deux stables ici, NAV_ITEMS est une constante de
+    // module) — les ajouter est sans effet sur le comportement.
+  }, [pathname, isActive, hasChildren]);
 
   if (hasChildren) {
     return (
@@ -346,7 +349,8 @@ export function Sidebar() {
   // un lien laisserait le tiroir ouvert par-dessus la page suivante.
   useEffect(() => {
     setSidebarOpen(false);
-  }, [pathname]);
+    // setSidebarOpen : action Zustand, référence stable.
+  }, [pathname, setSidebarOpen]);
 
   const bodyProps = { collapsed, filteredNav, filteredAdmin, getBadge, user, handleLogout };
 
