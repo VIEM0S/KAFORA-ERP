@@ -170,7 +170,10 @@ export default function InvoicesPage() {
 
       const invoiceData: InvoiceData = {
         ...getTenantConfig(),
-        invoiceNumber: `DEV-${quote.id.slice(0, 8).toUpperCase()}`,
+        // `reference` est renseignée depuis toujours (migration 074 l'a
+        // seulement rendue séquentielle) — repli défensif par cohérence
+        // avec le traitement des ventes juste au-dessus.
+        invoiceNumber: quote.reference || `DEV-LEGACY-${quote.id.slice(0, 8).toUpperCase()}`,
         type: 'DEVIS',
         date: date.toLocaleDateString('fr-FR'),
         dueDate: validite,

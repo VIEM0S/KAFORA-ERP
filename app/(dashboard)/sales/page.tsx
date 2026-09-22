@@ -133,7 +133,7 @@ export default function SalesPage() {
   }, [tenantId, selected?.id]);
 
   const filtered = sales.filter(s => {
-    const matchSearch = !search || s.id.toLowerCase().includes(search.toLowerCase()) || (s.customerName || '').toLowerCase().includes(search.toLowerCase());
+    const matchSearch = !search || s.reference.toLowerCase().includes(search.toLowerCase()) || (s.customerName || '').toLowerCase().includes(search.toLowerCase());
     const matchStatus = filterStatus === 'all' || s.status === filterStatus;
 
     // Comparaison robuste par objets Date plutôt que par strings
@@ -268,7 +268,7 @@ export default function SalesPage() {
             className="self-start sm:self-auto"
             disabled={filtered.length === 0}
             onClick={() => exportToCsv(`ventes-${new Date().toISOString().slice(0, 10)}`, filtered, [
-              { key: 'id', label: 'N° vente' },
+              { key: 'reference', label: 'N° vente' },
               { key: 'createdAt', label: 'Date', format: (v) => formatDateForCsv(v) },
               { key: 'customerName', label: 'Client' },
               { key: 'paymentMethod', label: 'Paiement' },
@@ -366,7 +366,7 @@ export default function SalesPage() {
                       <TableRow key={s.id}
                         className={`hover:bg-gray-50 cursor-pointer ${selected?.id === s.id ? 'bg-primary-50' : ''}`}
                         onClick={() => setSelected(s)}>
-                        <TableCell><code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">{s.id.slice(0,8).toUpperCase()}</code></TableCell>
+                        <TableCell><code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">{s.reference}</code></TableCell>
                         <TableCell className="text-sm text-gray-500 whitespace-nowrap">{formatDateTime(s.createdAt)}</TableCell>
                         <TableCell className="text-sm">{s.customerName || 'Client comptoir'}</TableCell>
                         <TableCell className="text-right font-bold">{formatCurrency(s.total || 0)}</TableCell>
@@ -406,7 +406,7 @@ export default function SalesPage() {
               </div>
 
               <div className="space-y-3 mb-5 text-sm">
-                <div className="flex justify-between"><span className="text-gray-500">N° Vente</span><code className="text-xs bg-gray-100 px-2 py-1 rounded">{selected.id.slice(0,8).toUpperCase()}</code></div>
+                <div className="flex justify-between"><span className="text-gray-500">N° Vente</span><code className="text-xs bg-gray-100 px-2 py-1 rounded">{selected.reference}</code></div>
                 <div className="flex justify-between"><span className="text-gray-500">Date</span><span>{formatDateTime(selected.createdAt)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Client</span><span className="font-medium">{selected.customerName || 'Client comptoir'}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Paiement</span><span>{PM_LABELS[selected.paymentMethod || 'CASH']?.label || selected.paymentMethod}</span></div>
@@ -477,7 +477,7 @@ export default function SalesPage() {
             <AlertDialogTitle>Annuler cette vente ?</AlertDialogTitle>
             <AlertDialogDescription>
               <div className="space-y-3">
-                <p>Vente <strong>#{cancelTarget?.id.slice(0,8).toUpperCase()}</strong> — <strong>{formatCurrency(cancelTarget?.total || 0)}</strong></p>
+                <p>Vente <strong>{cancelTarget?.reference}</strong> — <strong>{formatCurrency(cancelTarget?.total || 0)}</strong></p>
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
                   ⚠️ Le stock sera automatiquement restauré pour tous les articles de cette vente.
                 </div>

@@ -31,13 +31,6 @@ import type { Product, Customer, Quote, QuoteStatus } from '@/lib/types';
  * QuoteItem (lib/types), qui est la ligne telle qu'enregistrée. */
 interface DraftLine { product: Product; quantity: number; unitPrice: number; }
 
-/** Jamais numéroté légalement (contrairement aux ventes/BC) — généré pour
- * l'affichage seulement. Fonction top-niveau (pas dans le composant) : la
- * règle react-hooks/purity interdit un appel impur (Date.now) atteignable
- * depuis le rendu, même via un gestionnaire d'événement non mémoïsé. */
-function genQuoteReference(): string {
-  return `DEV-${Date.now().toString(36).toUpperCase()}`;
-}
 
 const STATUS_CONFIG: Record<QuoteStatus, { label: string; color: string; icon: typeof Clock }> = {
   PENDING:   { label: 'En attente', color: 'bg-amber-100 text-amber-700',  icon: Clock },
@@ -146,13 +139,19 @@ export default function QuotesPage() {
         ? selectedCustomer.companyName
         : `${selectedCustomer.firstName || ''} ${selectedCustomer.lastName || ''}`.trim();
 
+      // Référence séquentielle (DEV-2026-000001, même logique que les
+      // ventes/bons de commande) — obtenue via RPC pour rester gapless même
+      // si l'insert ci-dessous échoue rarement (le compteur, lui, avance).
+      const { data: reference, error: refError } = await supabase.rpc('next_quote_reference', { p_tenant_id: tenantId });
+      if (refError) throw refError;
+
       // Deux écritures non-atomiques (comme la plupart des CRUD simples de
       // cette page) — acceptable ici : un devis orphelin sans lignes en cas
       // de crash entre les deux est sans conséquence financière, contrairement
       // au checkout ou au versement de crédit (qui restent des RPC atomiques).
       const { data: quote, error: quoteError } = await supabase.from('quotes').insert({
         tenant_id: tenantId, customer_id: selectedCustomer.id, customer_name: customerName,
-        reference: genQuoteReference(),
+        reference,
         status: 'PENDING', valid_until: new Date(dateValidite).toISOString(),
         subtotal: total, tax_amount: 0, discount_amount: 0, total,
         notes: note || null,
@@ -221,7 +220,7 @@ export default function QuotesPage() {
     }
 
     // Traçabilité : la vente doit pouvoir être rattachée à son devis.
-    const ref = `Devis ${convertTarget.id.slice(0, 8).toUpperCase()}`;
+    const ref = `Devis ${convertTarget.reference}`;
     setNotes(convertTarget.notes ? `${ref} — ${convertTarget.notes}` : ref);
     // Lu par le checkout pour faire passer CE devis en "Converti" une fois la
     // vente réellement encaissée (voir commentaire plus bas et hooks/store.ts).

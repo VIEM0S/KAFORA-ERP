@@ -436,7 +436,7 @@ export default function CreditsPage() {
             className="self-start sm:self-auto"
             disabled={filtered.length === 0}
             onClick={() => exportToCsv(`credits-${new Date().toISOString().slice(0, 10)}`, filtered, [
-              { key: 'id', label: 'N° créance' },
+              { key: 'reference', label: 'N° créance' },
               { key: 'customerName', label: 'Client' },
               { key: 'customerPhone', label: 'Téléphone' },
               { key: 'totalAmount', label: 'Montant total' },

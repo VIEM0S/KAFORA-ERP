@@ -3127,6 +3127,10 @@ export type Database = {
         Args: { p_id: string; p_user_name: string }
         Returns: Json
       }
+      next_quote_reference: {
+        Args: { p_tenant_id: string }
+        Returns: string
+      }
       create_sale_return: {
         Args: {
           p_caller_id: string

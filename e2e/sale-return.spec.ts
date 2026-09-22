@@ -93,7 +93,7 @@ test.describe('Vente — retour client', () => {
     // interrompu peut partager le même montant) — cibler l'id de vente, vrai
     // identifiant unique par exécution, affiché en 8 caractères dans la
     // colonne "N° Vente".
-    await page.locator('tr', { hasText: saleId.slice(0, 8).toUpperCase() }).first().click();
+    await page.locator('tr', { hasText: saleReference }).first().click();
 
     // Les articles de la vente sélectionnée viennent d'un fetch séparé
     // (sale_items, useEffect keyé sur selected.id) — attendre qu'ils soient
