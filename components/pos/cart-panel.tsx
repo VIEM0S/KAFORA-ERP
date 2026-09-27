@@ -1,8 +1,10 @@
+import { useEffect, useState } from 'react';
 import { ShoppingCart, User, X, Trash2, Minus, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { formatCurrency } from '@/lib/utils/helpers';
 import { useCartStore } from '@/hooks/store';
+import type { CartItem } from '@/lib/types';
 import { displayCustomerName } from '@/hooks/use-checkout';
 
 interface CartPanelProps {
@@ -10,6 +12,55 @@ interface CartPanelProps {
   canDiscount: boolean;
   onOpenCustomerPicker: () => void;
   onPay: () => void;
+}
+
+// Partagé entre le stepper entier et le champ décimal ci-dessous : la même
+// règle ("ne jamais dépasser le stock disponible si trackInventory") ne
+// doit vivre qu'à un seul endroit.
+function clampToStock(product: CartItem['product'], desired: number, inventory: Record<string, number>): number {
+  if (!product.trackInventory) return desired;
+  const stock = inventory[product.id] ?? 0;
+  return Math.min(desired, stock);
+}
+
+// Champ décimal (kg/mètre/litre...) pour un produit fractionné — un composant
+// à part est nécessaire pour garder un brouillon texte local (`draft`) : sans
+// lui, le champ contrôlé directement par item.quantity se réinitialise dès
+// qu'une frappe intermédiaire (ex. "0" en tapant "0,5") ne peut pas encore
+// être validée, empêchant physiquement de taper une quantité < 1 caractère
+// par caractère (trouvé lors de l'audit de cette fonctionnalité).
+function FractionalQuantityInput({
+  item, inventory, onChange,
+}: { item: CartItem; inventory: Record<string, number>; onChange: (qty: number) => void }) {
+  const [draft, setDraft] = useState(String(item.quantity));
+
+  // Resynchronise l'affichage si la quantité committée change depuis
+  // l'extérieur (ex. un clamp stock déclenché ailleurs) — sans casser une
+  // frappe en cours puisque ce n'est déclenché que par un vrai changement de
+  // item.quantity, pas par le brouillon local. Un `key={item.product.id}`
+  // remonterait tout le composant à chaque changement de quantité (y
+  // compris ceux causés par ce composant lui-même), ce qui est le
+  // comportement qu'on essaie justement d'éviter.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => setDraft(String(item.quantity)), [item.quantity]);
+
+  return (
+    <input
+      type="number" min="0.01" step="0.01" inputMode="decimal"
+      value={draft}
+      onChange={e => {
+        const raw = e.target.value;
+        setDraft(raw);
+        const v = Number(raw);
+        if (!Number.isFinite(v) || v <= 0) return;
+        const clamped = clampToStock(item.product, v, inventory);
+        if (clamped <= 0) return;
+        onChange(clamped);
+      }}
+      onBlur={() => setDraft(String(item.quantity))}
+      className="w-20 text-sm font-bold border-2 border-gray-200 rounded-lg px-2 py-1 text-center focus:border-primary-400 focus:outline-none"
+    />
+  );
 }
 
 export function CartPanel({ inventory, canDiscount, onOpenCustomerPicker, onPay }: CartPanelProps) {
@@ -88,18 +139,9 @@ export function CartPanel({ inventory, canDiscount, onOpenCustomerPicker, onPay 
                 // Vendu en kg/mètre/litre... (migration 076) : quantité
                 // décimale saisie directement, pas de stepper +/- entier —
                 // "2,5 m" n'a pas de sens en incréments de 1.
-                <input
-                  type="number" min="0.01" step="0.01" inputMode="decimal"
-                  value={item.quantity}
-                  onChange={e => {
-                    const v = Number(e.target.value);
-                    if (!Number.isFinite(v) || v <= 0) return;
-                    const stock = inventory[item.product.id] ?? 0;
-                    const clamped = item.product.trackInventory ? Math.min(v, stock) : v;
-                    if (clamped <= 0) return;
-                    updateItemQuantity(item.product.id, clamped);
-                  }}
-                  className="w-20 text-sm font-bold border-2 border-gray-200 rounded-lg px-2 py-1 text-center focus:border-primary-400 focus:outline-none"
+                <FractionalQuantityInput
+                  item={item} inventory={inventory}
+                  onChange={qty => updateItemQuantity(item.product.id, qty)}
                 />
               ) : (
                 <div className="flex items-center gap-1">
@@ -111,9 +153,9 @@ export function CartPanel({ inventory, canDiscount, onOpenCustomerPicker, onPay 
                   <span className="w-8 text-center text-sm font-bold">{item.quantity}</span>
                   <button
                     onClick={() => {
-                      const stockLeft = (inventory[item.product.id] ?? 0) - item.quantity;
-                      if (item.product.trackInventory && stockLeft <= 0) return;
-                      updateItemQuantity(item.product.id, item.quantity + 1);
+                      const next = item.quantity + 1;
+                      if (clampToStock(item.product, next, inventory) < next) return;
+                      updateItemQuantity(item.product.id, next);
                     }}
                     className="h-7 w-7 rounded-lg bg-white border border-gray-200 hover:bg-gray-100 flex items-center justify-center">
                     <Plus className="h-3 w-3" />

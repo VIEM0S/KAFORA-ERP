@@ -380,6 +380,22 @@ interface PromoCode {
   isActive: boolean; createdAt: string;
 }
 
+// Reproduit les MÊMES conditions que admin_extend_subscription() (dates,
+// plafond, forfait applicable), pas seulement is_active : sans ça, un code
+// expiré ou déjà au plafond s'affichait "valide" dans PaymentDialog puis
+// était rejeté par le serveur au moment d'enregistrer, après que l'admin
+// ait déjà annoncé le prix remisé au client. Fonction hors composant (pas
+// un `const now = Date.now()` dans le corps du rendu) pour rester une
+// fonction pure au sens du linter react-hooks.
+function isPromoUsable(p: PromoCode, plan: string | undefined): boolean {
+  const now = Date.now();
+  return p.isActive
+    && new Date(p.validFrom).getTime() <= now
+    && (!p.validUntil || new Date(p.validUntil).getTime() >= now)
+    && (p.maxRedemptions === null || p.timesRedeemed < p.maxRedemptions)
+    && (!p.applicablePlans || (!!plan && p.applicablePlans.includes(plan as PlanId)));
+}
+
 function PaymentDialog({
   tenant, onClose, onDone,
 }: { tenant: TenantRow | null; onClose: () => void; onDone: () => void }) {
@@ -411,11 +427,10 @@ function PaymentDialog({
     }
   }, [tenant]);
 
-  // Suggestion de montant quand le code tapé correspond à un code actif
-  // applicable au forfait choisi — jamais imposée, juste préremplie.
+  // Suggestion de montant quand le code tapé correspond à un code actif ET
+  // valide (voir isPromoUsable) — jamais imposée, juste préremplie.
   const matchedPromo = promoCodes.find(
-    p => p.code === promoCode.trim().toUpperCase() && p.isActive
-      && (!p.applicablePlans || (plan && p.applicablePlans.includes(plan as PlanId)))
+    p => p.code === promoCode.trim().toUpperCase() && isPromoUsable(p, plan)
   );
   const applyPromoSuggestion = () => {
     if (!matchedPromo || !plan || !(plan in SUBSCRIPTION_PLANS)) return;
@@ -481,10 +496,7 @@ function PaymentDialog({
               <Select value={plan} onValueChange={setPlan}>
                 <SelectTrigger><SelectValue placeholder="Inchangé" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="SOLO">Solo</SelectItem>
-                  <SelectItem value="STARTER">Starter</SelectItem>
-                  <SelectItem value="BUSINESS">Business</SelectItem>
-                  <SelectItem value="ENTERPRISE">Enterprise</SelectItem>
+                  {PLAN_ORDER.map(p => <SelectItem key={p} value={p}>{SUBSCRIPTION_PLANS[p].name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -1018,10 +1030,7 @@ function PaymentsPanel({ tenants }: { tenants: TenantRow[] }) {
             <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">Tous</SelectItem>
-              <SelectItem value="SOLO">Solo</SelectItem>
-              <SelectItem value="STARTER">Starter</SelectItem>
-              <SelectItem value="BUSINESS">Business</SelectItem>
-              <SelectItem value="ENTERPRISE">Enterprise</SelectItem>
+              {PLAN_ORDER.map(p => <SelectItem key={p} value={p}>{SUBSCRIPTION_PLANS[p].name}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -1251,7 +1260,10 @@ function CreatePromoDialog({ onClose, onDone }: { onClose: () => void; onDone: (
             </div>
             <div>
               <Label>Valeur *</Label>
-              <Input type="number" min="0" value={discountValue} onChange={e => setDiscountValue(e.target.value)} />
+              <Input
+                type="number" min="0" step={discountType === 'FIXED' ? '1' : '0.01'}
+                value={discountValue} onChange={e => setDiscountValue(e.target.value)}
+              />
             </div>
           </div>
           <div>
@@ -1273,7 +1285,7 @@ function CreatePromoDialog({ onClose, onDone }: { onClose: () => void; onDone: (
             </div>
             <div>
               <Label>Plafond d&apos;utilisations (optionnel)</Label>
-              <Input type="number" min="1" value={maxRedemptions} onChange={e => setMaxRedemptions(e.target.value)} />
+              <Input type="number" min="1" step="1" value={maxRedemptions} onChange={e => setMaxRedemptions(e.target.value)} />
             </div>
           </div>
           <div>
@@ -1351,10 +1363,9 @@ function BroadcastDialog({ open, onClose, tenants }: { open: boolean; onClose: (
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ALL">Toutes les entreprises actives</SelectItem>
-                    <SelectItem value="SOLO">Forfait Solo uniquement</SelectItem>
-                    <SelectItem value="STARTER">Forfait Starter uniquement</SelectItem>
-                    <SelectItem value="BUSINESS">Forfait Business uniquement</SelectItem>
-                    <SelectItem value="ENTERPRISE">Forfait Enterprise uniquement</SelectItem>
+                    {PLAN_ORDER.map(p => (
+                      <SelectItem key={p} value={p}>Forfait {SUBSCRIPTION_PLANS[p].name} uniquement</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

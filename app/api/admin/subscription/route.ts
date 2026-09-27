@@ -71,6 +71,22 @@ export async function POST(request: NextRequest) {
       promoCodeId = promo.id;
     }
 
+    // Prix catalogue de la période couverte, pour tracer la remise réelle
+    // (promo_code_redemptions.discount_amount) — résolu même si l'admin n'a
+    // pas changé le forfait (renouvellement, le cas le plus courant), et
+    // multiplié par la durée : sans ces deux corrections, la remise tracée
+    // était systématiquement 0 pour tout paiement de plus d'un mois, et
+    // toujours nulle dès que le forfait n'était pas explicitement resaisi.
+    let catalogPrice: number | null = null;
+    if (promoCodeId) {
+      let finalPlan = plan;
+      if (!finalPlan) {
+        const { data: sub } = await supabase.from('subscriptions').select('plan').eq('tenant_id', tenantId).maybeSingle();
+        finalPlan = sub?.plan as PlanId | undefined;
+      }
+      catalogPrice = finalPlan ? SUBSCRIPTION_PLANS[finalPlan].price * (months as number) : null;
+    }
+
     const { data: result, error: rpcError } = await supabase.rpc('admin_extend_subscription', {
       p_tenant_id: tenantId,
       p_months: months as number,
@@ -82,11 +98,7 @@ export async function POST(request: NextRequest) {
       p_referrer_bonus_days: REFERRAL_REFERRER_BONUS_DAYS,
       p_limits_by_plan: limitsByPlan,
       p_promo_code_id: promoCodeId,
-      // Traçabilité de la remise uniquement possible quand un forfait est
-      // explicitement choisi ici — sinon la RPC retombe sur le forfait
-      // actuel du tenant, que cette route ne connaît pas sans requête
-      // supplémentaire ; le montant réellement encaissé n'en dépend pas.
-      p_catalog_price: plan ? SUBSCRIPTION_PLANS[plan].price : null,
+      p_catalog_price: catalogPrice,
     });
     if (rpcError) throw rpcError;
 

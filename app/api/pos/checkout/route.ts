@@ -118,10 +118,13 @@ export async function POST(request: NextRequest) {
       // l'entier ci-dessous cassait silencieusement toute vente au détail
       // en dessous de l'unité (0,5 kg devenait 1 kg, 2,5 m devenait 2 m).
       const rawQuantity = Number(it.quantity) || 0;
+      // Number.EPSILON avant la multiplication : évite qu'un arrondi flottant
+      // ordinaire (ex. 2.675 * 100 === 267.49999999999997 en IEEE-754)
+      // fasse dériver silencieusement une quantité de vente/stock réelle.
       const quantity = serials
         ? serials.length
         : p.fractional_quantity
-          ? Math.max(0.01, Math.round(rawQuantity * 100) / 100)
+          ? Math.max(0.01, Math.round((rawQuantity + Number.EPSILON) * 100) / 100)
           : Math.max(1, Math.floor(rawQuantity));
       const unitPrice = p.selling_price;
       const tax = p.tax_rate || 0;

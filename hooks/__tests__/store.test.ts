@@ -8,9 +8,10 @@ function makeProduct(overrides: Partial<Product> = {}): Product {
     name: 'Clous 4cm', description: null, categoryId: null,
     unit: 'piece', purchasePrice: 800, sellingPrice: 1200,
     taxRate: 0, alertThreshold: 10, isActive: true, trackInventory: true,
+    trackExpiry: false, trackSerial: false, fractionalQuantity: false,
     imageData: null, createdAt: new Date(), updatedAt: new Date(),
     ...overrides,
-  } as Product;
+  };
 }
 
 describe('useCartStore', () => {

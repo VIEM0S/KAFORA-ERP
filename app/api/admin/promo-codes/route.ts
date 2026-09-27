@@ -75,8 +75,23 @@ export async function POST(request: NextRequest) {
     if (discountType === 'PERCENT' && discountValue > 100) {
       return NextResponse.json({ error: 'Une remise en pourcentage ne peut pas dépasser 100' }, { status: 400 });
     }
+    // FCFA n'a pas de subdivision (même convention que le calcul de la
+    // caisse, voir app/api/pos/checkout/route.ts) — un montant fixe décimal
+    // serait accepté silencieusement par Postgres (int arrondit sans
+    // erreur) au lieu d'être rejeté ici avec un message clair.
+    if (discountType === 'FIXED' && !Number.isInteger(discountValue)) {
+      return NextResponse.json({ error: 'Un montant fixe doit être un nombre entier de FCFA' }, { status: 400 });
+    }
     if (applicablePlans && applicablePlans.some(p => !SUBSCRIPTION_PLANS[p])) {
       return NextResponse.json({ error: 'Forfait inconnu dans la liste des forfaits applicables' }, { status: 400 });
+    }
+    // maxRedemptions === undefined = pas de plafond (comportement normal).
+    // Une valeur fournie mais invalide (0, négative, décimale) est rejetée
+    // explicitement plutôt que silencieusement réinterprétée comme "pas de
+    // plafond" — un admin qui tape "0" par erreur ne doit pas se retrouver
+    // avec un code illimité sans le savoir.
+    if (maxRedemptions !== undefined && (!Number.isInteger(maxRedemptions) || maxRedemptions < 1)) {
+      return NextResponse.json({ error: 'Le plafond d\'utilisations doit être un entier positif' }, { status: 400 });
     }
 
     const admin = createServiceRoleClient();
@@ -89,7 +104,7 @@ export async function POST(request: NextRequest) {
         discount_value: discountValue,
         applicable_plans: applicablePlans?.length ? applicablePlans : null,
         valid_until: validUntil || null,
-        max_redemptions: typeof maxRedemptions === 'number' && maxRedemptions > 0 ? maxRedemptions : null,
+        max_redemptions: maxRedemptions ?? null,
         created_by: session.uid,
       })
       .select('id')

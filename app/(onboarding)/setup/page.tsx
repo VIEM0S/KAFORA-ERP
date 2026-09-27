@@ -296,7 +296,11 @@ export default function SetupPage() {
 
             {/* Étape 4 — Plan */}
             {step === 3 && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              // sm:grid-cols-2 (pas grid-cols-3 fixe) : PLAN_ORDER compte 4
+              // forfaits depuis l'ajout de Solo, et ce conteneur est étroit
+              // (max-w-2xl) — 3 colonnes fixes laissait la 4e carte seule
+              // sur sa ligne, en plus d'être trop serré à cette largeur.
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {PLANS.map(p => (
                   <button
                     key={p.id}

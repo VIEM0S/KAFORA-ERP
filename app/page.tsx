@@ -238,7 +238,10 @@ export default function HomePage() {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+          {/* md:grid-cols-2 lg:grid-cols-4 (pas grid-cols-3 fixe) : PLAN_ORDER
+              compte 4 forfaits depuis l'ajout de Solo — 3 colonnes fixes
+              laissait la 4e carte seule sur sa ligne, décentrée. */}
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 max-w-6xl mx-auto">
             {PLAN_DISPLAY_LIST.map((plan) => (
               <div
                 key={plan.name}
