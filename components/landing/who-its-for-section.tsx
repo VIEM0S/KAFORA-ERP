@@ -1,10 +1,20 @@
-import { Store, Building2, Warehouse, Truck, MapPin, Network } from 'lucide-react';
+import { User, Store, Building2, Warehouse, Truck, MapPin, Network } from 'lucide-react';
 
 // Volontairement générique : chaque description reste ancrée dans des
 // fonctionnalités réelles (stock, crédits, transferts, comparaison entre
 // magasins, permissions par rôle) plutôt que d'inventer des besoins
 // spécifiques à chaque secteur qu'on ne peut pas encore servir précisément.
 const AUDIENCES = [
+  {
+    // En tête de liste, pas en dernier : c'est le public le plus susceptible
+    // de ne pas se reconnaître dans "PME"/"Grossiste"/"Distributeur" et de
+    // quitter la page avant d'atteindre les tarifs (voir forfait Solo,
+    // lib/constants/index.ts) — sans cette carte, rien sur la page d'accueil
+    // ne lui disait explicitement "c'est aussi pour toi".
+    icon: User,
+    title: 'Vendeur solo',
+    description: 'Revente, import, marché : sachez enfin combien vous gagnez vraiment, vente après vente.',
+  },
   {
     icon: Store,
     title: 'Commerces & boutiques',
@@ -51,7 +61,11 @@ export function WhoItsForSection() {
           </p>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+        {/* 7 cartes depuis l'ajout de "Vendeur solo" : md:grid-cols-4 (pas
+            3) pour que la dernière ligne (3 cartes) ne laisse pas une seule
+            carte orpheline et centrée — même bug que la grille de tarifs
+            corrigée plus tôt. */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
           {AUDIENCES.map((a) => (
             <div
               key={a.title}
