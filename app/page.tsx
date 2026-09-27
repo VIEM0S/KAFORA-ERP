@@ -11,6 +11,7 @@ import { HowItWorksSection } from "@/components/landing/how-it-works-section";
 import { SetupServiceSection } from "@/components/landing/setup-service-section";
 import { SecuritySection } from "@/components/landing/security-section";
 import { FaqSection } from "@/components/landing/faq-section";
+import { CostComparisonChart } from "@/components/landing/cost-comparison-chart";
 import { Button } from "@/components/ui/button";
 import { PLAN_DISPLAY_LIST } from "@/lib/utils/plan-display";
 import {
@@ -30,24 +31,6 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import dynamic from "next/dynamic";
-
-// `recharts` pèse ~120 ko — chargé à la demande pour ne pas retarder le
-// premier affichage de la landing page (même raisonnement que la page
-// Analytics, voir components/analytics/charts.tsx). `ssr: false` car
-// recharts mesure son conteneur pour se dimensionner, rien à faire côté
-// serveur.
-const CostComparisonChart = dynamic(
-  () => import("@/components/landing/cost-comparison-chart").then((m) => m.CostComparisonChart),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex items-center justify-center h-[280px] text-sm text-gray-400">
-        Chargement du graphique…
-      </div>
-    ),
-  }
-);
 
 export default function HomePage() {
   const router = useRouter();
@@ -328,17 +311,17 @@ export default function HomePage() {
             ))}
           </div>
 
-          {/* Coût cumulé réel sur 5 ans, calculé depuis les mêmes tarifs que
+          {/* Coût ramené au jour, calculé depuis les mêmes tarifs que
               ci-dessus — voir components/landing/cost-comparison-chart.tsx */}
           <div className="mt-16 max-w-4xl mx-auto bg-white rounded-2xl border border-gray-200 p-6 md:p-8">
             <h3 className="text-xl font-bold text-gray-900 mb-1 text-center">
-              Coût cumulé sur 5 ans
+              Combien ça coûte, vraiment ?
             </h3>
             <p className="text-gray-500 text-center mb-1">
-              Visualisez votre engagement financier réel, forfait par forfait
+              Le prix ramené à une seule journée d&apos;activité, forfait par forfait
             </p>
             <p className="text-xs text-gray-400 text-center mb-6">
-              Enterprise étant sur devis, il n&apos;a pas de montant fixe à projeter ici.
+              Enterprise étant sur devis, il n&apos;a pas de montant fixe à ramener au jour.
             </p>
             <CostComparisonChart />
           </div>
