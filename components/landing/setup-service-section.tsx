@@ -43,7 +43,7 @@ export function SetupServiceSection() {
 
           <div className="text-center">
             <p className="text-sm text-gray-400 mb-4">
-              Prestation distincte de l&apos;abonnement, à discuter selon vos besoins.
+              Un accompagnement sur mesure, avec un devis adapté à votre situation.
             </p>
             <Button
               variant="outline"

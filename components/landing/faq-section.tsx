@@ -47,7 +47,7 @@ const FAQ_ITEMS: { question: string; answer: string }[] = [
   {
     question: 'Kafora fonctionne-t-il sur téléphone ?',
     answer:
-      "Oui, Kafora est accessible depuis le navigateur de votre téléphone — aucune application à installer pour le moment.",
+      "Oui : Kafora est accessible directement depuis le navigateur de votre téléphone, sans rien à installer.",
   },
   {
     question: 'Quels moyens de paiement sont supportés à la caisse ?',
@@ -60,6 +60,16 @@ const FAQ_ITEMS: { question: string; answer: string }[] = [
       "Les données de chaque entreprise sont isolées dans notre base, et l'accès est contrôlé selon le rôle de chaque utilisateur.",
   },
   {
+    // Placée ici plutôt qu'en toute dernière position (juste avant le CTA
+    // final "Prêt à reprendre le contrôle...") — l'effet de récence ferait
+    // retenir "résiliation/suppression" comme dernière impression avant de
+    // demander l'inscription. Le contenu de la réponse ne change pas, ce
+    // n'est qu'un repositionnement.
+    question: 'Que se passe-t-il si je décide d\'arrêter Kafora ?',
+    answer:
+      "Vos données vous appartiennent. Vous pouvez en demander une copie exploitable (CSV ou JSON) à tout moment, y compris après résiliation : elles restent disponibles 90 jours avant suppression définitive.",
+  },
+  {
     question: "Que se passe-t-il si Internet tombe ?",
     answer:
       "À la caisse, Kafora continue d'enregistrer les ventes hors connexion et les synchronise automatiquement dès le retour d'Internet.",
@@ -67,11 +77,7 @@ const FAQ_ITEMS: { question: string; answer: string }[] = [
   {
     question: "Comment fonctionne l'abonnement ?",
     answer:
-      "Vous démarrez avec un essai gratuit de 14 jours sur le forfait choisi. Le règlement se fait ensuite directement avec notre équipe (Mobile Money, Orange Money, Wave, virement ou espèces) — aucun paiement en ligne automatique pour le moment.",
-  },
-  {
-    question: 'Puis-je demander une démonstration ?',
-    answer: 'Oui, via le formulaire de contact ci-dessous — nous revenons vers vous rapidement.',
+      "Vous démarrez avec un essai gratuit de 14 jours sur le forfait choisi. À la fin de l'essai, notre équipe active votre paiement avec vous, selon le moyen qui vous arrange : Mobile Money, Orange Money, Wave, virement ou espèces.",
   },
   {
     question: 'Qui répond quand je contacte le support ?',
@@ -79,9 +85,8 @@ const FAQ_ITEMS: { question: string; answer: string }[] = [
       "Aujourd'hui, c'est le fondateur de Kafora qui répond personnellement à chaque demande — par téléphone, WhatsApp ou email. Comptez une réponse sous 24h ouvrées (lundi-vendredi).",
   },
   {
-    question: 'Que se passe-t-il si je décide d\'arrêter Kafora ?',
-    answer:
-      "Vos données vous appartiennent. Vous pouvez en demander une copie exploitable (CSV ou JSON) à tout moment, y compris après résiliation : elles restent disponibles 90 jours avant suppression définitive.",
+    question: 'Puis-je demander une démonstration ?',
+    answer: 'Oui, via le formulaire de contact ci-dessous — nous revenons vers vous rapidement.',
   },
 ];
 

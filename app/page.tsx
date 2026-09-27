@@ -317,11 +317,12 @@ export default function HomePage() {
             <h3 className="text-xl font-bold text-gray-900 mb-1 text-center">
               Combien ça coûte, vraiment ?
             </h3>
-            <p className="text-gray-500 text-center mb-1">
+            {/* Pas de rappel "Enterprise sur devis" ici — déjà expliqué sur
+                sa propre carte juste au-dessus ; le répéter ici ajoutait une
+                deuxième mise en garde sur l'absence de prix fixe dans la
+                même section censée rassurer sur le coût. */}
+            <p className="text-gray-500 text-center mb-6">
               Le prix ramené à une seule journée d&apos;activité, forfait par forfait
-            </p>
-            <p className="text-xs text-gray-400 text-center mb-6">
-              Enterprise étant sur devis, il n&apos;a pas de montant fixe à ramener au jour.
             </p>
             <CostComparisonChart />
           </div>

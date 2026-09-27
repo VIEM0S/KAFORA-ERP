@@ -41,7 +41,7 @@ const PLAN_DESCRIPTION: Record<PlanId, string> = {
   SOLO:
     "Pour un vendeur seul (revente, import, marché) : sachez enfin, vente après vente, combien vous gagnez vraiment — sans payer pour du multi-magasins ou des Analytics dont vous n'avez pas encore besoin.",
   STARTER:
-    "Pour une boutique unique : caisse, stock et suivi des crédits clients dans un seul outil, sans payer pour des fonctions dont vous n'avez pas encore besoin.",
+    "Pour une boutique unique : caisse, stock et suivi des crédits clients, réunis dans un seul outil.",
   BUSINESS:
     'Pour les commerces à 2 boutiques ou plus : transférez du stock entre magasins et comparez leurs performances grâce aux Analytics avancés.',
   ENTERPRISE:
