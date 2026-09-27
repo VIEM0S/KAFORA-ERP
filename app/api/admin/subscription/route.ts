@@ -26,9 +26,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Introuvable' }, { status: 404 });
     }
 
-    const { tenantId, months, plan, amount, method, note } = (await request.json()) as {
+    const { tenantId, months, plan, amount, method, note, promoCode } = (await request.json()) as {
       tenantId?: string; months?: number; plan?: PlanId;
-      amount?: number; method?: string; note?: string;
+      amount?: number; method?: string; note?: string; promoCode?: string;
     };
 
     if (!tenantId || !Number.isInteger(months) || (months as number) < 1 || (months as number) > 24) {
@@ -52,6 +52,25 @@ export async function POST(request: NextRequest) {
     );
 
     const supabase = createServiceRoleClient();
+
+    // Code promo optionnel : résolu ici (par code, insensible à la casse)
+    // plutôt que de faire confiance à un id envoyé par le client — la RPC
+    // revalide de toute façon activité/dates/plafond/forfait applicable
+    // dans la même transaction que l'extension.
+    let promoCodeId: string | null = null;
+    if (promoCode?.trim()) {
+      const { data: promo, error: promoError } = await supabase
+        .from('promo_codes')
+        .select('id')
+        .eq('code', promoCode.trim().toUpperCase())
+        .maybeSingle();
+      if (promoError) throw promoError;
+      if (!promo) {
+        return NextResponse.json({ error: 'Code promo introuvable' }, { status: 400 });
+      }
+      promoCodeId = promo.id;
+    }
+
     const { data: result, error: rpcError } = await supabase.rpc('admin_extend_subscription', {
       p_tenant_id: tenantId,
       p_months: months as number,
@@ -62,6 +81,12 @@ export async function POST(request: NextRequest) {
       p_performed_by: session.uid,
       p_referrer_bonus_days: REFERRAL_REFERRER_BONUS_DAYS,
       p_limits_by_plan: limitsByPlan,
+      p_promo_code_id: promoCodeId,
+      // Traçabilité de la remise uniquement possible quand un forfait est
+      // explicitement choisi ici — sinon la RPC retombe sur le forfait
+      // actuel du tenant, que cette route ne connaît pas sans requête
+      // supplémentaire ; le montant réellement encaissé n'en dépend pas.
+      p_catalog_price: plan ? SUBSCRIPTION_PLANS[plan].price : null,
     });
     if (rpcError) throw rpcError;
 
@@ -90,9 +115,16 @@ export async function POST(request: NextRequest) {
     console.error('Admin subscription error:', error);
     const msg = getErrorMessage(error) || 'Erreur interne';
     const isNotFound = msg.includes('NOT_FOUND');
+    const isInvalidPromo = msg.includes('INVALID_PROMO');
     return NextResponse.json(
-      { error: isNotFound ? msg.replace(/^.*NOT_FOUND:\s*/, '') : 'Erreur interne' },
-      { status: isNotFound ? 404 : 500 }
+      {
+        error: isNotFound
+          ? msg.replace(/^.*NOT_FOUND:\s*/, '')
+          : isInvalidPromo
+            ? msg.replace(/^.*INVALID_PROMO:\s*/, '')
+            : 'Erreur interne',
+      },
+      { status: isNotFound ? 404 : isInvalidPromo ? 400 : 500 }
     );
   }
 }

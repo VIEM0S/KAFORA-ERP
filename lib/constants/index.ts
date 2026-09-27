@@ -164,6 +164,29 @@ export const ROLE_PERMISSIONS = {
 } as const;
 
 export const SUBSCRIPTION_PLANS = {
+  // Ajouté le 2026-09-27 : les vendeurs solo (revente de parfums/téléphones
+  // importés, nourriture...) sont freinés par le prix Starter alors qu'ils
+  // ont exactement besoin de ce que Kafora fait déjà — la marge/profit réel
+  // par vente (dashboard, réservé aux Managers+ par rôle, pas par forfait,
+  // voir app/(dashboard)/dashboard/page.tsx) est visible dès le 1er jour
+  // pour ce forfait puisque son unique utilisateur est forcément Owner.
+  SOLO: {
+    name: 'Solo',
+    price: 8000,
+    currency: 'XOF',
+    features: {
+      maxUsers: 1,
+      maxStores: 1,
+      // Nettement sous Starter (1000/1000) pour garder une vraie
+      // séparation de palier — ajustable si trop bas en pratique.
+      maxProducts: 300,
+      maxCustomers: 300,
+      posEnabled: true,
+      analyticsEnabled: false,
+      multiStoreEnabled: false,
+      apiAccessEnabled: false,
+    },
+  },
   STARTER: {
     name: 'Starter',
     price: 25000,

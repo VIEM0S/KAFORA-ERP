@@ -1,6 +1,6 @@
 import { SUBSCRIPTION_PLANS, PlanId } from '@/lib/constants';
 
-export const PLAN_ORDER: PlanId[] = ['STARTER', 'BUSINESS', 'ENTERPRISE'];
+export const PLAN_ORDER: PlanId[] = ['SOLO', 'STARTER', 'BUSINESS', 'ENTERPRISE'];
 
 // Enterprise n'a pas de prix fixe affiché : les besoins (boutiques,
 // utilisateurs, intégrations, formation) varient trop d'une entreprise à
@@ -15,6 +15,7 @@ export const CUSTOM_PRICING_PLANS: PlanId[] = ['ENTERPRISE'];
 // raisonnables", voir app/cgv/page.tsx art. 8) — ne pas afficher une
 // garantie que le CGV ne tient pas.
 const SUPPORT_LABEL: Record<PlanId, string> = {
+  SOLO: 'Support email',
   STARTER: 'Support email',
   BUSINESS: 'Support prioritaire',
   ENTERPRISE: 'Support dédié prioritaire',
@@ -22,7 +23,10 @@ const SUPPORT_LABEL: Record<PlanId, string> = {
 
 // Avantages purement marketing, sans équivalent en "feature flag" dans
 // SUBSCRIPTION_PLANS (rien à activer/désactiver dans le code pour ceux-ci).
+// Pas de "Formation incluse" pour Solo : à ce prix, la formation reste à la
+// charge du vendeur (à revoir si le fondateur préfère l'inclure quand même).
 const EXTRA_PERKS: Record<PlanId, string[]> = {
+  SOLO: [],
   STARTER: ['Formation incluse'],
   BUSINESS: ['Formation incluse'],
   ENTERPRISE: ['Formation incluse'],
@@ -34,6 +38,8 @@ const EXTRA_PERKS: Record<PlanId, string[]> = {
 // lib/api/plan-guard.ts et components/subscription/plan-locked.tsx) —
 // ce texte n'est plus une promesse sans verrou derrière.
 const PLAN_DESCRIPTION: Record<PlanId, string> = {
+  SOLO:
+    "Pour un vendeur seul (revente, import, marché) : sachez enfin, vente après vente, combien vous gagnez vraiment — sans payer pour du multi-magasins ou des Analytics dont vous n'avez pas encore besoin.",
   STARTER:
     "Pour une boutique unique : caisse, stock et suivi des crédits clients dans un seul outil, sans payer pour des fonctions dont vous n'avez pas encore besoin.",
   BUSINESS:
@@ -43,6 +49,7 @@ const PLAN_DESCRIPTION: Record<PlanId, string> = {
 };
 
 const PLAN_CTA: Record<PlanId, string> = {
+  SOLO: 'Commencer',
   STARTER: 'Commencer',
   BUSINESS: 'Commencer',
   ENTERPRISE: 'Demander un devis',
@@ -58,7 +65,7 @@ export function buildPlanFeatures(planId: PlanId): string[] {
   const f = SUBSCRIPTION_PLANS[planId].features;
   const list: string[] = [
     f.maxStores === -1 ? 'Magasins illimités' : `${f.maxStores} magasin${f.maxStores > 1 ? 's' : ''}`,
-    f.maxUsers === -1 ? 'Utilisateurs illimités' : `${f.maxUsers} utilisateurs`,
+    f.maxUsers === -1 ? 'Utilisateurs illimités' : `${f.maxUsers} utilisateur${f.maxUsers > 1 ? 's' : ''}`,
     f.maxProducts === -1 ? 'Produits illimités' : `${f.maxProducts.toLocaleString('fr-FR')} produits`,
   ];
   if (f.posEnabled) list.push('POS inclus');

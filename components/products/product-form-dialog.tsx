@@ -31,6 +31,7 @@ interface ProductForm {
   categoryId: string; unit: string;
   purchasePrice: string; sellingPrice: string; taxRate: string; alertThreshold: string;
   isActive: boolean; trackInventory: boolean; trackExpiry: boolean; trackSerial: boolean;
+  fractionalQuantity: boolean;
 }
 const EMPTY_FORM: ProductForm = {
   sku: '', barcode: '', name: '', description: '',
@@ -38,6 +39,7 @@ const EMPTY_FORM: ProductForm = {
   purchasePrice: '', sellingPrice: '',
   taxRate: '0', alertThreshold: '10',
   isActive: true, trackInventory: true, trackExpiry: false, trackSerial: false,
+  fractionalQuantity: false,
 };
 
 interface ProductFormDialogProps {
@@ -65,6 +67,7 @@ function formFromProduct(editingProduct: Product | null): ProductForm {
     trackInventory: editingProduct.trackInventory,
     trackExpiry: editingProduct.trackExpiry,
     trackSerial: editingProduct.trackSerial,
+    fractionalQuantity: editingProduct.fractionalQuantity,
   };
 }
 
@@ -134,6 +137,7 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
       track_inventory: form.trackInventory,
       track_expiry: form.trackExpiry,
       track_serial: form.trackSerial,
+      fractional_quantity: form.fractionalQuantity,
       image_data: null,
     };
 
@@ -234,6 +238,15 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
                 {UNITS.map((u) => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}
               </SelectContent>
             </Select>
+          </div>
+          <div className="col-span-1 sm:col-span-2 flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+            <div>
+              <p className="text-sm font-medium">Quantité fractionnée</p>
+              <p className="text-xs text-gray-500">
+                Vendu en kg, mètre, litre... Permet une quantité décimale en caisse (ex. 2,5 m) au lieu d&apos;un compte à l&apos;unité.
+              </p>
+            </div>
+            <Switch checked={form.fractionalQuantity} onCheckedChange={(v) => f('fractionalQuantity', v)} />
           </div>
           <div className="space-y-2">
             <Label>Prix d&apos;achat (FCFA)</Label>

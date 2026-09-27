@@ -22,6 +22,7 @@ import { formatCurrency } from '@/lib/utils/helpers';
 const CHART_PLAN_ORDER = PLAN_ORDER.filter((id) => !CUSTOM_PRICING_PLANS.includes(id));
 
 const PLAN_COLORS: Record<string, string> = {
+  SOLO: '#9333ea',
   STARTER: '#2563eb',
   BUSINESS: '#16a34a',
   ENTERPRISE: '#d97706',

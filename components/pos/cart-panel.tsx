@@ -84,6 +84,23 @@ export function CartPanel({ inventory, canDiscount, onOpenCustomerPicker, onPay 
             <div className="flex items-center justify-between">
               {item.product.trackSerial ? (
                 <span className="text-xs text-gray-500">{item.quantity} exemplaire{item.quantity !== 1 ? 's' : ''}</span>
+              ) : item.product.fractionalQuantity ? (
+                // Vendu en kg/mètre/litre... (migration 076) : quantité
+                // décimale saisie directement, pas de stepper +/- entier —
+                // "2,5 m" n'a pas de sens en incréments de 1.
+                <input
+                  type="number" min="0.01" step="0.01" inputMode="decimal"
+                  value={item.quantity}
+                  onChange={e => {
+                    const v = Number(e.target.value);
+                    if (!Number.isFinite(v) || v <= 0) return;
+                    const stock = inventory[item.product.id] ?? 0;
+                    const clamped = item.product.trackInventory ? Math.min(v, stock) : v;
+                    if (clamped <= 0) return;
+                    updateItemQuantity(item.product.id, clamped);
+                  }}
+                  className="w-20 text-sm font-bold border-2 border-gray-200 rounded-lg px-2 py-1 text-center focus:border-primary-400 focus:outline-none"
+                />
               ) : (
                 <div className="flex items-center gap-1">
                   <button

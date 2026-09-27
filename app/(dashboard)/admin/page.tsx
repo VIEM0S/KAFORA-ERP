@@ -14,6 +14,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { formatCurrency } from '@/lib/utils/helpers';
 import { useAuthStore } from '@/hooks/store';
 import { isSuperAdmin } from '@/lib/auth/roles';
+import { SUBSCRIPTION_PLANS, type PlanId } from '@/lib/constants';
+import { PLAN_ORDER } from '@/lib/utils/plan-display';
 
 interface PlatformStats {
   tenantCount: number; activeCount: number; suspendedCount: number;
@@ -68,7 +70,7 @@ export default function AdminConsolePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [paying, setPaying] = useState<TenantRow | null>(null);
-  const [tab, setTab] = useState<'clients' | 'support' | 'payments'>('clients');
+  const [tab, setTab] = useState<'clients' | 'support' | 'payments' | 'promotions'>('clients');
   const [broadcastOpen, setBroadcastOpen] = useState(false);
   const [historyTarget, setHistoryTarget] = useState<TenantRow | null>(null);
   const [search, setSearch] = useState('');
@@ -218,7 +220,7 @@ export default function AdminConsolePage() {
         )}
 
         <div className="flex gap-1 border-b border-gray-200">
-          {([['clients', 'Clients'], ['payments', 'Paiements'], ['support', 'Support']] as const).map(([id, label]) => (
+          {([['clients', 'Clients'], ['payments', 'Paiements'], ['promotions', 'Promotions'], ['support', 'Support']] as const).map(([id, label]) => (
             <button
               key={id} onClick={() => setTab(id)}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
@@ -231,6 +233,7 @@ export default function AdminConsolePage() {
         </div>
 
         {tab === 'payments' && <PaymentsPanel tenants={tenants} />}
+        {tab === 'promotions' && <PromoCodesPanel />}
         {tab === 'support' && <SupportTicketsPanel />}
 
         {tab === 'clients' && (
@@ -368,6 +371,15 @@ export default function AdminConsolePage() {
 
 /* ────────────────────────────────────────────────────────────────────────── */
 
+interface PromoCode {
+  id: string; code: string; description: string | null;
+  discountType: 'PERCENT' | 'FIXED'; discountValue: number;
+  applicablePlans: PlanId[] | null;
+  validFrom: string; validUntil: string | null;
+  maxRedemptions: number | null; timesRedeemed: number;
+  isActive: boolean; createdAt: string;
+}
+
 function PaymentDialog({
   tenant, onClose, onDone,
 }: { tenant: TenantRow | null; onClose: () => void; onDone: () => void }) {
@@ -376,6 +388,8 @@ function PaymentDialog({
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState('');
   const [note, setNote] = useState('');
+  const [promoCode, setPromoCode] = useState('');
+  const [promoCodes, setPromoCodes] = useState<PromoCode[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -387,9 +401,30 @@ function PaymentDialog({
     if (tenant) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setMonths('1'); setPlan(tenant.plan || ''); setAmount('');
-      setMethod(''); setNote(''); setErr(null);
+      setMethod(''); setNote(''); setPromoCode(''); setErr(null);
+      // Chargé une fois par ouverture — juste pour préremplir une
+      // suggestion, l'admin reste libre de tout modifier avant d'enregistrer.
+      fetch('/api/admin/promo-codes')
+        .then(res => res.json())
+        .then(data => setPromoCodes(data.promoCodes || []))
+        .catch(() => {});
     }
   }, [tenant]);
+
+  // Suggestion de montant quand le code tapé correspond à un code actif
+  // applicable au forfait choisi — jamais imposée, juste préremplie.
+  const matchedPromo = promoCodes.find(
+    p => p.code === promoCode.trim().toUpperCase() && p.isActive
+      && (!p.applicablePlans || (plan && p.applicablePlans.includes(plan as PlanId)))
+  );
+  const applyPromoSuggestion = () => {
+    if (!matchedPromo || !plan || !(plan in SUBSCRIPTION_PLANS)) return;
+    const catalogTotal = SUBSCRIPTION_PLANS[plan as PlanId].price * Number(months || '1');
+    const discounted = matchedPromo.discountType === 'PERCENT'
+      ? catalogTotal * (1 - matchedPromo.discountValue / 100)
+      : Math.max(0, catalogTotal - matchedPromo.discountValue);
+    setAmount(String(Math.round(discounted)));
+  };
 
   const submit = async () => {
     if (!tenant) return;
@@ -410,6 +445,7 @@ function PaymentDialog({
           plan: plan || undefined,
           amount: Number(amount),
           method, note,
+          promoCode: promoCode.trim() || undefined,
         }),
       });
       const data = await res.json().catch(() => null);
@@ -445,6 +481,7 @@ function PaymentDialog({
               <Select value={plan} onValueChange={setPlan}>
                 <SelectTrigger><SelectValue placeholder="Inchangé" /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="SOLO">Solo</SelectItem>
                   <SelectItem value="STARTER">Starter</SelectItem>
                   <SelectItem value="BUSINESS">Business</SelectItem>
                   <SelectItem value="ENTERPRISE">Enterprise</SelectItem>
@@ -462,6 +499,28 @@ function PaymentDialog({
               <Label>Moyen de paiement</Label>
               <Input placeholder="Orange Money, espèces…" value={method} onChange={e => setMethod(e.target.value)} />
             </div>
+          </div>
+
+          <div>
+            <Label>Code promo (optionnel)</Label>
+            <div className="flex gap-2">
+              <Input
+                placeholder="SOLO-LANCEMENT..."
+                value={promoCode}
+                onChange={e => setPromoCode(e.target.value)}
+                className="uppercase"
+              />
+              <Button type="button" variant="outline" onClick={applyPromoSuggestion} disabled={!matchedPromo}>
+                Suggérer le montant
+              </Button>
+            </div>
+            {promoCode.trim() && (
+              <p className={`text-xs mt-1 ${matchedPromo ? 'text-green-600' : 'text-amber-600'}`}>
+                {matchedPromo
+                  ? `Code valide — ${matchedPromo.discountType === 'PERCENT' ? `-${matchedPromo.discountValue}%` : `-${formatCurrency(matchedPromo.discountValue)}`}. Le montant reste modifiable.`
+                  : "Aucun code actif correspondant pour ce forfait — vérifiable dans l'onglet Promotions."}
+              </p>
+            )}
           </div>
 
           <div>
@@ -959,6 +1018,7 @@ function PaymentsPanel({ tenants }: { tenants: TenantRow[] }) {
             <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">Tous</SelectItem>
+              <SelectItem value="SOLO">Solo</SelectItem>
               <SelectItem value="STARTER">Starter</SelectItem>
               <SelectItem value="BUSINESS">Business</SelectItem>
               <SelectItem value="ENTERPRISE">Enterprise</SelectItem>
@@ -1024,6 +1084,219 @@ function PaymentsPanel({ tenants }: { tenants: TenantRow[] }) {
 /* ────────────────────────────────────────────────────────────────────────── */
 
 /**
+ * Codes promo sur les abonnements — outil interne (voir migration 075) :
+ * un code n'est jamais saisi par un client, il est appliqué par l'admin en
+ * enregistrant un paiement (voir le champ "Code promo" dans PaymentDialog
+ * ci-dessus). Cet onglet ne fait que créer/désactiver des codes et suivre
+ * leur utilisation.
+ */
+function PromoCodesPanel() {
+  const [codes, setCodes] = useState<PromoCode[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  const load = () => {
+    setIsLoading(true); setError(null);
+    fetch('/api/admin/promo-codes')
+      .then(async res => {
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || `Erreur serveur (${res.status})`);
+        setCodes(data.promoCodes || []);
+      })
+      .catch(e => setError(e instanceof Error ? e.message : 'Erreur inconnue'))
+      .finally(() => setIsLoading(false));
+  };
+  // Chargement au montage — usage légitime d'un effet (même pattern que
+  // PaymentsPanel ci-dessus).
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(load, []);
+
+  const toggleActive = async (code: PromoCode) => {
+    setTogglingId(code.id);
+    try {
+      const res = await fetch(`/api/admin/promo-codes/${code.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: !code.isActive }),
+      });
+      if (!res.ok) throw new Error();
+      load();
+    } catch {
+      setError('Erreur lors de la mise à jour');
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  const statusOf = (c: PromoCode) => {
+    if (!c.isActive) return { label: 'Désactivé', color: 'bg-gray-100 text-gray-600' };
+    if (c.validUntil && new Date(c.validUntil) < new Date()) return { label: 'Expiré', color: 'bg-amber-100 text-amber-700' };
+    if (c.maxRedemptions !== null && c.timesRedeemed >= c.maxRedemptions) return { label: 'Plafond atteint', color: 'bg-amber-100 text-amber-700' };
+    return { label: 'Actif', color: 'bg-green-100 text-green-700' };
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <Button onClick={() => setShowCreate(true)}>Nouveau code</Button>
+      </div>
+
+      {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+
+      {isLoading ? (
+        <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-gray-400" /></div>
+      ) : codes.length === 0 ? (
+        <Card><CardContent className="p-10 text-center text-gray-500">Aucun code promo créé.</CardContent></Card>
+      ) : (
+        <div className="divide-y rounded-lg border border-gray-200 overflow-hidden">
+          {codes.map(c => {
+            const status = statusOf(c);
+            return (
+              <div key={c.id} className="p-3 flex items-center justify-between gap-3 bg-white">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                    {c.code}
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${status.color}`}>{status.label}</span>
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {c.discountType === 'PERCENT' ? `-${c.discountValue}%` : `-${formatCurrency(c.discountValue)}`}
+                    {' · '}
+                    {c.applicablePlans?.length ? c.applicablePlans.map(p => SUBSCRIPTION_PLANS[p]?.name).join(', ') : 'Tous forfaits'}
+                    {' · '}
+                    {c.timesRedeemed}{c.maxRedemptions !== null ? ` / ${c.maxRedemptions}` : ''} utilisation(s)
+                    {c.validUntil && ` · jusqu'au ${new Date(c.validUntil).toLocaleDateString('fr-FR')}`}
+                  </p>
+                  {c.description && <p className="text-xs text-gray-400">{c.description}</p>}
+                </div>
+                <Button
+                  variant="outline" size="sm" disabled={togglingId === c.id}
+                  onClick={() => toggleActive(c)}
+                >
+                  {c.isActive ? 'Désactiver' : 'Réactiver'}
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {showCreate && <CreatePromoDialog onClose={() => setShowCreate(false)} onDone={() => { setShowCreate(false); load(); }} />}
+    </div>
+  );
+}
+
+function CreatePromoDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [code, setCode] = useState('');
+  const [description, setDescription] = useState('');
+  const [discountType, setDiscountType] = useState<'PERCENT' | 'FIXED'>('PERCENT');
+  const [discountValue, setDiscountValue] = useState('');
+  const [applicablePlans, setApplicablePlans] = useState<PlanId[]>([]);
+  const [validUntil, setValidUntil] = useState('');
+  const [maxRedemptions, setMaxRedemptions] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const togglePlan = (p: PlanId) =>
+    setApplicablePlans(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]);
+
+  const submit = async () => {
+    if (!code.trim()) return setErr('Le code est obligatoire');
+    if (!discountValue || Number(discountValue) <= 0) return setErr('Valeur de remise invalide');
+    setErr(null); setIsSaving(true);
+    try {
+      const res = await fetch('/api/admin/promo-codes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: code.trim(),
+          description: description.trim() || undefined,
+          discountType,
+          discountValue: Number(discountValue),
+          applicablePlans: applicablePlans.length ? applicablePlans : null,
+          validUntil: validUntil || undefined,
+          maxRedemptions: maxRedemptions ? Number(maxRedemptions) : undefined,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || `Erreur serveur (${res.status})`);
+      onDone();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Erreur inconnue');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Nouveau code promo</DialogTitle></DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label>Code *</Label>
+            <Input placeholder="SOLO-LANCEMENT" value={code} onChange={e => setCode(e.target.value)} className="uppercase" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Type de remise</Label>
+              <Select value={discountType} onValueChange={v => setDiscountType(v as 'PERCENT' | 'FIXED')}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="PERCENT">Pourcentage</SelectItem>
+                  <SelectItem value="FIXED">Montant fixe (FCFA)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Valeur *</Label>
+              <Input type="number" min="0" value={discountValue} onChange={e => setDiscountValue(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <Label>Forfaits applicables</Label>
+            <div className="flex flex-wrap gap-3 mt-1">
+              {PLAN_ORDER.map(p => (
+                <label key={p} className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
+                  <input type="checkbox" checked={applicablePlans.includes(p)} onChange={() => togglePlan(p)} />
+                  {SUBSCRIPTION_PLANS[p].name}
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Aucune case cochée = applicable à tous les forfaits.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Expire le (optionnel)</Label>
+              <Input type="date" value={validUntil} onChange={e => setValidUntil(e.target.value)} />
+            </div>
+            <div>
+              <Label>Plafond d&apos;utilisations (optionnel)</Label>
+              <Input type="number" min="1" value={maxRedemptions} onChange={e => setMaxRedemptions(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <Label>Description (optionnel)</Label>
+            <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Campagne de lancement du forfait Solo..." />
+          </div>
+          {err && <p className="text-sm text-red-600">{err}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Annuler</Button>
+          <Button onClick={submit} disabled={isSaving}>
+            {isSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+            Créer
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+
+/**
  * Message groupé à tous les clients ou filtré par forfait — jusqu'ici il
  * n'existait aucun moyen d'annoncer quoi que ce soit à plusieurs clients
  * à la fois (voir /api/admin/broadcast).
@@ -1038,7 +1311,7 @@ function PaymentsPanel({ tenants }: { tenants: TenantRow[] }) {
 function BroadcastDialog({ open, onClose, tenants }: { open: boolean; onClose: () => void; tenants: TenantRow[] }) {
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
-  const [plan, setPlan] = useState<'ALL' | 'STARTER' | 'BUSINESS' | 'ENTERPRISE'>('ALL');
+  const [plan, setPlan] = useState<'ALL' | PlanId>('ALL');
   const [step, setStep] = useState<'compose' | 'confirm'>('compose');
   const [isSending, setIsSending] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -1078,6 +1351,7 @@ function BroadcastDialog({ open, onClose, tenants }: { open: boolean; onClose: (
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ALL">Toutes les entreprises actives</SelectItem>
+                    <SelectItem value="SOLO">Forfait Solo uniquement</SelectItem>
                     <SelectItem value="STARTER">Forfait Starter uniquement</SelectItem>
                     <SelectItem value="BUSINESS">Forfait Business uniquement</SelectItem>
                     <SelectItem value="ENTERPRISE">Forfait Enterprise uniquement</SelectItem>

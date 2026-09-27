@@ -1271,6 +1271,7 @@ export type Database = {
           category_id: string | null
           created_at: string
           description: string | null
+          fractional_quantity: boolean
           id: string
           image_data: string | null
           is_active: boolean
@@ -1292,6 +1293,7 @@ export type Database = {
           category_id?: string | null
           created_at?: string
           description?: string | null
+          fractional_quantity?: boolean
           id?: string
           image_data?: string | null
           is_active?: boolean
@@ -1313,6 +1315,7 @@ export type Database = {
           category_id?: string | null
           created_at?: string
           description?: string | null
+          fractional_quantity?: boolean
           id?: string
           image_data?: string | null
           is_active?: boolean
@@ -1344,6 +1347,112 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      promo_code_redemptions: {
+        Row: {
+          created_at: string
+          discount_amount: number
+          id: string
+          promo_code_id: string
+          redeemed_by: string | null
+          subscription_payment_id: string | null
+          tenant_id: string
+        }
+        Insert: {
+          created_at?: string
+          discount_amount: number
+          id?: string
+          promo_code_id: string
+          redeemed_by?: string | null
+          subscription_payment_id?: string | null
+          tenant_id: string
+        }
+        Update: {
+          created_at?: string
+          discount_amount?: number
+          id?: string
+          promo_code_id?: string
+          redeemed_by?: string | null
+          subscription_payment_id?: string | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "promo_code_redemptions_promo_code_id_fkey"
+            columns: ["promo_code_id"]
+            isOneToOne: false
+            referencedRelation: "promo_codes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "promo_code_redemptions_subscription_payment_id_fkey"
+            columns: ["subscription_payment_id"]
+            isOneToOne: false
+            referencedRelation: "subscription_payments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "promo_code_redemptions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      promo_codes: {
+        Row: {
+          applicable_plans:
+            | Database["public"]["Enums"]["subscription_plan"][]
+            | null
+          code: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          discount_type: string
+          discount_value: number
+          id: string
+          is_active: boolean
+          max_redemptions: number | null
+          times_redeemed: number
+          valid_from: string
+          valid_until: string | null
+        }
+        Insert: {
+          applicable_plans?:
+            | Database["public"]["Enums"]["subscription_plan"][]
+            | null
+          code: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          discount_type: string
+          discount_value: number
+          id?: string
+          is_active?: boolean
+          max_redemptions?: number | null
+          times_redeemed?: number
+          valid_from?: string
+          valid_until?: string | null
+        }
+        Update: {
+          applicable_plans?:
+            | Database["public"]["Enums"]["subscription_plan"][]
+            | null
+          code?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          discount_type?: string
+          discount_value?: number
+          id?: string
+          is_active?: boolean
+          max_redemptions?: number | null
+          times_redeemed?: number
+          valid_from?: string
+          valid_until?: string | null
+        }
+        Relationships: []
       }
       purchase_order_counters: {
         Row: {
@@ -2652,6 +2761,7 @@ export type Database = {
           rccm: string | null
           referral_code: string | null
           referred_by_tenant_id: string | null
+          sector: string | null
           slug: string
           suspended_at: string | null
           suspension_reason: string | null
@@ -2679,6 +2789,7 @@ export type Database = {
           rccm?: string | null
           referral_code?: string | null
           referred_by_tenant_id?: string | null
+          sector?: string | null
           slug: string
           suspended_at?: string | null
           suspension_reason?: string | null
@@ -2706,6 +2817,7 @@ export type Database = {
           rccm?: string | null
           referral_code?: string | null
           referred_by_tenant_id?: string | null
+          sector?: string | null
           slug?: string
           suspended_at?: string | null
           suspension_reason?: string | null
@@ -3018,12 +3130,14 @@ export type Database = {
       admin_extend_subscription: {
         Args: {
           p_amount: number
+          p_catalog_price?: number | null
           p_limits_by_plan: Json
           p_method: string
           p_months: number
           p_note: string
           p_performed_by: string
           p_plan: Database["public"]["Enums"]["subscription_plan"]
+          p_promo_code_id?: string | null
           p_referrer_bonus_days: number
           p_tenant_id: string
         }
@@ -3367,7 +3481,7 @@ export type Database = {
         | "CANCELLED"
         | "REFUNDED"
         | "PARTIALLY_REFUNDED"
-      subscription_plan: "STARTER" | "BUSINESS" | "ENTERPRISE"
+      subscription_plan: "STARTER" | "BUSINESS" | "ENTERPRISE" | "SOLO"
       subscription_status:
         | "TRIAL"
         | "ACTIVE"
@@ -3598,7 +3712,7 @@ export const Constants = {
         "REFUNDED",
         "PARTIALLY_REFUNDED",
       ],
-      subscription_plan: ["STARTER", "BUSINESS", "ENTERPRISE"],
+      subscription_plan: ["STARTER", "BUSINESS", "ENTERPRISE", "SOLO"],
       subscription_status: [
         "TRIAL",
         "ACTIVE",

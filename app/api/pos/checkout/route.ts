@@ -113,7 +113,16 @@ export async function POST(request: NextRequest) {
       const p = productById.get(it.productId)!;
       const discount = callerCanDiscount ? Math.min(Math.max(Number(it.discount) || 0, 0), 100) : 0; // clamp 0-100%
       const serials = p.track_serial && Array.isArray(it.serials) ? it.serials.filter(Boolean) : undefined;
-      const quantity = serials ? serials.length : Math.max(1, Math.floor(Number(it.quantity) || 0));
+      // Un produit "quantité fractionnée" (kg/mètre/litre..., migration 076)
+      // se vend en décimales (ex. 2,5 m) — sans ce cas, l'arrondi à
+      // l'entier ci-dessous cassait silencieusement toute vente au détail
+      // en dessous de l'unité (0,5 kg devenait 1 kg, 2,5 m devenait 2 m).
+      const rawQuantity = Number(it.quantity) || 0;
+      const quantity = serials
+        ? serials.length
+        : p.fractional_quantity
+          ? Math.max(0.01, Math.round(rawQuantity * 100) / 100)
+          : Math.max(1, Math.floor(rawQuantity));
       const unitPrice = p.selling_price;
       const tax = p.tax_rate || 0;
       // Arrondi À L'UNITÉ, pas au centime : le franc CFA n'a pas de

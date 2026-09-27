@@ -58,6 +58,10 @@ export interface Tenant {
   writeOffApprovalThreshold: number;
   expenseApprovalThreshold: number;
   stockLossApprovalThreshold: number;
+  // Secteur d'activité (migration 076) : `null` = non renseigné (comportement
+  // générique inchangé). Pilote l'adaptation du produit au métier du
+  // commerçant — voir lib/utils/vertical-pages.ts pour les valeurs possibles.
+  sector: string | null;
 }
 
 // Piste d'audit immuable (migration 045) — alimentée uniquement par les
@@ -149,7 +153,7 @@ export interface Subscription {
   limits?: SubscriptionLimits;
 }
 
-export type SubscriptionPlan = 'STARTER' | 'BUSINESS' | 'ENTERPRISE';
+export type SubscriptionPlan = 'SOLO' | 'STARTER' | 'BUSINESS' | 'ENTERPRISE';
 export type SubscriptionStatus = 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'CANCELLED' | 'EXPIRED';
 
 export interface SubscriptionLimits {
@@ -221,6 +225,9 @@ export interface Product {
   // à false et se comporte exactement comme avant l'ajout de ces suivis.
   trackExpiry: boolean;
   trackSerial: boolean;
+  // Vente en quantité fractionnée (kg, mètre, litre...) au POS — migration
+  // 076. `false` (défaut) = comportement inchangé, quantité entière only.
+  fractionalQuantity: boolean;
   createdAt: Date;
   updatedAt: Date;
   inventory?: Inventory[];

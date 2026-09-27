@@ -19,6 +19,7 @@ import { watch } from '@/lib/supabase/watch';
 import { SUBSCRIPTION_PLANS, type PlanId } from '@/lib/constants';
 import { getSubscriptionState, daysUntilFullBlock } from '@/lib/subscription/status';
 import { isOwnerOrAdmin as isOwnerOrAdminRole } from '@/lib/auth/roles';
+import { VERTICAL_PAGES } from '@/lib/utils/vertical-pages';
 
 // Pays de la zone UEMOA, tous en franc CFA (XOF). La Guinée et la
 // Mauritanie en ont été retirées : elles utilisent le franc guinéen et
@@ -78,6 +79,10 @@ export default function SettingsPage() {
     rccm: tenant?.rccm || '',
     nif: tenant?.nif || '',
     currency: tenant?.currency || 'XOF',
+    // Secteur d'activité (migration 076) : pilote l'adaptation du produit au
+    // métier (ex. vente en quantité fractionnée pour Quincaillerie/Épicerie,
+    // voir components/products/product-form-dialog.tsx). '' = non renseigné.
+    sector: tenant?.sector || '',
   });
   const [savingCompany, setSavingCompany] = useState(false);
   const [companyMsg, setCompanyMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -177,6 +182,7 @@ export default function SettingsPage() {
         rccm: tenant.rccm || '',
         nif: tenant.nif || '',
         currency: tenant.currency || 'XOF',
+        sector: tenant.sector || '',
       });
     }
     if (user) {
@@ -198,6 +204,7 @@ export default function SettingsPage() {
         name: company.name, email: company.email, phone: company.phone,
         address: company.address, city: company.city, country: company.country,
         rccm: company.rccm, nif: company.nif, currency: company.currency,
+        sector: company.sector || null,
       }).eq('id', tenantId);
       if (error) throw error;
       setTenant({ ...tenant!, ...company });
@@ -323,6 +330,19 @@ export default function SettingsPage() {
               <div className="space-y-2">
                 <Label>NIF</Label>
                 <Input value={company.nif} onChange={e => setCompany(p => ({ ...p, nif: e.target.value }))} placeholder="123456789" />
+              </div>
+              <div className="col-span-2 space-y-2">
+                <Label>Secteur d&apos;activité</Label>
+                <Select value={company.sector || 'none'} onValueChange={v => setCompany(p => ({ ...p, sector: v === 'none' ? '' : v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Non renseigné</SelectItem>
+                    {VERTICAL_PAGES.map(v => <SelectItem key={v.slug} value={v.slug}>{v.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500">
+                  Adapte Kafora à votre métier (ex : vente en kg/mètre/litre pour Quincaillerie et Épicerie).
+                </p>
               </div>
               <div className="col-span-2 space-y-2">
                 <Label>Devise</Label>

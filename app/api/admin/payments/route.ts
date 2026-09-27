@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
+import type { PlanId } from '@/lib/constants';
 
 /**
  * Console éditeur : tous les paiements enregistrés, tous tenants
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(500);
     if (tenantId) query = query.eq('tenant_id', tenantId);
-    if (plan) query = query.eq('plan', plan as 'STARTER' | 'BUSINESS' | 'ENTERPRISE');
+    if (plan) query = query.eq('plan', plan as PlanId);
     if (method) query = query.ilike('method', `%${method}%`);
     if (dateFrom) query = query.gte('created_at', dateFrom);
     if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59.999Z`);

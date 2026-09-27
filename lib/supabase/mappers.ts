@@ -67,6 +67,7 @@ export function mapProduct(r: ProductRow): Product {
     taxRate: r.tax_rate, alertThreshold: r.alert_threshold ?? 0, imageData: r.image_data,
     isActive: r.is_active, trackInventory: r.track_inventory,
     trackExpiry: r.track_expiry, trackSerial: r.track_serial,
+    fractionalQuantity: r.fractional_quantity,
     createdAt: toDate(r.created_at), updatedAt: toDate(r.updated_at),
   };
 }
@@ -272,6 +273,7 @@ export function mapTenant(r: Row<'tenants'>): Tenant {
     writeOffApprovalThreshold: r.write_off_approval_threshold,
     expenseApprovalThreshold: r.expense_approval_threshold,
     stockLossApprovalThreshold: r.stock_loss_approval_threshold,
+    sector: r.sector,
   };
 }
 
