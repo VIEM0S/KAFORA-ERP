@@ -106,7 +106,11 @@ export default function SetupPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur lors de la création du compte');
-      router.push('/login?registered=true');
+      // emailSent=false (SendGrid indisponible) : le compte existe quand
+      // même, seul l'envoi du lien de confirmation a échoué — la page de
+      // connexion doit le dire clairement plutôt que laisser le nouvel
+      // inscrit attendre un email qui n'arrivera jamais.
+      router.push(data.emailSent === false ? '/login?registered=true&emailIssue=true' : '/login?registered=true');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue');
     } finally {

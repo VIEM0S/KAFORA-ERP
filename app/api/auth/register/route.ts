@@ -3,6 +3,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { checkRateLimit, getClientIp } from '@/lib/api/rate-limit';
 import { SUBSCRIPTION_PLANS, PlanId, REFERRAL_REFEREE_BONUS_DAYS } from '@/lib/constants';
 import { generateReferralCode, slugify } from '@/lib/utils/helpers';
+import { sendEmail } from '@/lib/email/send';
 
 export async function POST(request: NextRequest) {
   try {
@@ -49,19 +50,29 @@ export async function POST(request: NextRequest) {
       referrerTenantId = referrer?.id ?? null;
     }
 
-    // 1. Créer le compte Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    // 1. Créer le compte Supabase Auth — NON confirmé (voir generateLink
+    // ci-dessous). Avant, email_confirm: true activait l'essai gratuit
+    // immédiatement pour n'importe quelle adresse, même jetable/inexistante
+    // : rien n'empêchait de créer des essais illimités avec des emails
+    // à usage unique. generateLink({ type: 'signup', ... }) crée l'utilisateur
+    // ET renvoie le vrai lien de confirmation Supabase en une seule étape —
+    // c'est le chemin documenté pour un flux d'inscription géré côté admin,
+    // par opposition à admin.createUser() + auth.resend() (pensé pour un
+    // utilisateur déjà existant, pas pour la création initiale).
+    const origin = request.headers.get('origin') || new URL(request.url).origin;
+    const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
+      type: 'signup',
       email: user.email,
       password: user.password,
-      email_confirm: true,
+      options: { redirectTo: `${origin}/login?confirmed=true` },
     });
-    if (authError) {
-      if (authError.code === 'email_exists') {
+    if (linkError) {
+      if (linkError.code === 'email_exists' || linkError.message?.toLowerCase().includes('already been registered')) {
         return NextResponse.json({ error: 'Cet email est déjà utilisé' }, { status: 409 });
       }
-      throw authError;
+      throw linkError;
     }
-    const uid = authData.user.id;
+    const uid = linkData.user.id;
 
     const planId: PlanId = (plan as PlanId) in SUBSCRIPTION_PLANS ? (plan as PlanId) : 'BUSINESS';
     const limits = SUBSCRIPTION_PLANS[planId].features;
@@ -124,10 +135,36 @@ export async function POST(request: NextRequest) {
       app_metadata: { tenant_id: tenantId, role: 'OWNER', store_ids: null },
     });
 
+    // 4. Envoi du lien de confirmation — via l'infra email déjà en place
+    // (lib/email/send.ts, SendGrid) plutôt que le mailer intégré de
+    // Supabase, pour rester cohérent avec le seul canal d'envoi déjà
+    // configuré et vérifié dans ce projet. Ne fait jamais échouer
+    // l'inscription : le compte/tenant existent déjà à ce stade, et un envoi
+    // raté doit remonter en log, pas annuler une création déjà faite.
+    const confirmLink = linkData.properties?.action_link;
+    let emailSent = false;
+    if (confirmLink) {
+      const emailResult = await sendEmail({
+        to: user.email,
+        subject: 'Confirmez votre adresse email — Kafora',
+        html: `
+          <p>Bonjour,</p>
+          <p>Merci de confirmer votre adresse email pour activer votre essai gratuit de 14 jours sur Kafora.</p>
+          <p><a href="${confirmLink}">Confirmer mon adresse email</a></p>
+          <p>Si vous n'êtes pas à l'origine de cette inscription, vous pouvez ignorer cet email.</p>
+        `,
+      });
+      emailSent = emailResult.sent;
+      if (!emailResult.sent) {
+        console.error('Register: échec envoi email de confirmation (compte déjà créé) :', emailResult.error);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       tenantId,
       storeId,
+      emailSent,
       message: 'Compte créé avec succès',
     });
   } catch (error) {

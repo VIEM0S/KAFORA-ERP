@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Eye, EyeOff, Loader2, Store, AlertCircle, ArrowLeft } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Store, AlertCircle, ArrowLeft, MailCheck } from 'lucide-react';
 import { AuthError } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -23,11 +23,17 @@ function getSupabaseErrorMessage(error: AuthError): string {
     case 'too_many_requests':
       return 'Trop de tentatives. Compte temporairement bloqué. Réessayez plus tard.';
     case 'email_not_confirmed':
-      return 'Email non confirmé. Contactez votre administrateur.';
+      // Sert deux cas : une inscription qui n'a pas encore cliqué son lien
+      // de confirmation (le cas courant depuis l'ajout de generateLink dans
+      // /api/auth/register), ou un compte employé créé par un Owner/Admin —
+      // d'où les deux pistes plutôt qu'une seule affirmation.
+      return "Email non confirmé. Vérifiez votre boîte de réception (et vos indésirables) pour le lien de confirmation, ou contactez votre administrateur si ce compte vous a été créé par quelqu'un d'autre.";
     default:
       return 'Une erreur est survenue. Veuillez réessayer.';
   }
 }
+
+type SignupBanner = 'registered' | 'registeredEmailIssue' | 'confirmed' | null;
 
 export default function LoginPage() {
   const router = useRouter();
@@ -37,6 +43,20 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [signupBanner, setSignupBanner] = useState<SignupBanner>(null);
+
+  // Lu depuis window.location plutôt que useSearchParams() : cette page est
+  // pré-rendue statiquement, et useSearchParams() y exigerait un Suspense
+  // boundary supplémentaire pour un simple bandeau d'information.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('confirmed') === 'true') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSignupBanner('confirmed');
+    } else if (params.get('registered') === 'true') {
+      setSignupBanner(params.get('emailIssue') === 'true' ? 'registeredEmailIssue' : 'registered');
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,6 +152,18 @@ export default function LoginPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
+              {signupBanner && (
+                <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800 flex gap-2">
+                  <MailCheck className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                  <span>
+                    {signupBanner === 'confirmed'
+                      ? 'Adresse email confirmée — vous pouvez maintenant vous connecter.'
+                      : signupBanner === 'registeredEmailIssue'
+                        ? "Compte créé. L'envoi automatique de l'email de confirmation a échoué — contactez-nous pour recevoir votre lien manuellement."
+                        : 'Compte créé ! Vérifiez votre boîte de réception (et vos indésirables) pour confirmer votre adresse email avant de vous connecter.'}
+                  </span>
+                </div>
+              )}
               {error && (
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
