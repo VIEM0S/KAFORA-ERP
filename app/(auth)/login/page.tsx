@@ -26,8 +26,11 @@ function getSupabaseErrorMessage(error: AuthError): string {
       // Sert deux cas : une inscription qui n'a pas encore cliqué son lien
       // de confirmation (le cas courant depuis l'ajout de generateLink dans
       // /api/auth/register), ou un compte employé créé par un Owner/Admin —
-      // d'où les deux pistes plutôt qu'une seule affirmation.
-      return "Email non confirmé. Vérifiez votre boîte de réception (et vos indésirables) pour le lien de confirmation, ou contactez votre administrateur si ce compte vous a été créé par quelqu'un d'autre.";
+      // d'où les deux pistes plutôt qu'une seule affirmation. La mention du
+      // dossier indésirables est mise en avant (pas juste entre parenthèses)
+      // depuis un test en conditions réelles : l'email atterrit en spam par
+      // défaut (adresse d'envoi @gmail.com via SendGrid, non alignée DMARC).
+      return "Email non confirmé. L'email de confirmation arrive souvent dans le dossier Spam/Indésirables — vérifiez-y en priorité. Sinon, contactez votre administrateur si ce compte vous a été créé par quelqu'un d'autre.";
     default:
       return 'Une erreur est survenue. Veuillez réessayer.';
   }
@@ -156,11 +159,24 @@ export default function LoginPage() {
                 <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800 flex gap-2">
                   <MailCheck className="h-4 w-4 flex-shrink-0 mt-0.5" />
                   <span>
-                    {signupBanner === 'confirmed'
-                      ? 'Adresse email confirmée — vous pouvez maintenant vous connecter.'
-                      : signupBanner === 'registeredEmailIssue'
-                        ? "Compte créé. L'envoi automatique de l'email de confirmation a échoué — contactez-nous pour recevoir votre lien manuellement."
-                        : 'Compte créé ! Vérifiez votre boîte de réception (et vos indésirables) pour confirmer votre adresse email avant de vous connecter.'}
+                    {signupBanner === 'confirmed' ? (
+                      'Adresse email confirmée — vous pouvez maintenant vous connecter.'
+                    ) : signupBanner === 'registeredEmailIssue' ? (
+                      "Compte créé. L'envoi automatique de l'email de confirmation a échoué — contactez-nous pour recevoir votre lien manuellement."
+                    ) : (
+                      <>
+                        Compte créé ! Un email de confirmation vient d&apos;être envoyé.{' '}
+                        {/* Mise en avant en gras, pas juste une parenthèse —
+                            confirmé en conditions réelles (2026-09-28) :
+                            l'email atterrit systématiquement en spam Gmail
+                            (adresse d'envoi @gmail.com via SendGrid, non
+                            alignée DMARC). Tant que ça n'est pas corrigé côté
+                            domaine d'envoi, cette consigne doit être
+                            impossible à manquer. */}
+                        <strong>Pensez à vérifier votre dossier Spam/Indésirables</strong>{' '}
+                        si vous ne le voyez pas dans votre boîte de réception d&apos;ici quelques minutes.
+                      </>
+                    )}
                   </span>
                 </div>
               )}
