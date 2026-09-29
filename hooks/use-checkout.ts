@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthStore, useCartStore } from '@/hooks/store';
 import { type InvoiceData } from '@/lib/utils/pdf';
 import { enqueueSale, generateLocalSaleId } from '@/lib/offline-queue';
@@ -35,6 +35,20 @@ export function useCheckout({ tenantId, storeId, refreshQueue, setIsOnline }: Us
   // que l'utilisateur reclique sur "Confirmer" pour la même vente, il faut
   // que ce soit reconnu comme un rejeu — pas comme une vente distincte.
   const [attemptId, setAttemptId] = useState(generateLocalSaleId());
+
+  // Fermer l'onglet pendant une requête de checkout en vol laisse le panier
+  // intact en localStorage (persist de useCartStore) sans que la vente soit
+  // ni confirmée ni mise en file d'attente hors-ligne — au retour, rien
+  // n'indique qu'elle a peut-être déjà abouti côté serveur, et rejouer le
+  // paiement crée une vraie double vente. Rien n'empêche une fermeture
+  // forcée, mais avertir dissuade la fermeture accidentelle pendant les
+  // quelques secondes que dure l'appel. Trouvé lors de l'audit du 2026-09-29.
+  useEffect(() => {
+    if (!isProcessing) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isProcessing]);
 
   const total = getTotal();
   const change = amountReceived ? Math.max(0, Number(amountReceived) - total) : 0;

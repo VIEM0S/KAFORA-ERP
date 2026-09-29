@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
       p_register_id: registerId,
       p_caller_id: session.uid,
       p_caller_name: (openedByName || null) as string,
-      p_opening_balance: Number(openingBalance) || 0,
+      p_opening_balance: Math.max(0, Number(openingBalance) || 0),
     });
     if (rpcError) throw rpcError;
 

@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
       p_register_id: registerId,
       p_caller_id: session.uid,
       p_caller_name: (closedByName || null) as string,
-      p_counted_amount: Number(countedAmount) || 0,
+      p_counted_amount: Math.max(0, Number(countedAmount) || 0),
       p_notes: (notes || null) as string,
     });
     if (rpcError) throw rpcError;

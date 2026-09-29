@@ -227,7 +227,7 @@ export default function CashRegisterPage() {
         body: JSON.stringify({
           tenantId, storeId,
           targetUserId: closeTarget.openedBy,
-          countedAmount: Number(targetCountedAmount) || 0,
+          countedAmount: Math.max(0, Number(targetCountedAmount) || 0),
           closedByName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
         }),
       });
@@ -314,7 +314,7 @@ export default function CashRegisterPage() {
   // ─── Ouvrir la caisse ───────────────────────────────────────────────────
   const handleOpen = async () => {
     if (!tenantId || !storeId || !user) return;
-    const amount = Number(openingAmount) || 0;
+    const amount = Math.max(0, Number(openingAmount) || 0);
     setIsSaving(true);
     try {
       const res = await fetch('/api/cash-register/open', {
@@ -340,7 +340,7 @@ export default function CashRegisterPage() {
   const [closeError, setCloseError] = useState<string | null>(null);
   const handleClose = async () => {
     if (!tenantId || !storeId || !user || !session) return;
-    const counted = Number(closingAmount) || 0;
+    const counted = Math.max(0, Number(closingAmount) || 0);
     setIsSaving(true);
     setCloseError(null);
     try {

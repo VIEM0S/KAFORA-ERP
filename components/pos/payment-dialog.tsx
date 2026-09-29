@@ -37,7 +37,7 @@ export function PaymentDialog({
   const { customer } = useCartStore();
 
   return (
-    <Dialog open={open} onOpenChange={o => { if (!o) onClose(); }}>
+    <Dialog open={open} onOpenChange={o => { if (!o && !isProcessing) onClose(); }}>
       <DialogContent className="max-w-md">
         <DialogHeader><DialogTitle className="text-xl">Finaliser le paiement</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
@@ -141,7 +141,13 @@ export function PaymentDialog({
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} className="border-2">Annuler</Button>
+          {/* disabled pendant le traitement : sans ça, un clic ici pendant
+              une requête de checkout en vol (réseau lent) rouvrait le
+              paiement avec un nouvel attemptId — la clé d'idempotence ne
+              protège alors plus rien, et si la première requête finit par
+              aboutir aussi, ça crée une vraie double vente. Trouvé lors de
+              l'audit du 2026-09-29. */}
+          <Button variant="outline" onClick={onClose} disabled={isProcessing} className="border-2">Annuler</Button>
           <Button onClick={onConfirm}
             disabled={
               isProcessing ||
