@@ -3127,6 +3127,10 @@ export type Database = {
         }
         Returns: Json
       }
+      mark_lot_expired: {
+        Args: { p_caller_id: string; p_caller_role: string; p_lot_id: string }
+        Returns: Json
+      }
       admin_extend_subscription: {
         Args: {
           p_amount: number

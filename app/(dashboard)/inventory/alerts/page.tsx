@@ -50,6 +50,7 @@ export default function AlertsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [lots, setLots] = useState<ProductLot[]>([]);
   const [expiringLotId, setExpiringLotId] = useState<string | null>(null); // en cours d'écriture
+  const [markExpiredError, setMarkExpiredError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -95,29 +96,26 @@ export default function AlertsPage() {
     return days >= 0 && days <= EXPIRY_WARNING_DAYS;
   });
 
-  // Écrit le lot comme périmé : remet sa quantité à 0 et décrémente le
-  // total inventory.quantity d'autant, avec un mouvement ADJUSTMENT tracé —
-  // même esprit qu'un ajustement manuel de stock (inventory/page.tsx).
+  // Remet le lot à 0 ET décrémente inventory.quantity d'autant, atomiquement
+  // (mark_lot_expired() en RPC, migration 079) — remplace deux écritures
+  // séparées (product_lots.update direct + /api/inventory/adjust) qui
+  // pouvaient laisser le stock désynchronisé si la seconde échouait après la
+  // première, en silence (trouvé lors de l'audit du 2026-09-29). L'erreur
+  // est maintenant affichée, pas seulement loguée en console.
   const handleMarkExpired = async (lot: ProductLot) => {
     if (!tenantId) return;
-    const product = productById(lot.productId);
     setExpiringLotId(lot.id);
+    setMarkExpiredError(null);
     try {
-      await supabase.from('product_lots').update({ quantity: 0 }).eq('id', lot.id);
-      // Décrément atomique côté serveur (verrou de ligne) — voir
-      // adjust_inventory() en RPC et le même correctif dans
-      // inventory/page.tsx (évite un "lost update" si une vente concurrente
-      // touche le même produit pendant l'opération).
-      const res = await fetch('/api/inventory/adjust', {
+      const res = await fetch('/api/inventory/mark-expired', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenantId, storeId: lot.storeId, productId: lot.productId, productName: product?.name || 'Produit',
-          mode: 'remove', amount: lot.quantity, hasMinQuantity: false, reason: 'Péremption',
-        }),
+        body: JSON.stringify({ lotId: lot.id }),
       });
       if (!res.ok) { const data = await res.json().catch(() => null); throw new Error(data?.error || 'Erreur'); }
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      setMarkExpiredError(e instanceof Error ? e.message : 'Erreur lors du marquage comme périmé');
+    }
     finally { setExpiringLotId(null); }
   };
 
@@ -261,6 +259,11 @@ export default function AlertsPage() {
             <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
               <CalendarClock className="h-5 w-5 text-red-500" />Péremption
             </h2>
+            {markExpiredError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+                {markExpiredError}
+              </div>
+            )}
             <Card><CardContent className="p-0">
               <Table>
                 <TableHeader>

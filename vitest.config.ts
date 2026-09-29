@@ -22,6 +22,12 @@ export default defineConfig({
     // local (supabase start, port 54322) et echoueraient au demarrage sans
     // lui — ils ont leur propre config (vitest.config.rls.ts) et leur
     // propre script (`npm run test:rls`), a lancer separement.
-    exclude: ['**/node_modules/**', '**/.next/**', '**/.claude/worktrees/**', '**/.worktree-*/**', '**/__tests__/rls/**'],
+    // __tests__/rpc/** exclu de la meme facon : ceux-la parlent au VRAI
+    // projet Supabase distant (service-role) — jamais dans npm test/CI,
+    // voir vitest.config.rpc.ts et `npm run test:rpc`.
+    exclude: [
+      '**/node_modules/**', '**/.next/**', '**/.claude/worktrees/**', '**/.worktree-*/**',
+      '**/__tests__/rls/**', '**/__tests__/rpc/**',
+    ],
   },
 });

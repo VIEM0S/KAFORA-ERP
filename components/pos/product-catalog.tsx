@@ -97,7 +97,15 @@ export function ProductCatalog({
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
         <Input placeholder="Rechercher un produit ou scanner un code-barres..."
           value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
-        {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"><X className="h-4 w-4" /></button>}
+        {search && (
+          <button
+            onClick={() => setSearch('')}
+            aria-label="Effacer la recherche"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 h-8 w-8 flex items-center justify-center"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       {checkoutError && !showPayment && (

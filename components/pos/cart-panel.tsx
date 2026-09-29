@@ -91,11 +91,15 @@ export function CartPanel({ inventory, canDiscount, onOpenCustomerPicker, onPay 
           {customer ? (
             <span className="text-gray-900 font-semibold truncate">{displayCustomerName(customer)}</span>
           ) : (
-            <span className="text-gray-400">Client comptoir (cliquer pour choisir)</span>
+            <span className="text-gray-500">Client comptoir (cliquer pour choisir)</span>
           )}
           {customer && (
-            <button onClick={e => { e.stopPropagation(); setCustomer(null); }} className="ml-auto text-gray-300 hover:text-red-400">
-              <X className="h-3.5 w-3.5" />
+            <button
+              onClick={e => { e.stopPropagation(); setCustomer(null); }}
+              aria-label="Retirer le client sélectionné"
+              className="ml-auto text-gray-400 hover:text-red-500 h-8 w-8 flex items-center justify-center flex-shrink-0"
+            >
+              <X className="h-4 w-4" />
             </button>
           )}
         </button>
@@ -113,8 +117,12 @@ export function CartPanel({ inventory, canDiscount, onOpenCustomerPicker, onPay 
           <div key={item.product.id} className="bg-gray-50 rounded-xl p-3">
             <div className="flex items-start justify-between gap-2 mb-2">
               <p className="text-sm font-semibold text-gray-900 line-clamp-2 flex-1 leading-tight">{item.product.name}</p>
-              <button onClick={() => removeItem(item.product.id)} className="text-gray-300 hover:text-red-500 flex-shrink-0">
-                <Trash2 className="h-3.5 w-3.5" />
+              <button
+                onClick={() => removeItem(item.product.id)}
+                aria-label={`Retirer ${item.product.name} du panier`}
+                className="text-gray-400 hover:text-red-500 h-8 w-8 flex items-center justify-center flex-shrink-0"
+              >
+                <Trash2 className="h-4 w-4" />
               </button>
             </div>
             {item.product.trackSerial ? (
@@ -125,8 +133,12 @@ export function CartPanel({ inventory, canDiscount, onOpenCustomerPicker, onPay 
                 {(item.serials || []).map((s) => (
                   <span key={s} className="inline-flex items-center gap-1 text-xs bg-white border border-gray-200 rounded-full pl-2 pr-1 py-0.5">
                     {s}
-                    <button onClick={() => removeSerialFromItem(item.product.id, s)} className="text-gray-300 hover:text-red-500">
-                      <X className="h-3 w-3" />
+                    <button
+                      onClick={() => removeSerialFromItem(item.product.id, s)}
+                      aria-label={`Retirer le numéro de série ${s}`}
+                      className="text-gray-400 hover:text-red-500 h-6 w-6 flex items-center justify-center"
+                    >
+                      <X className="h-3.5 w-3.5" />
                     </button>
                   </span>
                 ))}
@@ -145,10 +157,16 @@ export function CartPanel({ inventory, canDiscount, onOpenCustomerPicker, onPay 
                 />
               ) : (
                 <div className="flex items-center gap-1">
+                  {/* h-10 w-10 (40px) — pas h-7 (28px) : sous la taille
+                      tactile utilisable sur un terminal POS, avec un vrai
+                      risque de mal-encaisser (mauvaise quantité) sur l'écran
+                      le plus utilisé de l'app. Trouvé lors de l'audit
+                      accessibilité du 2026-09-29. */}
                   <button
                     onClick={() => item.quantity > 1 ? updateItemQuantity(item.product.id, item.quantity - 1) : removeItem(item.product.id)}
-                    className="h-7 w-7 rounded-lg bg-white border border-gray-200 hover:bg-gray-100 flex items-center justify-center">
-                    <Minus className="h-3 w-3" />
+                    aria-label={item.quantity > 1 ? 'Diminuer la quantité' : `Retirer ${item.product.name} du panier`}
+                    className="h-10 w-10 rounded-lg bg-white border border-gray-200 hover:bg-gray-100 flex items-center justify-center flex-shrink-0">
+                    <Minus className="h-4 w-4" />
                   </button>
                   <span className="w-8 text-center text-sm font-bold">{item.quantity}</span>
                   <button
@@ -157,8 +175,9 @@ export function CartPanel({ inventory, canDiscount, onOpenCustomerPicker, onPay 
                       if (clampToStock(item.product, next, inventory) < next) return;
                       updateItemQuantity(item.product.id, next);
                     }}
-                    className="h-7 w-7 rounded-lg bg-white border border-gray-200 hover:bg-gray-100 flex items-center justify-center">
-                    <Plus className="h-3 w-3" />
+                    aria-label="Augmenter la quantité"
+                    className="h-10 w-10 rounded-lg bg-white border border-gray-200 hover:bg-gray-100 flex items-center justify-center flex-shrink-0">
+                    <Plus className="h-4 w-4" />
                   </button>
                 </div>
               )}

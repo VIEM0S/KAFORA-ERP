@@ -19,6 +19,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:rls": "vitest run --config vitest.config.rls.ts",
+    "test:rpc": "vitest run --config vitest.config.rpc.ts",
     "test:e2e:setup": "node --env-file=.env scripts/create-e2e-test-user.js",
     "test:e2e": "playwright test",
     "db:start": "supabase start",
