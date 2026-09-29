@@ -23,11 +23,12 @@ export async function POST(request: NextRequest) {
 
     const {
       tenantId, storeId, productId, productName, mode, amount,
-      hasMinQuantity, minQuantity, reason,
+      hasMinQuantity, minQuantity, reason, expiryDate, serials,
     }: {
       tenantId: string; storeId: string; productId: string; productName: string;
       mode: 'add' | 'remove' | 'set'; amount: number;
       hasMinQuantity: boolean; minQuantity?: number | null; reason?: string;
+      expiryDate?: string | null; serials?: string[] | null;
     } = await request.json();
 
     if (!tenantId || !storeId || !productId || !mode || !Number.isFinite(amount)) {
@@ -55,12 +56,27 @@ export async function POST(request: NextRequest) {
       // Les sorties au-dessus du seuil de perte (tenants.stock_loss_approval_threshold)
       // sont réservées au Propriétaire/Administrateur — voir migration 069.
       p_caller_role: session.role,
+      // Lot/numéros de série créés dans la MÊME transaction que
+      // l'incrémentation du stock (migration 084) — plus de second appel
+      // client séparé qui pouvait laisser le stock désynchronisé si la
+      // connexion tombait entre les deux.
+      p_expiry_date: (expiryDate || null) as string,
+      p_serials: Array.isArray(serials) && serials.length > 0 ? serials : null,
     });
     if (rpcError) throw rpcError;
 
     return NextResponse.json({ success: true, ...(result as object) });
   } catch (error) {
     console.error('Adjust inventory error:', error);
+    // Numéro de série déjà enregistré pour ce produit (contrainte unique
+    // product_serials) — remonté par la RPC depuis migration 084, avant
+    // géré par un insert client séparé qui exposait error.code directement.
+    if ((error as { code?: string })?.code === '23505') {
+      return NextResponse.json(
+        { error: 'Un ou plusieurs numéros de série sont déjà enregistrés pour ce produit.' },
+        { status: 409 }
+      );
+    }
     const msg = getErrorMessage(error) || 'Erreur interne';
     const isForbidden = msg.includes('FORBIDDEN');
     const cleanMsg = msg.replace(/^.*(FORBIDDEN|INVALID_MODE):\s*/, '');

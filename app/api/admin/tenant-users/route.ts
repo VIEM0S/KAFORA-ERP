@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
+import { checkRateLimit } from '@/lib/api/rate-limit';
 
 /**
  * Utilisateurs d'une entreprise cliente — pour le support.
@@ -88,6 +89,16 @@ export async function POST(request: NextRequest) {
     if (!session) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
     if (session.role !== 'SUPER_ADMIN') {
       return NextResponse.json({ error: 'Introuvable' }, { status: 404 });
+    }
+    // Filet léger contre une session admin compromise ou une boucle de
+    // rejeu depuis la console — chaque appel déclenche un appel à l'API
+    // Supabase Auth (generateLink). Trouvé lors de l'audit du 2026-09-29.
+    const rateLimit = await checkRateLimit(`admin-tenant-users:user:${session.uid}`, 20, 3600);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Trop de tentatives. Réessayez dans quelques minutes.' },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } }
+      );
     }
 
     const { tenantId, email } = (await request.json()) as { tenantId?: string; email?: string };

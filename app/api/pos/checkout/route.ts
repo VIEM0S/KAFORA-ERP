@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
 import { checkSubscriptionAllows } from '@/lib/api/subscription-guard';
+import { checkRateLimit } from '@/lib/api/rate-limit';
 import { isManagerPlus } from '@/lib/auth/roles';
 import { getErrorMessage } from '@/lib/utils/errors';
 
@@ -20,6 +21,20 @@ export async function POST(request: NextRequest) {
     const session = await getSessionClaims();
     if (!session) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
     const { uid: callerUid, tenantId: callerTenantId, storeIds: callerStoreIds } = session;
+
+    // Plafond large (bien au-dessus du débit d'un vrai caissier) : sert de
+    // filet contre une boucle de rejeu client bugguée ou un script, pas
+    // contre l'usage normal — la déduplication d'idempotence (offline sync
+    // id) reste la protection principale contre une double vente. Par
+    // utilisateur, pas par IP : une boutique partage son réseau entre
+    // caissiers. Trouvé lors de l'audit du 2026-09-29.
+    const rateLimit = await checkRateLimit(`checkout:user:${callerUid}`, 60, 60);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Trop de tentatives. Réessayez dans un instant.' },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } }
+      );
+    }
 
     // Identifiant fourni par la file d'attente hors-ligne (lib/offline-queue.ts).
     // Absent = vente en ligne normale. Présent = cette requête peut être un

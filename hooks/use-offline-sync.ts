@@ -1,20 +1,30 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getQueue, syncOfflineQueue, type QueuedSale } from '@/lib/offline-queue';
 
 export function useOfflineSync() {
   const [isOnline, setIsOnline] = useState(true);
   const [pendingQueue, setPendingQueue] = useState<QueuedSale[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  // runSync est capturé une seule fois dans l'effet ci-dessous (tableau de
+  // dépendances vide) : une garde basée sur l'état `isSyncing` y verrait pour
+  // toujours sa valeur du premier rendu (false), rendant le garde-fou
+  // anti-sync-concurrente totalement inopérant — trouvé lors de l'audit de
+  // résilience du 2026-09-29 (sans conséquence réelle jusqu'ici uniquement
+  // grâce à la contrainte unique sync_dedup côté serveur, pas grâce à cette
+  // garde). Une ref reste à jour indépendamment de la fermeture qui la lit.
+  const isSyncingRef = useRef(false);
 
   const refreshQueue = () => setPendingQueue(getQueue());
 
   const runSync = async () => {
-    if (isSyncing) return;
+    if (isSyncingRef.current) return;
+    isSyncingRef.current = true;
     setIsSyncing(true);
     try {
       await syncOfflineQueue();
     } finally {
       refreshQueue();
+      isSyncingRef.current = false;
       setIsSyncing(false);
     }
   };

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
 import { notifyRole } from '@/lib/api/notify-role';
+import { checkRateLimit } from '@/lib/api/rate-limit';
 import { writeGovernanceLog, getActorName } from '@/lib/supabase/audit-log';
 
 // Fix (demande explicite) : une suppression définitive ne laisse aucune place
@@ -39,6 +40,16 @@ export async function POST(request: NextRequest) {
     const { uid: callerUid, role: callerRole, tenantId: callerTenantId } = session;
     if (!['OWNER', 'ADMIN'].includes(callerRole)) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
+    }
+    // Notifie ADMIN puis OWNER par email à chaque appel — une suppression
+    // légitime est rare, un plafond serré ici. Trouvé lors de l'audit du
+    // 2026-09-29.
+    const rateLimit = await checkRateLimit(`users-delete:user:${callerUid}`, 10, 3600);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Trop de tentatives. Réessayez dans quelques minutes.' },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } }
+      );
     }
 
     const { tenantId, uid, reason, requestId } = await request.json();

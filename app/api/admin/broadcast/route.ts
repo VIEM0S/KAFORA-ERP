@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
 import { notifyRole } from '@/lib/api/notify-role';
+import { checkRateLimit } from '@/lib/api/rate-limit';
 import type { PlanId } from '@/lib/constants';
 
 /**
@@ -15,6 +16,17 @@ export async function POST(request: NextRequest) {
     if (!session) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
     if (session.role !== 'SUPER_ADMIN') {
       return NextResponse.json({ error: 'Introuvable' }, { status: 404 });
+    }
+    // Filet contre un double-envoi accidentel (voir l'incident réel de
+    // diffusion involontaire lors de tests, déjà couvert côté UI par une
+    // confirmation) — un rythme d'1/minute est déjà bien au-delà de tout
+    // usage légitime. Trouvé lors de l'audit du 2026-09-29.
+    const rateLimit = await checkRateLimit(`admin-broadcast:user:${session.uid}`, 1, 60);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Une diffusion vient déjà d\'être envoyée. Patientez avant de recommencer.' },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } }
+      );
     }
 
     const { title, message, plan } = (await request.json()) as {

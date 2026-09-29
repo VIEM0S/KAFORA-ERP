@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient, createServerSupabaseClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
 import { notifyRole } from '@/lib/api/notify-role';
+import { checkRateLimit } from '@/lib/api/rate-limit';
 import { formatCurrency } from '@/lib/utils/helpers';
 import { getErrorMessage } from '@/lib/utils/errors';
 
@@ -24,6 +25,15 @@ export async function POST(request: NextRequest) {
     const session = await getSessionClaims();
     if (!session || !session.tenantId) {
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    }
+    // Notifie OWNER+ADMIN par email à chaque appel — voir /api/expenses pour
+    // le raisonnement. Trouvé lors de l'audit du 2026-09-29.
+    const rateLimit = await checkRateLimit(`credits-write-off:user:${session.uid}`, 20, 3600);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Trop de tentatives. Réessayez dans quelques minutes.' },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } }
+      );
     }
 
     const { creditId, reason }: { creditId?: string; reason?: string } = await request.json();

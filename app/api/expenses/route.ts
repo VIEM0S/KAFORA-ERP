@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient, createServerSupabaseClient } from '@/lib/supabase/server';
 import { getSessionClaims } from '@/lib/api/session';
 import { notifyRole } from '@/lib/api/notify-role';
+import { checkRateLimit } from '@/lib/api/rate-limit';
 import { formatCurrency } from '@/lib/utils/helpers';
 import { getErrorMessage } from '@/lib/utils/errors';
 
@@ -16,6 +17,17 @@ export async function POST(request: NextRequest) {
     const session = await getSessionClaims();
     if (!session || !session.tenantId) {
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    }
+    // Chaque dépense notifie OWNER+ADMIN par email (notifyRole) — un compte
+    // Manager compromis/buggé pourrait sinon spammer des dépenses fictives à
+    // volonté. Par utilisateur, pas par IP : des collègues partagent souvent
+    // le même réseau boutique. Trouvé lors de l'audit du 2026-09-29.
+    const rateLimit = await checkRateLimit(`expenses:user:${session.uid}`, 20, 3600);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Trop de tentatives. Réessayez dans quelques minutes.' },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } }
+      );
     }
 
     const body: { storeId?: string; category?: string; amount?: number; description?: string; expenseDate?: string } =

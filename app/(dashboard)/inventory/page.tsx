@@ -119,6 +119,13 @@ export default function InventoryPage() {
       // adjust_inventory() en RPC. Remplace l'ancien calcul client d'une
       // quantité absolue, sujet à un "lost update" si une vente concurrente
       // touchait le même produit entre l'ouverture du dialogue et l'envoi.
+      //
+      // Le lot/les numéros de série (pour une ENTRÉE de stock sur un produit
+      // à péremption/numéro de série) sont créés dans le MÊME appel — voir
+      // migration 084. Avant, un second insert client séparé pouvait laisser
+      // inventory.quantity déjà incrémenté sans lot/série correspondant si la
+      // connexion tombait entre les deux (stock invisible aux alertes de
+      // péremption, ou invendable en caisse pour un produit à série).
       const res = await fetch('/api/inventory/adjust', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -127,41 +134,16 @@ export default function InventoryPage() {
           mode: adjType, amount: qty,
           hasMinQuantity: minQuantity !== null, minQuantity,
           reason: adjNote || null,
+          expiryDate: adjType === 'add' && adjProduct.trackExpiry ? adjExpiryDate : null,
+          serials: adjType === 'add' && isSerialEntry ? parsedSerials : null,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Erreur lors de l'enregistrement");
 
-      // Ventilation additionnelle (lots ou séries), en plus du total
-      // inventory.quantity déjà à jour ci-dessus — voir migration 041.
-      // Seule l'ENTRÉE de stock crée un lot/des séries : une sortie ou une
-      // correction manuelle ne sait pas quel lot/exemplaire précis retirer
-      // (ça, c'est le rôle de la vente POS pour la série, et de "Marquer
-      // périmé" pour un lot).
-      if (adjType === 'add' && adjProduct.trackExpiry) {
-        const { error } = await supabase.from('product_lots').insert({
-          tenant_id: tenantId, product_id: adjProduct.id, store_id: storeId,
-          quantity: qty, expiry_date: adjExpiryDate, notes: adjNote || null,
-        });
-        if (error) throw error;
-      }
-      if (adjType === 'add' && isSerialEntry) {
-        const { error } = await supabase.from('product_serials').insert(
-          parsedSerials.map((serial_number) => ({
-            tenant_id: tenantId, product_id: adjProduct.id, store_id: storeId, serial_number,
-          }))
-        );
-        if (error) throw error;
-      }
-
       setAdjProduct(null); setAdjQty(''); setAdjNote(''); setAdjSeuil(''); setAdjExpiryDate(''); setAdjSerials('');
     } catch (e) {
-      const code = (e as { code?: string })?.code;
-      setAdjError(
-        code === '23505'
-          ? 'Un ou plusieurs numéros de série sont déjà enregistrés pour ce produit.'
-          : (e instanceof Error ? e.message : "Erreur lors de l'enregistrement. Réessayez.")
-      );
+      setAdjError(e instanceof Error ? e.message : "Erreur lors de l'enregistrement. Réessayez.");
       console.error(e);
     }
     finally { setIsSaving(false); }

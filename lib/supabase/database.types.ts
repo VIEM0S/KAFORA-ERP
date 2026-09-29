@@ -3116,12 +3116,14 @@ export type Database = {
           p_amount: number
           p_caller_id: string
           p_caller_role: string
+          p_expiry_date?: string | null
           p_has_min_quantity: boolean
           p_min_quantity: number
           p_mode: string
           p_product_id: string
           p_product_name: string
           p_reason: string
+          p_serials?: Json | null
           p_store_id: string
           p_tenant_id: string
         }
