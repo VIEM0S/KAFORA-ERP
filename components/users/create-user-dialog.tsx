@@ -80,7 +80,7 @@ export function CreateUserDialog({ tenantId, open, onOpenChange, onCreated }: Cr
       <DialogContent className="max-w-lg">
         <DialogHeader><DialogTitle>Nouveau compte utilisateur</DialogTitle></DialogHeader>
         {formError && (
-          <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+          <div role="alert" className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
             <AlertCircle className="h-4 w-4 flex-shrink-0" />{formError}
           </div>
         )}

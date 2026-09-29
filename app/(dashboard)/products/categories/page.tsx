@@ -164,7 +164,7 @@ export default function CategoriesPage() {
               <Input placeholder="Rechercher une catégorie..." value={search}
                 onChange={(e) => setSearch(e.target.value)} className="pl-9" />
               {search && (
-                <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                <button onClick={() => setSearch('')} aria-label="Effacer la recherche" className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 h-8 w-8 flex items-center justify-center">
                   <X className="h-4 w-4" />
                 </button>
               )}
@@ -216,7 +216,7 @@ export default function CategoriesPage() {
                         {canManage && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions pour ${c.name}`}>
                                 <ChevronDown className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
@@ -248,7 +248,7 @@ export default function CategoriesPage() {
             <DialogTitle>{editing ? 'Modifier la catégorie' : 'Nouvelle catégorie'}</DialogTitle>
           </DialogHeader>
           {formError && (
-            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{formError}</div>
+            <div role="alert" className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{formError}</div>
           )}
           <div className="space-y-4 py-2">
             <div className="space-y-2">

@@ -198,7 +198,7 @@ export function ProductFormDialog({ tenantId, open, editingProduct, categories, 
         </DialogHeader>
 
         {formError && (
-          <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+          <div role="alert" className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
             {formError}
           </div>
         )}

@@ -210,7 +210,7 @@ export default function StoresPage() {
                       {isOwnerOrAdmin && (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-7 w-7"><ChevronDown className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="icon" className="h-10 w-10" aria-label={`Actions pour ${s.name}`}><ChevronDown className="h-4 w-4" /></Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => openEdit(s)}><Edit className="h-4 w-4 mr-2" />Modifier</DropdownMenuItem>
@@ -265,7 +265,7 @@ export default function StoresPage() {
       <Dialog open={showDialog} onOpenChange={o => { if (!o) setShowDialog(false); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>{editing ? 'Modifier le magasin' : 'Nouveau magasin'}</DialogTitle></DialogHeader>
-          {formError && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{formError}</div>}
+          {formError && <div role="alert" className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{formError}</div>}
           <div className="grid grid-cols-2 gap-4 py-2">
             <div className="col-span-2 space-y-2">
               <Label>Nom du magasin *</Label>

@@ -205,12 +205,12 @@ export function UsersTable({ tenantId, users, currentUser, isLoading, isOwnerOrA
                             <Switch checked={u.isActive} onCheckedChange={() => toggleActive(u)} />
                           )}
                           {canEditUser(u) && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(u)}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Modifier ${u.firstName} ${u.lastName}`} onClick={() => onEdit(u)}>
                               <Pencil className="h-4 w-4 text-gray-500" />
                             </Button>
                           )}
                           {isOwnerOrAdmin && u.role !== 'OWNER' && u.id !== currentUser?.id && !(currentUser?.role === 'ADMIN' && u.role === 'ADMIN') && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDeletingUser(u)}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Supprimer ${u.firstName} ${u.lastName}`} onClick={() => setDeletingUser(u)}>
                               <Trash2 className="h-4 w-4 text-red-500" />
                             </Button>
                           )}

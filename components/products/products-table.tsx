@@ -127,7 +127,7 @@ export function ProductsTable({
                       {canManage && (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions pour ${p.name}`}>
                               <ChevronDown className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>

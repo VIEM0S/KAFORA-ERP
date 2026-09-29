@@ -370,7 +370,7 @@ export default function PurchaseOrdersPage() {
               Lignes pré-remplies depuis les alertes de stock — vérifiez les quantités et choisissez un fournisseur.
             </div>
           )}
-          {createError && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{createError}</div>}
+          {createError && <div role="alert" className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{createError}</div>}
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -458,7 +458,7 @@ export default function PurchaseOrdersPage() {
       <Dialog open={!!receiveTarget} onOpenChange={o => { if (!o) setReceiveTarget(null); }}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Réceptionner {receiveTarget?.reference}</DialogTitle></DialogHeader>
-          {receiveError && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{receiveError}</div>}
+          {receiveError && <div role="alert" className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{receiveError}</div>}
           <p className="text-sm text-gray-500">
             Indique les quantités effectivement reçues. Une réception partielle est possible :
             le reste restera &quot;à recevoir&quot; et tu pourras réceptionner le solde plus tard.

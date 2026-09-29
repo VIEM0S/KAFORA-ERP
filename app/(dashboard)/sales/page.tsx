@@ -378,11 +378,12 @@ export default function SalesPage() {
                         <TableCell><StatusBadge status={s.status} /></TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={e => { e.stopPropagation(); setSelected(s); }}>
+                            <Button variant="ghost" size="icon" className="h-10 w-10" aria-label={`Voir la vente ${s.reference}`}
+                              onClick={e => { e.stopPropagation(); setSelected(s); }}>
                               <Eye className="h-3.5 w-3.5" />
                             </Button>
                             {s.status === 'COMPLETED' && (
-                              <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600"
+                              <Button variant="ghost" size="icon" className="h-10 w-10 text-red-400 hover:text-red-600" aria-label={`Annuler la vente ${s.reference}`}
                                 onClick={e => { e.stopPropagation(); setCancelTarget(s); setCancelMotif(''); }}>
                                 <XCircle className="h-3.5 w-3.5" />
                               </Button>
@@ -510,7 +511,7 @@ export default function SalesPage() {
       <Dialog open={showReturn} onOpenChange={o => { if (!o) setShowReturn(false); }}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Retourner des articles</DialogTitle></DialogHeader>
-          {returnError && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{returnError}</div>}
+          {returnError && <div role="alert" className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{returnError}</div>}
           <div className="space-y-3 py-2">
             {saleItems.map(item => {
               const remaining = item.quantity - (item.returnedQuantity || 0);

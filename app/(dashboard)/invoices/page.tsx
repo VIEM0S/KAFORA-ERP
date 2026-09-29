@@ -352,13 +352,13 @@ export default function InvoicesPage() {
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-1">
                           <Button variant="ghost" size="icon" className="h-8 w-8"
-                            onClick={() => openPreview(s)} title="Aperçu">
+                            onClick={() => openPreview(s)} title="Aperçu" aria-label={`Aperçu de la facture ${s.reference}`}>
                             <Eye className="h-4 w-4" />
                           </Button>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-8 w-8 text-primary-600"
-                                disabled={isGenerating === s.id} title="Télécharger">
+                                disabled={isGenerating === s.id} title="Télécharger" aria-label={`Télécharger la facture ${s.reference}`}>
                                 {isGenerating === s.id
                                   ? <RefreshCw className="h-4 w-4 animate-spin" />
                                   : <Download className="h-4 w-4" />}
@@ -426,7 +426,7 @@ export default function InvoicesPage() {
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-primary-600"
                             onClick={() => generateQuoteInvoice(q)}
                             disabled={isGenerating === q.id}
-                            title="Télécharger PDF">
+                            title="Télécharger PDF" aria-label={`Télécharger la facture du devis ${q.reference}`}>
                             {isGenerating === q.id
                               ? <RefreshCw className="h-4 w-4 animate-spin" />
                               : <Download className="h-4 w-4" />}

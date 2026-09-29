@@ -421,7 +421,8 @@ export default function SettingsPage() {
                   <Input type={showPw ? 'text' : 'password'} value={pwForm.current}
                     onChange={e => setPwForm(p => ({ ...p, current: e.target.value }))}
                     placeholder="••••••••" className="pr-10" />
-                  <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  <button type="button" onClick={() => setShowPw(!showPw)} aria-label={showPw ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 h-8 w-8 flex items-center justify-center">
                     {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
@@ -434,12 +435,14 @@ export default function SettingsPage() {
                     placeholder="6 caractères minimum" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Confirmer</Label>
-                  <Input type="password" value={pwForm.confirm}
+                  <Label htmlFor="confirm-password">Confirmer</Label>
+                  <Input id="confirm-password" type="password" value={pwForm.confirm}
                     onChange={e => setPwForm(p => ({ ...p, confirm: e.target.value }))}
-                    placeholder="••••••••" />
+                    placeholder="••••••••"
+                    aria-invalid={!!(pwForm.next && pwForm.confirm && pwForm.next !== pwForm.confirm)}
+                    aria-describedby={pwForm.next && pwForm.confirm && pwForm.next !== pwForm.confirm ? 'confirm-password-error' : undefined} />
                   {pwForm.next && pwForm.confirm && pwForm.next !== pwForm.confirm && (
-                    <p className="text-xs text-red-500">Ne correspondent pas</p>
+                    <p id="confirm-password-error" role="alert" className="text-xs text-red-500">Ne correspondent pas</p>
                   )}
                 </div>
               </div>

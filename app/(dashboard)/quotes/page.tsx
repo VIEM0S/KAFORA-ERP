@@ -370,7 +370,7 @@ export default function QuotesPage() {
       <Dialog open={showNewQuote} onOpenChange={o => { if (!o) setShowNewQuote(false); }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Nouveau devis</DialogTitle></DialogHeader>
-          {formError && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{formError}</div>}
+          {formError && <div role="alert" className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{formError}</div>}
 
           <div className="space-y-4 py-2">
             {/* Client */}

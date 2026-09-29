@@ -111,6 +111,12 @@ export default function POSPage() {
 
   return (
     <DashboardLayout>
+      {/* Écran le plus utilisé de l'app, sans aucun titre — un utilisateur
+          de lecteur d'écran n'avait aucun moyen de confirmer qu'il est bien
+          sur la caisse. sr-only pour ne pas manger d'espace vertical sur cet
+          écran volontairement dense. Trouvé lors de l'audit d'accessibilité
+          du 2026-09-29. */}
+      <h1 className="sr-only">Point de vente</h1>
       {registerOpen === false && (
         <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3">
           <p className="text-sm font-medium text-amber-900">
