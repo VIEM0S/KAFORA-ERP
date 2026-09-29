@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Plus, Search, Edit, Trash2, Truck, Phone, Mail,
   RefreshCw, X, ChevronDown, MapPin, Globe
@@ -68,12 +68,16 @@ export default function SuppliersPage() {
     );
   }, [tenantId]);
 
-  const filtered = suppliers.filter(s =>
+  // useMemo : évite de refiltrer `suppliers` à chaque rendu, et l'ancien
+  // compte d'actifs (voir plus bas) était recalculé 3 fois pour une seule
+  // valeur affichée. Trouvé lors de l'audit de performance du 2026-09-29.
+  const filtered = useMemo(() => suppliers.filter(s =>
     !search ||
     s.name.toLowerCase().includes(search.toLowerCase()) ||
     (s.contactPerson || '').toLowerCase().includes(search.toLowerCase()) ||
     (s.phone || '').includes(search)
-  );
+  ), [suppliers, search]);
+  const activeCount = useMemo(() => suppliers.filter(s => s.isActive).length, [suppliers]);
 
   const openAdd = () => { setEditing(null); setForm(EMPTY); setFormError(null); setShowDialog(true); };
   const openEdit = (s: Supplier) => {
@@ -141,7 +145,7 @@ export default function SuppliersPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Fournisseurs</h1>
-            <p className="text-sm text-gray-500 mt-1">{suppliers.filter(s => s.isActive).length} fournisseur{suppliers.filter(s => s.isActive).length !== 1 ? 's' : ''} actif{suppliers.filter(s => s.isActive).length !== 1 ? 's' : ''}</p>
+            <p className="text-sm text-gray-500 mt-1">{activeCount} fournisseur{activeCount !== 1 ? 's' : ''} actif{activeCount !== 1 ? 's' : ''}</p>
           </div>
           {canManage && (
             <Button onClick={openAdd} className="bg-primary-600 hover:bg-primary-700 self-start sm:self-auto">

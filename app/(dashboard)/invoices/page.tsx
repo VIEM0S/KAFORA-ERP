@@ -150,8 +150,8 @@ export default function InvoicesPage() {
         soldeCredit: soldeCreditOf(sale),
       };
 
-      if (format === 'A4') generateInvoicePDF(invoiceData);
-      else generateThermalReceipt(invoiceData, format);
+      if (format === 'A4') await generateInvoicePDF(invoiceData);
+      else await generateThermalReceipt(invoiceData, format);
     } catch (e) {
       console.error('PDF error:', e);
       alert('Erreur lors de la génération du PDF');
@@ -189,7 +189,7 @@ export default function InvoicesPage() {
         notes: quote.notes || undefined,
       };
 
-      generateInvoicePDF(invoiceData);
+      await generateInvoicePDF(invoiceData);
     } catch (e) {
       console.error('PDF error:', e);
       alert('Erreur lors de la génération du PDF');

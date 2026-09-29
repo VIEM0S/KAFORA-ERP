@@ -1,10 +1,15 @@
 /**
  * Générateur de factures PDF — Kafora
  * Utilise jsPDF + jspdf-autotable
+ *
+ * jsPDF/jspdf-autotable ne sont importés qu'à l'appel (voir les deux
+ * fonctions exportées) plutôt qu'en haut de fichier : ces deux libs (~350 Ko)
+ * étaient sinon embarquées dans le bundle initial de l'écran POS et de
+ * l'écran Factures alors qu'un ticket/une facture n'est généré qu'à la toute
+ * fin d'une vente/consultation, jamais au chargement — trouvé lors de
+ * l'audit de performance du 2026-09-29 (même correction déjà appliquée à
+ * recharts et exceljs ailleurs dans l'app).
  */
-
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
 interface InvoiceItem {
   description: string;
@@ -88,7 +93,11 @@ function formatCFA(amount: number, currency = 'FCFA'): string {
   return `${number} ${label}`;
 }
 
-export function generateInvoicePDF(data: InvoiceData): void {
+export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
+  const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+  ]);
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const currency = data.currency || 'FCFA';
   const type = data.type || 'FACTURE';
@@ -306,7 +315,8 @@ export function generateInvoicePDF(data: InvoiceData): void {
  * Une bobine thermique n'a pas de hauteur de page fixe — on calcule donc la
  * hauteur du document à partir du nombre de lignes réelles à imprimer.
  */
-export function generateThermalReceipt(data: InvoiceData, widthMm: 58 | 80 = 80): void {
+export async function generateThermalReceipt(data: InvoiceData, widthMm: 58 | 80 = 80): Promise<void> {
+  const { default: jsPDF } = await import('jspdf');
   const currency = data.currency || 'FCFA';
   const type = data.type || 'REÇU';
   const margin = widthMm === 58 ? 3 : 4;

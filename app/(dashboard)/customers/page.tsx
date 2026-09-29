@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Plus, Search, Edit, Trash2, User, Building2, Eye,
   Phone, Mail, CreditCard, RefreshCw, X, ChevronDown, ShieldCheck
@@ -118,15 +118,19 @@ export default function CustomersPage() {
     );
   }, [tenantId]);
 
-  const filtered = customers.filter((c) => {
+  // useMemo : sans lui, ces deux passages sur `customers` (potentiellement
+  // des milliers de lignes) étaient recalculés à chaque rendu, y compris à
+  // chaque frappe dans un champ sans rapport. Trouvé lors de l'audit de
+  // performance du 2026-09-29.
+  const filtered = useMemo(() => customers.filter((c) => {
     const name = `${c.firstName || ''} ${c.lastName || ''} ${c.companyName || ''}`.toLowerCase();
     const matchSearch = !search || name.includes(search.toLowerCase()) || (c.phone || '').includes(search) || (c.code || '').toLowerCase().includes(search.toLowerCase());
     const matchType = filterType === 'all' || c.customerType === filterType;
     const matchStatus = filterStatus === 'all' || (filterStatus === 'active' && c.isActive) || (filterStatus === 'inactive' && !c.isActive);
     return matchSearch && matchType && matchStatus;
-  });
+  }), [customers, search, filterType, filterStatus]);
 
-  const totalCreditUsed = customers.reduce((s, c) => s + (c.creditUsed || 0), 0);
+  const totalCreditUsed = useMemo(() => customers.reduce((s, c) => s + (c.creditUsed || 0), 0), [customers]);
 
   const openAdd = () => {
     setEditing(null);

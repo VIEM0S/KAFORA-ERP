@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   CreditCard, Search, X, Plus, RefreshCw,
   AlertTriangle, Clock, CheckCircle2, ChevronRight,
@@ -153,27 +153,127 @@ export default function CreditsPage() {
   const [auditTrail, setAuditTrail] = useState<AuditLogEntry[]>([]);
 
   // ─── Listeners ─────────────────────────────────────────────────────────────
+  // Avant : un seul fetch sans .range() chargeait TOUTE la table credits du
+  // tenant (potentiellement des milliers de lignes d'historique), retéléchargée
+  // en entier à chaque événement temps réel — y compris pour l'onglet "Soldés"
+  // qui n'affiche qu'une poignée de lignes récentes. La liste affichée est
+  // désormais paginée et filtrée côté serveur (recherche + statut), et les
+  // statistiques (plus bas) sont alimentées par un fetch séparé, volontairement
+  // plus léger. Trouvé lors de l'audit de performance du 2026-09-29 — écran
+  // choisi comme démonstration ; clients/fournisseurs/dépenses/bons de
+  // commande/devis partagent le même défaut, non traités dans ce lot.
+  const PAGE_SIZE = 30;
+  const [hasMore, setHasMore] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const offsetRef = useRef(0);
+  const searchSeq = useRef(0);
 
+  // "En retard" n'existe pas comme valeur de statut en base (voir isEnRetard
+  // plus haut) : c'est PENDING/PARTIALLY_PAID + échéance dépassée. Reproduit
+  // ici en conditions SQL équivalentes pour filtrer côté serveur sans jamais
+  // désynchroniser la liste paginée, l'export CSV et l'onglet actif.
+  function applyStatusFilter<Q extends { in: (c: string, v: string[]) => Q; eq: (c: string, v: string) => Q; gte: (c: string, v: string) => Q; lt: (c: string, v: string) => Q }>(
+    q: Q, status: string
+  ): Q {
+    const now = new Date().toISOString();
+    if (status === 'active') return q.in('status', ['PENDING', 'PARTIALLY_PAID']).gte('due_date', now);
+    if (status === 'overdue') return q.in('status', ['PENDING', 'PARTIALLY_PAID']).lt('due_date', now);
+    if (status === 'paid') return q.eq('status', 'PAID');
+    return q;
+  }
+
+  // Marque automatiquement "en retard" côté client (voir isEnRetard) — commun
+  // à tous les points d'entrée (navigation, recherche) pour ne jamais afficher
+  // un statut incohérent selon le chemin de chargement emprunté.
+  const mapAndFlag = useCallback((rows: Parameters<typeof mapCredit>[0][]) =>
+    rows.map(r => mapCredit(r)).map(c => ({
+      ...c,
+      status: (isEnRetard(c.dueDate, c.status) ? 'OVERDUE' : c.status) as CreditStatus,
+    })), []);
+
+  // Navigation : première page, en écoute temps réel — seulement hors recherche
+  // (la recherche a son propre effet ci-dessous, sans watch(), même pattern
+  // que hooks/use-pos-data.ts).
+  useEffect(() => {
+    if (!tenantId || search.trim()) return;
+    setIsLoading(true);
+    return watch(
+      'credits',
+      () => applyStatusFilter(supabase.from('credits').select('*').eq('tenant_id', tenantId), filterStatus)
+        .order('due_date', { ascending: true }).range(0, PAGE_SIZE - 1),
+      rows => {
+        const mapped = mapAndFlag(rows);
+        setCredits(mapped);
+        offsetRef.current = mapped.length;
+        setHasMore(mapped.length === PAGE_SIZE);
+        setIsLoading(false);
+      },
+      () => setIsLoading(false),
+      `tenant_id=eq.${tenantId}`
+    );
+  }, [tenantId, filterStatus, search, mapAndFlag]);
+
+  const loadMore = useCallback(async () => {
+    if (!tenantId || search.trim()) return;
+    const from = offsetRef.current;
+    const { data } = await applyStatusFilter(supabase.from('credits').select('*').eq('tenant_id', tenantId), filterStatus)
+      .order('due_date', { ascending: true }).range(from, from + PAGE_SIZE - 1);
+    const mapped = mapAndFlag(data ?? []);
+    setCredits(prev => [...prev, ...mapped]);
+    offsetRef.current = from + mapped.length;
+    setHasMore(mapped.length === PAGE_SIZE);
+  }, [tenantId, filterStatus, search, mapAndFlag]);
+
+  // Recherche : exécutée côté serveur, débouncée — deux requêtes ciblées
+  // (nom, téléphone) fusionnées plutôt qu'un .or() dont l'échappement des
+  // virgules/parenthèses dans un terme utilisateur n'est pas fiable côté
+  // PostgREST (même choix que use-pos-data.ts).
+  useEffect(() => {
+    const term = search.trim();
+    if (!tenantId || !term) return;
+    const seq = ++searchSeq.current;
+    setIsSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const [byName, byPhone] = await Promise.all([
+          applyStatusFilter(supabase.from('credits').select('*').eq('tenant_id', tenantId), filterStatus)
+            .ilike('customer_name', `%${term}%`).order('due_date', { ascending: true }).limit(PAGE_SIZE),
+          applyStatusFilter(supabase.from('credits').select('*').eq('tenant_id', tenantId), filterStatus)
+            .ilike('customer_phone', `%${term}%`).order('due_date', { ascending: true }).limit(PAGE_SIZE),
+        ]);
+        if (seq !== searchSeq.current) return;
+        const merged = new Map<string, ReturnType<typeof mapCredit>>();
+        mapAndFlag(byName.data ?? []).forEach(c => merged.set(c.id, c));
+        mapAndFlag(byPhone.data ?? []).forEach(c => merged.set(c.id, c));
+        setCredits([...merged.values()]);
+        setHasMore(false);
+        setIsLoading(false);
+      } finally {
+        if (seq === searchSeq.current) setIsSearching(false);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [tenantId, filterStatus, search, mapAndFlag]);
+
+  // Statistiques : fetch séparé de la liste affichée, restreint aux statuts
+  // non soldés/non annulés — un crédit PAID/WRITTEN_OFF/CANCELLED ne
+  // contribue jamais à un solde en cours, donc jamais besoin de le
+  // rapatrier pour ce calcul (le solde en cours d'une boutique reste borné
+  // par son exposition active, contrairement à son historique complet qui
+  // grossit indéfiniment). Indépendant de la recherche/pagination/onglet
+  // actif : les statistiques du bandeau restent globales quel que soit le
+  // filtre affiché, exactement comme avant cette réorganisation.
+  const [statsCredits, setStatsCredits] = useState<Credit[]>([]);
   useEffect(() => {
     if (!tenantId) return;
     return watch(
       'credits',
-      () => supabase.from('credits').select('*').eq('tenant_id', tenantId).order('due_date', { ascending: true }),
-      rows => {
-        // Marquer automatiquement en retard côté client
-        const updated = rows.map(r => mapCredit(r)).map(c => ({
-          ...c,
-          status: (isEnRetard(c.dueDate, c.status)
-            ? 'OVERDUE'
-            : c.status) as CreditStatus,
-        }));
-        setCredits(updated);
-        setIsLoading(false);
-      },
+      () => supabase.from('credits').select('*').eq('tenant_id', tenantId).in('status', ['PENDING', 'PARTIALLY_PAID']),
+      rows => setStatsCredits(mapAndFlag(rows)),
       undefined,
       `tenant_id=eq.${tenantId}`
     );
-  }, [tenantId]);
+  }, [tenantId, mapAndFlag]);
 
   // Charger les versements du crédit sélectionné
   useEffect(() => {
@@ -221,30 +321,72 @@ export default function CreditsPage() {
     );
   }, [selected?.id]);
 
-  // ─── Filtres ────────────────────────────────────────────────────────────────
+  // `credits` est désormais déjà filtré côté serveur (recherche + onglet de
+  // statut, voir les effets plus haut) — plus besoin de le refiltrer ici.
 
-  const filtered = credits.filter(c => {
-    const matchSearch = !search ||
-      (c.customerName || '').toLowerCase().includes(search.toLowerCase()) ||
-      (c.customerPhone || '').includes(search);
-    const matchStatus =
-      filterStatus === 'all' ||
-      (filterStatus === 'active' && ['PENDING', 'PARTIALLY_PAID'].includes(c.status)) ||
-      (filterStatus === 'overdue' && c.status === 'OVERDUE') ||
-      (filterStatus === 'paid' && c.status === 'PAID');
-    return matchSearch && matchStatus;
-  });
+  // Export CSV : un utilisateur qui exporte s'attend à TOUT ce qui correspond
+  // au filtre actif, pas seulement la page actuellement chargée à l'écran —
+  // requête dédiée non bornée au clic, plutôt que d'exporter `credits` (la
+  // liste paginée). Reste raisonnable : c'est une action ponctuelle et
+  // délibérée, pas un fetch répété à chaque rendu/événement temps réel.
+  const [isExporting, setIsExporting] = useState(false);
+  const handleExportCsv = async () => {
+    if (!tenantId) return;
+    setIsExporting(true);
+    try {
+      const term = search.trim();
+      let rows: Parameters<typeof mapCredit>[0][];
+      if (!term) {
+        const { data } = await applyStatusFilter(supabase.from('credits').select('*').eq('tenant_id', tenantId), filterStatus)
+          .order('due_date', { ascending: true });
+        rows = data ?? [];
+      } else {
+        const [byName, byPhone] = await Promise.all([
+          applyStatusFilter(supabase.from('credits').select('*').eq('tenant_id', tenantId), filterStatus)
+            .ilike('customer_name', `%${term}%`).order('due_date', { ascending: true }),
+          applyStatusFilter(supabase.from('credits').select('*').eq('tenant_id', tenantId), filterStatus)
+            .ilike('customer_phone', `%${term}%`).order('due_date', { ascending: true }),
+        ]);
+        const merged = new Map<string, Parameters<typeof mapCredit>[0]>();
+        (byName.data ?? []).forEach(r => merged.set(r.id, r));
+        (byPhone.data ?? []).forEach(r => merged.set(r.id, r));
+        rows = [...merged.values()];
+      }
+      const all = mapAndFlag(rows);
+      exportToCsv(`credits-${new Date().toISOString().slice(0, 10)}`, all, [
+        { key: 'reference', label: 'N° créance' },
+        { key: 'customerName', label: 'Client' },
+        { key: 'customerPhone', label: 'Téléphone' },
+        { key: 'totalAmount', label: 'Montant total' },
+        { key: 'paidAmount', label: 'Total versé' },
+        { key: 'remainingAmount', label: 'Solde restant' },
+        { key: 'status', label: 'Statut', format: (v) => STATUS_CONFIG[v as keyof typeof STATUS_CONFIG]?.label || String(v) },
+        { key: 'dueDate', label: 'Échéance', format: (v) => v ? formatDate(v as Date) : '' },
+        { key: 'createdAt', label: 'Date création', format: (v) => formatDateForCsv(v) },
+      ]);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   // ─── Stats ──────────────────────────────────────────────────────────────────
+  // Source : statsCredits (fetch séparé, non paginé, restreint aux statuts
+  // actifs — voir plus haut), pas `credits` (liste affichée, paginée) : les
+  // stats du bandeau doivent rester globales même quand la liste ne montre
+  // qu'une page ou les résultats d'une recherche.
 
-  const totalEnCours = credits
-    .filter(c => ['PENDING', 'PARTIALLY_PAID'].includes(c.status))
-    .reduce((s, c) => s + c.remainingAmount, 0);
-  const nbActifs = credits.filter(c => ['PENDING', 'PARTIALLY_PAID'].includes(c.status)).length;
-  const nbEnRetard = credits.filter(c => c.status === 'OVERDUE').length;
-  const echeancesProches = credits.filter(
-    c => ['PENDING', 'PARTIALLY_PAID'].includes(c.status) && isEcheanceProche(c.dueDate)
-  );
+  const { totalEnCours, nbActifs, nbEnRetard, echeancesProches } = useMemo(() => {
+    // statsCredits est déjà restreint à PENDING/PARTIALLY_PAID côté serveur —
+    // "actifs" au sens strict (pas encore en retard) se distingue de
+    // "en retard" uniquement par le statut recalculé côté client (isEnRetard).
+    const actifs = statsCredits.filter(c => c.status !== 'OVERDUE');
+    return {
+      totalEnCours: actifs.reduce((s, c) => s + c.remainingAmount, 0),
+      nbActifs: actifs.length,
+      nbEnRetard: statsCredits.filter(c => c.status === 'OVERDUE').length,
+      echeancesProches: actifs.filter(c => isEcheanceProche(c.dueDate)),
+    };
+  }, [statsCredits]);
 
   // ─── Versement ──────────────────────────────────────────────────────────────
 
@@ -434,20 +576,10 @@ export default function CreditsPage() {
             variant="outline"
             size="sm"
             className="self-start sm:self-auto"
-            disabled={filtered.length === 0}
-            onClick={() => exportToCsv(`credits-${new Date().toISOString().slice(0, 10)}`, filtered, [
-              { key: 'reference', label: 'N° créance' },
-              { key: 'customerName', label: 'Client' },
-              { key: 'customerPhone', label: 'Téléphone' },
-              { key: 'totalAmount', label: 'Montant total' },
-              { key: 'paidAmount', label: 'Total versé' },
-              { key: 'remainingAmount', label: 'Solde restant' },
-              { key: 'status', label: 'Statut', format: (v) => STATUS_CONFIG[v as keyof typeof STATUS_CONFIG]?.label || String(v) },
-              { key: 'dueDate', label: 'Échéance', format: (v) => v ? formatDate(v as Date) : '' },
-              { key: 'createdAt', label: 'Date création', format: (v) => formatDateForCsv(v) },
-            ])}
+            disabled={isExporting || (credits.length === 0 && !hasMore)}
+            onClick={handleExportCsv}
           >
-            <Download className="h-4 w-4 mr-2" />
+            {isExporting ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
             Exporter CSV
           </Button>
         </div>
@@ -576,11 +708,11 @@ export default function CreditsPage() {
               <div className="flex items-center justify-center py-16 text-gray-400">
                 <RefreshCw className="h-5 w-5 animate-spin mr-2" />Chargement...
               </div>
-            ) : filtered.length === 0 ? (
+            ) : credits.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-gray-400">
                 <CreditCard className="h-12 w-12 mb-4 opacity-30" />
-                <p className="font-medium">Aucun crédit trouvé</p>
-                <p className="text-sm mt-1">Les crédits sont créés depuis le POS lors d&apos;un paiement en crédit</p>
+                <p className="font-medium">{isSearching ? 'Recherche en cours…' : 'Aucun crédit trouvé'}</p>
+                {!isSearching && <p className="text-sm mt-1">Les crédits sont créés depuis le POS lors d&apos;un paiement en crédit</p>}
               </div>
             ) : (
               <Table>
@@ -595,7 +727,7 @@ export default function CreditsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map(c => {
+                  {credits.map(c => {
                     const proche = isEcheanceProche(c.dueDate) && ['PENDING', 'PARTIALLY_PAID'].includes(c.status);
                     const pct = c.totalAmount > 0 ? ((c.totalAmount - c.remainingAmount) / c.totalAmount) * 100 : 0;
                     return (
@@ -657,6 +789,16 @@ export default function CreditsPage() {
                   })}
                 </TableBody>
               </Table>
+            )}
+            {hasMore && !search && (
+              <div className="flex justify-center py-4 border-t">
+                <button
+                  onClick={loadMore}
+                  className="px-4 py-2 text-sm font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100"
+                >
+                  Afficher plus de crédits
+                </button>
+              </div>
             )}
           </CardContent></Card>
 
