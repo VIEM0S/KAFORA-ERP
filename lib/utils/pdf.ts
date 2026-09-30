@@ -214,7 +214,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<void> {
   });
 
   // ─── Totaux ───────────────────────────────────────────────────────────────
-  const finalY = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
+  const finalY = (doc as InstanceType<typeof jsPDF> & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
   const totalsX = pageW - margin - 75;
   let totY = finalY;
 
