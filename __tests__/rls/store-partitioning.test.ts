@@ -55,11 +55,22 @@ describe('inventory — cloisonnement par magasin', () => {
     const otherAllowedStore = await createStore(db, tenant);
 
     await db.actingAs({ tenantId: tenant, role: 'REGIONAL_MANAGER', storeIds: [otherAllowedStore] });
+    // Depuis la migration 066, l'écriture directe sur inventory est bloquée
+    // pour TOUT authenticated (revoke insert/update/delete), pas seulement
+    // hors du périmètre de magasins — seules les RPC (adjust_inventory,
+    // pos_checkout...) écrivent le stock désormais, pour garantir qu'aucun
+    // changement n'échappe au journal inventory_movements. Le rejet arrive
+    // donc maintenant au niveau du privilège de table, avant même que la
+    // policy RLS par magasin ne soit évaluée — d'où "permission denied"
+    // plutôt que "row-level security". Toujours bloqué, juste par une
+    // couche plus stricte. Corrigé lors de l'audit de couverture de tests
+    // du 2026-09-30 (base locale restée en retard sur les migrations
+    // jusque-là, ce test n'avait pas tourné depuis).
     await expect(
       db.query(
         'insert into inventory (tenant_id, product_id, store_id, quantity) values ($1, $2, $3, $4)',
         [tenant, product, storeForbidden, 10]
       )
-    ).rejects.toThrow(/row-level security/i);
+    ).rejects.toThrow(/permission denied/i);
   });
 });
