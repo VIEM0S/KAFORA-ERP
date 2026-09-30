@@ -82,12 +82,10 @@ export function exportToCsv<T>(filename: string, rows: T[], columns: CsvColumn<T
   URL.revokeObjectURL(url);
 }
 
-/** Formatte une Date/Timestamp Firestore en JJ/MM/AAAA pour l'export. */
+/** Formatte une Date ou une date ISO en JJ/MM/AAAA pour l'export. */
 export function formatDateForCsv(value: unknown): string {
   if (!value) return '';
-  const date = (value as { toDate?: () => Date }).toDate
-    ? (value as { toDate: () => Date }).toDate()
-    : new Date(value as string | number);
+  const date = value instanceof Date ? value : new Date(value as string | number);
   if (isNaN(date.getTime())) return '';
   return date.toLocaleDateString('fr-FR');
 }

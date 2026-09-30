@@ -33,25 +33,26 @@ import { supabase } from '@/lib/supabase/client';
 import { watch } from '@/lib/supabase/watch';
 import { mapCredit, mapCreditPayment, mapAuditLog } from '@/lib/supabase/mappers';
 import { ROLE_PERMISSIONS } from '@/lib/constants';
+import { CREDIT_STATUS_LABELS } from '@/lib/constants/status-badges';
 import { canManageCustomerRecord, isOwnerOrAdmin, isManagerPlus } from '@/lib/auth/roles';
 import type { Credit, CreditPayment, CreditStatus, AuditLogEntry } from '@/lib/types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Clock }> = {
-  PENDING:        { label: 'En cours',      color: 'bg-amber-100 text-amber-700',  icon: Clock },
-  PARTIALLY_PAID: { label: 'Partiel',       color: 'bg-blue-100 text-blue-700',    icon: TrendingDown },
-  PAID:           { label: 'Soldé',         color: 'bg-green-100 text-green-700',  icon: CheckCircle2 },
-  OVERDUE:        { label: 'En retard',     color: 'bg-red-100 text-red-700',      icon: AlertTriangle },
-  WRITTEN_OFF:    { label: 'Annulé',        color: 'bg-gray-100 text-gray-600',    icon: Ban },
+// Libellé/couleur : voir lib/constants/status-badges.ts (source unique,
+// partagée avec customers/[id]/page.tsx — qui affichait "En cours" pour un
+// crédit WRITTEN_OFF avant cette unification, faute de connaître ce statut).
+// Seule l'icône reste locale : customers/[id]/page.tsx n'en affiche pas.
+const STATUS_ICONS: Record<string, typeof Clock> = {
+  PENDING: Clock, PARTIALLY_PAID: TrendingDown, PAID: CheckCircle2, OVERDUE: AlertTriangle, WRITTEN_OFF: Ban,
 };
 
 // Déclaré au niveau module (pas dans le composant de page) : redéfini à
 // chaque rendu, ce composant perdrait toute optimisation React et se
 // remonterait inutilement — voir react-hooks/static-components.
 function StatusBadge({ status }: { status: CreditStatus }) {
-  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.PENDING;
-  const Icon = cfg.icon;
+  const cfg = CREDIT_STATUS_LABELS[status] ?? CREDIT_STATUS_LABELS.PENDING;
+  const Icon = STATUS_ICONS[status] ?? Clock;
   return (
     <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium ${cfg.color}`}>
       <Icon className="h-3 w-3" />{cfg.label}
@@ -360,7 +361,7 @@ export default function CreditsPage() {
         { key: 'totalAmount', label: 'Montant total' },
         { key: 'paidAmount', label: 'Total versé' },
         { key: 'remainingAmount', label: 'Solde restant' },
-        { key: 'status', label: 'Statut', format: (v) => STATUS_CONFIG[v as keyof typeof STATUS_CONFIG]?.label || String(v) },
+        { key: 'status', label: 'Statut', format: (v) => CREDIT_STATUS_LABELS[v as string]?.label || String(v) },
         { key: 'dueDate', label: 'Échéance', format: (v) => v ? formatDate(v as Date) : '' },
         { key: 'createdAt', label: 'Date création', format: (v) => formatDateForCsv(v) },
       ]);

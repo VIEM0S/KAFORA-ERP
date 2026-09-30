@@ -21,17 +21,9 @@ export function formatCurrency(amount: number, currency: string = 'FCFA'): strin
   }).format(amount);
 }
 
-/** Convertit n'importe quel format de date Firestore/JS en objet Date */
+/** Convertit une date ISO (Postgres/PostgREST) ou un objet Date en Date. */
 function toDate(date: unknown): Date | null {
   if (!date) return null;
-  // Firestore Timestamp (client SDK)
-  if (typeof date === 'object' && date !== null && 'toDate' in date && typeof (date as { toDate: () => Date }).toDate === 'function') {
-    return (date as { toDate: () => Date }).toDate();
-  }
-  // Firestore Timestamp sérialisé {seconds, nanoseconds}
-  if (typeof date === 'object' && date !== null && 'seconds' in date && typeof (date as { seconds: number }).seconds === 'number') {
-    return new Date((date as { seconds: number }).seconds * 1000);
-  }
   if (typeof date === 'string') {
     const d = new Date(date);
     return isNaN(d.getTime()) ? null : d;

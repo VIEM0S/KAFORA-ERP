@@ -460,8 +460,8 @@ export interface CreditPayment {
 export interface Quote {
   id: string;
   tenantId: string;
-  // Jamais numéroté légalement (contrairement aux ventes/BC) — généré côté
-  // client par commodité d'affichage uniquement.
+  // Numéroté séquentiellement côté serveur depuis la migration 074
+  // (next_quote_reference()), au même titre que les ventes/BC.
   reference: string | null;
   customerId: string | null;
   customer?: Customer;
@@ -570,34 +570,6 @@ export interface DailyStat {
   marginByCategory: Record<string, number> | null;
   topProducts: { productId: string; name: string; revenue: number; quantity: number }[];
   costIncomplete: boolean;
-}
-
-export interface DashboardStats {
-  todaySales: number;
-  weeklyRevenue: number;
-  monthlyRevenue: number;
-  grossProfit: number;
-  netProfit: number;
-  stockValuation: number;
-  overdueCredits: number;
-  lowStockCount: number;
-  topProducts: TopProduct[];
-  recentSales: Sale[];
-  salesTrend: SalesTrendPoint[];
-}
-
-export interface TopProduct {
-  id: string;
-  name: string;
-  sku: string;
-  quantitySold: number;
-  revenue: number;
-}
-
-export interface SalesTrendPoint {
-  date: string;
-  sales: number;
-  revenue: number;
 }
 
 export type CashSessionStatus = 'OPEN' | 'CLOSED';

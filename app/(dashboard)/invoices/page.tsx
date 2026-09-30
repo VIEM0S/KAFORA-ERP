@@ -19,6 +19,7 @@ import { supabase } from '@/lib/supabase/client';
 // (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
 import { watch } from '@/lib/supabase/watch';
 import { mapSale, mapSaleItem, mapQuote, mapQuoteItem, SALE_ITEM_COLUMNS } from '@/lib/supabase/mappers';
+import { QUOTE_STATUS_LABELS } from '@/lib/constants/status-badges';
 import { generateInvoicePDF, generateThermalReceipt } from '@/lib/utils/pdf';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
@@ -215,14 +216,6 @@ export default function InvoicesPage() {
     CARD: 'Carte', CREDIT: 'Crédit',
   };
 
-  const QUOTE_STATUS: Record<string, { label: string; color: string }> = {
-    PENDING:   { label: 'En attente', color: 'bg-amber-100 text-amber-700' },
-    ACCEPTED:  { label: 'Accepté',    color: 'bg-blue-100 text-blue-700' },
-    CONVERTED: { label: 'Converti',   color: 'bg-green-100 text-green-700' },
-    REFUSED:   { label: 'Refusé',     color: 'bg-red-100 text-red-700' },
-    EXPIRED:   { label: 'Expiré',     color: 'bg-gray-100 text-gray-500' },
-  };
-
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -407,7 +400,7 @@ export default function InvoicesPage() {
                 </TableHeader>
                 <TableBody>
                   {filteredQuotes.map(q => {
-                    const st = QUOTE_STATUS[q.status] ?? QUOTE_STATUS.PENDING;
+                    const st = QUOTE_STATUS_LABELS[q.status] ?? QUOTE_STATUS_LABELS.PENDING;
                     return (
                       <TableRow key={q.id} className="hover:bg-gray-50">
                         <TableCell>

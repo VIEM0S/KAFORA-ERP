@@ -24,6 +24,7 @@ import { supabase } from '@/lib/supabase/client';
 // (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
 import { watch } from '@/lib/supabase/watch';
 import { mapQuote, mapQuoteItem, mapProduct, mapCustomer } from '@/lib/supabase/mappers';
+import { QUOTE_STATUS_LABELS } from '@/lib/constants/status-badges';
 import { useRouter } from 'next/navigation';
 import type { Product, Customer, Quote, QuoteStatus } from '@/lib/types';
 
@@ -31,19 +32,17 @@ import type { Product, Customer, Quote, QuoteStatus } from '@/lib/types';
  * QuoteItem (lib/types), qui est la ligne telle qu'enregistrée. */
 interface DraftLine { product: Product; quantity: number; unitPrice: number; }
 
-
-const STATUS_CONFIG: Record<QuoteStatus, { label: string; color: string; icon: typeof Clock }> = {
-  PENDING:   { label: 'En attente', color: 'bg-amber-100 text-amber-700',  icon: Clock },
-  ACCEPTED:  { label: 'Accepté',    color: 'bg-blue-100 text-blue-700',    icon: CheckCircle2 },
-  CONVERTED: { label: 'Converti',   color: 'bg-green-100 text-green-700',  icon: ShoppingCart },
-  REFUSED:   { label: 'Refusé',     color: 'bg-red-100 text-red-700',      icon: XCircle },
-  EXPIRED:   { label: 'Expiré',     color: 'bg-gray-100 text-gray-500',    icon: AlertCircle },
+// Libellé/couleur : voir lib/constants/status-badges.ts (source unique,
+// partagée avec invoices/page.tsx et customers/[id]/page.tsx). Seule
+// l'icône reste locale : ces deux autres écrans n'en affichent pas.
+const STATUS_ICONS: Record<QuoteStatus, typeof Clock> = {
+  PENDING: Clock, ACCEPTED: CheckCircle2, CONVERTED: ShoppingCart, REFUSED: XCircle, EXPIRED: AlertCircle,
 };
 
 // Niveau module (pas dans la page) — voir react-hooks/static-components.
 function StatusBadge({ status }: { status: QuoteStatus }) {
-  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.PENDING;
-  const Icon = cfg.icon;
+  const cfg = QUOTE_STATUS_LABELS[status] ?? QUOTE_STATUS_LABELS.PENDING;
+  const Icon = STATUS_ICONS[status] ?? Clock;
   return <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium ${cfg.color}`}><Icon className="h-3 w-3" />{cfg.label}</span>;
 }
 
@@ -262,7 +261,7 @@ export default function QuotesPage() {
 
         {/* Filtres statut */}
         <div className="flex gap-2 flex-wrap">
-          {[{ val: 'all', label: 'Tous' }, ...Object.entries(STATUS_CONFIG).map(([val, cfg]) => ({ val, label: cfg.label }))].map(opt => (
+          {[{ val: 'all', label: 'Tous' }, ...Object.entries(QUOTE_STATUS_LABELS).map(([val, cfg]) => ({ val, label: cfg.label }))].map(opt => (
             <Button key={opt.val} variant={filterStatus === opt.val ? 'default' : 'outline'} size="sm"
               onClick={() => setFilterStatus(opt.val)}
               className={filterStatus === opt.val ? 'bg-primary-600 hover:bg-primary-700' : ''}>

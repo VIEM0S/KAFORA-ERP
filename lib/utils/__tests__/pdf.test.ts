@@ -54,8 +54,13 @@ function baseData(overrides?: Partial<InvoiceData>): InvoiceData {
 }
 
 describe('generateThermalReceipt', () => {
-  it("n'affiche jamais un montant tronqué (espace insécable / séparateur exotique)", () => {
-    generateThermalReceipt(baseData({
+  // generateThermalReceipt est désormais async (jsPDF chargé dynamiquement à
+  // l'appel — voir lib/utils/pdf.ts, lazy-load trouvé lors de l'audit de
+  // performance du 2026-09-29) : chaque appel doit être awaité, sinon les
+  // assertions s'exécutent avant que l'import dynamique ait résolu et que le
+  // document ait réellement été écrit.
+  it("n'affiche jamais un montant tronqué (espace insécable / séparateur exotique)", async () => {
+    await generateThermalReceipt(baseData({
       items: [{ description: 'Article', quantity: 1, unitPrice: 1234567, total: 1234567 }],
       subtotal: 1234567, total: 1234567, amountReceived: 1234567,
     }), 80);
@@ -67,18 +72,18 @@ describe('generateThermalReceipt', () => {
     expect(joined).toContain('1 234 567 FCFA');
   });
 
-  it('affiche "FCFA" et jamais le code ISO "XOF" brut', () => {
-    generateThermalReceipt(baseData({ currency: 'XOF' }), 80);
+  it('affiche "FCFA" et jamais le code ISO "XOF" brut', async () => {
+    await generateThermalReceipt(baseData({ currency: 'XOF' }), 80);
     const joined = textCalls.join(' | ');
     expect(joined).toContain('FCFA');
     expect(joined).not.toContain('XOF');
   });
 
-  it('scinde libellé et montant sur deux lignes quand ils ne tiennent pas sur un ticket 58mm (régression)', () => {
+  it('scinde libellé et montant sur deux lignes quand ils ne tiennent pas sur un ticket 58mm (régression)', async () => {
     // Cas exact documenté dans le code source : "Solde en crédit" +
     // "58 500 FCFA" ne tenait pas sur une ligne de 58mm et le montant
     // partait tronqué avant le correctif.
-    generateThermalReceipt(baseData({
+    await generateThermalReceipt(baseData({
       paymentMethod: 'CREDIT',
       total: 60000,
       soldeCredit: 58500,
@@ -91,8 +96,8 @@ describe('generateThermalReceipt', () => {
     expect(textCalls.some(t => t.includes('Solde en crédit'))).toBe(true);
   });
 
-  it('affiche le montant versé le jour même sur une vente à crédit avec acompte', () => {
-    generateThermalReceipt(baseData({
+  it('affiche le montant versé le jour même sur une vente à crédit avec acompte', async () => {
+    await generateThermalReceipt(baseData({
       paymentMethod: 'CREDIT',
       total: 20000,
       soldeCredit: 12000, // acompte de 8000 versé
@@ -103,8 +108,8 @@ describe('generateThermalReceipt', () => {
     expect(textCalls.some(t => t.includes('Versé ce jour'))).toBe(true);
   });
 
-  it("n'affiche pas de ligne 'Versé ce jour' pour une vente à crédit sans acompte", () => {
-    generateThermalReceipt(baseData({
+  it("n'affiche pas de ligne 'Versé ce jour' pour une vente à crédit sans acompte", async () => {
+    await generateThermalReceipt(baseData({
       paymentMethod: 'CREDIT',
       total: 20000,
       soldeCredit: 20000,
@@ -114,8 +119,8 @@ describe('generateThermalReceipt', () => {
     expect(textCalls.some(t => t.includes('Versé ce jour'))).toBe(false);
   });
 
-  it('affiche la monnaie rendue pour un paiement CASH', () => {
-    generateThermalReceipt(baseData({
+  it('affiche la monnaie rendue pour un paiement CASH', async () => {
+    await generateThermalReceipt(baseData({
       paymentMethod: 'CASH', total: 15000, amountReceived: 20000, change: 5000,
     }), 80);
 
@@ -123,8 +128,8 @@ describe('generateThermalReceipt', () => {
     expect(textCalls.some(t => t.includes('Monnaie rendue'))).toBe(true);
   });
 
-  it('affiche la remise avec son pourcentage', () => {
-    generateThermalReceipt(baseData({
+  it('affiche la remise avec son pourcentage', async () => {
+    await generateThermalReceipt(baseData({
       subtotal: 20000, discountPercent: 15, discountAmount: 3000, total: 17000, amountReceived: 17000,
     }), 80);
 
@@ -132,9 +137,9 @@ describe('generateThermalReceipt', () => {
     expect(textCalls).toContain('-3 000 FCFA');
   });
 
-  it('renvoie à la ligne un nom de produit trop long plutôt que de le couper', () => {
+  it('renvoie à la ligne un nom de produit trop long plutôt que de le couper', async () => {
     const longName = 'Sac de ciment CIMAF 50kg qualité supérieure import';
-    generateThermalReceipt(baseData({
+    await generateThermalReceipt(baseData({
       items: [{ description: longName, quantity: 2, unitPrice: 5000, total: 10000 }],
       subtotal: 10000, total: 10000, amountReceived: 10000,
     }), 58);
@@ -146,18 +151,18 @@ describe('generateThermalReceipt', () => {
     expect(reconstructed).toContain(longName.split(' ').at(-1)!);
   });
 
-  it("n'affiche pas le nom du client pour une vente comptoir sans client identifié", () => {
-    generateThermalReceipt(baseData({ customerName: 'Client comptoir' }), 80);
+  it("n'affiche pas le nom du client pour une vente comptoir sans client identifié", async () => {
+    await generateThermalReceipt(baseData({ customerName: 'Client comptoir' }), 80);
     expect(textCalls.some(t => t.includes('Client comptoir'))).toBe(false);
   });
 
-  it('affiche le nom du client quand il est identifié', () => {
-    generateThermalReceipt(baseData({ customerName: 'Amadou Traoré' }), 80);
+  it('affiche le nom du client quand il est identifié', async () => {
+    await generateThermalReceipt(baseData({ customerName: 'Amadou Traoré' }), 80);
     expect(textCalls.some(t => t === 'Client : Amadou Traoré')).toBe(true);
   });
 
-  it('fonctionne identiquement en 58mm et 80mm sans lever d\'exception', () => {
-    expect(() => generateThermalReceipt(baseData(), 58)).not.toThrow();
-    expect(() => generateThermalReceipt(baseData(), 80)).not.toThrow();
+  it('fonctionne identiquement en 58mm et 80mm sans lever d\'exception', async () => {
+    await expect(generateThermalReceipt(baseData(), 58)).resolves.not.toThrow();
+    await expect(generateThermalReceipt(baseData(), 80)).resolves.not.toThrow();
   });
 });

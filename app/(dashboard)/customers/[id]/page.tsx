@@ -16,30 +16,13 @@ import { useAuthStore } from '@/hooks/store';
 import { useDataErrors } from '@/hooks/use-data-errors';
 import { supabase } from '@/lib/supabase/client';
 import { mapCustomer, mapSale, mapCredit, mapQuote, mapAuditLog } from '@/lib/supabase/mappers';
+import { CREDIT_STATUS_LABELS, QUOTE_STATUS_LABELS } from '@/lib/constants/status-badges';
 import type { Customer, Sale, Credit, Quote, AuditLogEntry } from '@/lib/types';
 
 // Piste d'audit (migration 045) — ce qui alimente cet onglet pour un
 // client : uniquement les changements de limite de crédit aujourd'hui.
 const AUDIT_ACTION_LABELS: Record<string, string> = {
   CREDIT_LIMIT_CHANGED: 'Limite de crédit modifiée',
-};
-
-const CREDIT_STATUS: Record<string, { label: string; color: string }> = {
-  PENDING:        { label: 'En cours',  color: 'bg-amber-100 text-amber-700' },
-  PARTIALLY_PAID: { label: 'Partiel',   color: 'bg-blue-100 text-blue-700' },
-  PAID:           { label: 'Soldé',     color: 'bg-green-100 text-green-700' },
-  OVERDUE:        { label: 'En retard', color: 'bg-red-100 text-red-700' },
-};
-
-// Mêmes libellés que app/(dashboard)/quotes/page.tsx (STATUS_CONFIG) — sans
-// quoi cet onglet affichait le statut brut ("CONVERTED", "ACCEPTED"...) au
-// lieu du libellé français utilisé partout ailleurs dans l'app.
-const QUOTE_STATUS: Record<string, { label: string; color: string }> = {
-  PENDING:   { label: 'En attente', color: 'bg-amber-100 text-amber-700' },
-  ACCEPTED:  { label: 'Accepté',    color: 'bg-blue-100 text-blue-700' },
-  CONVERTED: { label: 'Converti',   color: 'bg-green-100 text-green-700' },
-  REFUSED:   { label: 'Refusé',     color: 'bg-red-100 text-red-700' },
-  EXPIRED:   { label: 'Expiré',     color: 'bg-gray-100 text-gray-500' },
 };
 
 export default function CustomerDetailPage() {
@@ -281,7 +264,7 @@ export default function CustomerDetailPage() {
                   </TableHeader>
                   <TableBody>
                     {credits.map(c => {
-                      const cfg = CREDIT_STATUS[c.status] ?? CREDIT_STATUS.PENDING;
+                      const cfg = CREDIT_STATUS_LABELS[c.status] ?? CREDIT_STATUS_LABELS.PENDING;
                       return (
                         <TableRow key={c.id}>
                           <TableCell className="text-sm text-gray-500">{formatDate(c.createdAt)}</TableCell>
@@ -318,7 +301,7 @@ export default function CustomerDetailPage() {
                   </TableHeader>
                   <TableBody>
                     {quotes.map(q => {
-                      const cfg = QUOTE_STATUS[q.status] ?? QUOTE_STATUS.PENDING;
+                      const cfg = QUOTE_STATUS_LABELS[q.status] ?? QUOTE_STATUS_LABELS.PENDING;
                       return (
                         <TableRow key={q.id}>
                           <TableCell className="text-sm text-gray-500">{formatDate(q.createdAt)}</TableCell>

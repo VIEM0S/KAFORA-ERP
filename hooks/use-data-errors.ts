@@ -73,26 +73,3 @@ export const useDataErrors = create<DataErrorState>((set) => ({
       return { activeWatchers, errors };
     }),
 }));
-
-/**
- * Fabrique les deux fonctions à passer à `onSnapshot` pour une écoute donnée.
- *
- * Usage :
- *   const [ok, ko] = snapshotHandlers('inventaire', snap => { ... });
- *   onSnapshot(q, ok, ko);
- *
- * Le succès efface automatiquement une éventuelle erreur précédente.
- */
-export function snapshotHandlers<T>(
-  key: string,
-  onData: (snap: T) => void
-): [(snap: T) => void, (err: unknown) => void] {
-  const { reportError, clearError } = useDataErrors.getState();
-  return [
-    (snap: T) => {
-      clearError(key);
-      onData(snap);
-    },
-    (err: unknown) => reportError(key, err),
-  ];
-}

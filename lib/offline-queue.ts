@@ -88,10 +88,6 @@ export function updateQueueItem(localId: string, patch: Partial<QueuedSale>) {
   writeQueue(queue);
 }
 
-export function queueCount(): number {
-  return readQueue().length;
-}
-
 /**
  * Tente de synchroniser toute la file vers /api/pos/checkout.
  * Retourne le nombre de ventes synchronisées avec succès.

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { CartItem, Product, Customer, Store, User, Tenant, Notification } from '@/lib/types';
+import type { CartItem, Product, Customer, Store, User, Tenant } from '@/lib/types';
 
 // ─── Auth Store ───────────────────────────────────────────────────────────────
 // Stocke uniquement les données de profil (pas de token — géré par cookie HttpOnly)
@@ -249,50 +249,6 @@ export const useCartStore = create<CartState>()(
     }
   )
 );
-
-// ─── Notification Store ───────────────────────────────────────────────────────
-
-interface NotificationState {
-  notifications: Notification[];
-  unreadCount: number;
-  addNotification: (notification: Notification) => void;
-  markAsRead: (id: string) => void;
-  markAllAsRead: () => void;
-  setNotifications: (notifications: Notification[]) => void;
-  clearNotifications: () => void;
-}
-
-export const useNotificationStore = create<NotificationState>((set, get) => ({
-  notifications: [],
-  unreadCount: 0,
-  addNotification: (notification) =>
-    set({
-      notifications: [notification, ...get().notifications],
-      unreadCount: get().unreadCount + 1,
-    }),
-  markAsRead: (id) =>
-    set({
-      notifications: get().notifications.map((n) =>
-        n.id === id ? { ...n, isRead: true, readAt: new Date() } : n
-      ),
-      unreadCount: Math.max(0, get().unreadCount - 1),
-    }),
-  markAllAsRead: () =>
-    set({
-      notifications: get().notifications.map((n) => ({
-        ...n,
-        isRead: true,
-        readAt: new Date(),
-      })),
-      unreadCount: 0,
-    }),
-  setNotifications: (notifications) =>
-    set({
-      notifications,
-      unreadCount: notifications.filter((n) => !n.isRead).length,
-    }),
-  clearNotifications: () => set({ notifications: [], unreadCount: 0 }),
-}));
 
 // ─── UI Store ─────────────────────────────────────────────────────────────────
 
