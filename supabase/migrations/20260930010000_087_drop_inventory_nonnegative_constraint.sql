@@ -1,0 +1,21 @@
+-- Retire la contrainte CHECK (quantity >= 0) ajoutee en migration 085. Elle
+-- a ete posee comme pure defense-en-profondeur ("aucun bug actif trouve a
+-- l'epoque") mais s'est revelee entrer en conflit avec un comportement
+-- metier deliberement tolerant : pos_checkout() autorise EXPLICITEMENT le
+-- stock a devenir negatif pour une vente resynchronisee hors-ligne
+-- (p_offline_sync_id is not null) -- le negatif est alors signale comme un
+-- "conflit de stock" a regulariser plus tard, PAS bloque (voir migration
+-- 043, commentaire "les conflits de stock existants ... jamais bloquant").
+-- La contrainte transformait ce cas legitime en une erreur de contrainte
+-- brute AVANT meme que le code plpgsql n'ait la main pour decider de
+-- bloquer ou tolerer -- cassant a la fois ship_transfer() (message
+-- INSUFFICIENT_STOCK convivial remplace par une erreur Postgres generique)
+-- et, plus grave, la resynchronisation hors-ligne de pos_checkout() elle-
+-- meme (une vente hors-ligne avec conflit de stock aurait du se resynchroniser
+-- avec un conflit signale, pas echouer purement et simplement). Trouve en
+-- ecrivant les tests RPC de ship_transfer -- jamais detecte avant faute de
+-- test exercant ce chemin depuis la pose de la contrainte. Les deux RPC
+-- encodent deja elles-memes la regle correcte et nuancee (bloquant en
+-- ligne, tolerant hors-ligne) -- une contrainte de table globale ne peut
+-- pas exprimer cette nuance, elle n'avait donc pas sa place ici.
+alter table inventory drop constraint inventory_quantity_nonnegative;
