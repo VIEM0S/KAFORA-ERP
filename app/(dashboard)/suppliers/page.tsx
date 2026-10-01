@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Plus, Search, Edit, Trash2, Truck, Phone, Mail,
   RefreshCw, X, ChevronDown, MapPin, Globe
@@ -57,27 +57,98 @@ export default function SuppliersPage() {
   const [deleteTarget, setDeleteTarget] = useState<Supplier | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Avant : un seul fetch sans .range() chargeait TOUTE la table suppliers
+  // du tenant, retéléchargée en entier à chaque événement temps réel. La
+  // liste affichée est désormais paginée et la recherche exécutée côté
+  // serveur ; le compte d'actifs (bandeau) est alimenté par un fetch séparé,
+  // volontairement léger (une seule colonne). Trouvé lors de l'audit de
+  // performance du 2026-09-29, traité comme l'écran Crédits — voir ce
+  // fichier pour le même motif complet.
+  const PAGE_SIZE = 30;
+  const [hasMore, setHasMore] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const offsetRef = useRef(0);
+  const searchSeq = useRef(0);
+
+  // Navigation : première page, en écoute temps réel — hors recherche.
+  useEffect(() => {
+    if (!tenantId || search.trim()) return;
+    setIsLoading(true);
+    return watch(
+      'suppliers',
+      () => supabase.from('suppliers').select('*').eq('tenant_id', tenantId).order('name', { ascending: true }).range(0, PAGE_SIZE - 1),
+      rows => {
+        const mapped = rows.map(mapSupplier);
+        setSuppliers(mapped);
+        offsetRef.current = mapped.length;
+        setHasMore(mapped.length === PAGE_SIZE);
+        setIsLoading(false);
+      },
+      () => setIsLoading(false),
+      `tenant_id=eq.${tenantId}`
+    );
+  }, [tenantId, search]);
+
+  const loadMore = useCallback(async () => {
+    if (!tenantId || search.trim()) return;
+    const from = offsetRef.current;
+    const { data } = await supabase.from('suppliers').select('*').eq('tenant_id', tenantId)
+      .order('name', { ascending: true }).range(from, from + PAGE_SIZE - 1);
+    const mapped = (data ?? []).map(mapSupplier);
+    setSuppliers(prev => [...prev, ...mapped]);
+    offsetRef.current = from + mapped.length;
+    setHasMore(mapped.length === PAGE_SIZE);
+  }, [tenantId, search]);
+
+  // Recherche : exécutée côté serveur, débouncée — trois requêtes ciblées
+  // (nom, contact, téléphone) fusionnées plutôt qu'un .or() dont
+  // l'échappement des virgules/parenthèses dans un terme utilisateur n'est
+  // pas fiable côté PostgREST (même choix que credits/customers).
+  useEffect(() => {
+    const term = search.trim();
+    if (!tenantId || !term) return;
+    const seq = ++searchSeq.current;
+    setIsSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const [byName, byContact, byPhone] = await Promise.all([
+          supabase.from('suppliers').select('*').eq('tenant_id', tenantId).ilike('name', `%${term}%`).order('name').limit(PAGE_SIZE),
+          supabase.from('suppliers').select('*').eq('tenant_id', tenantId).ilike('contact_person', `%${term}%`).limit(PAGE_SIZE),
+          supabase.from('suppliers').select('*').eq('tenant_id', tenantId).ilike('phone', `%${term}%`).limit(PAGE_SIZE),
+        ]);
+        if (seq !== searchSeq.current) return;
+        const merged = new Map<string, Supplier>();
+        (byName.data ?? []).forEach(r => merged.set(r.id, mapSupplier(r)));
+        (byContact.data ?? []).forEach(r => merged.set(r.id, mapSupplier(r)));
+        (byPhone.data ?? []).forEach(r => merged.set(r.id, mapSupplier(r)));
+        setSuppliers([...merged.values()]);
+        setHasMore(false);
+        setIsLoading(false);
+      } finally {
+        if (seq === searchSeq.current) setIsSearching(false);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [tenantId, search]);
+
+  // `suppliers` est désormais déjà filtré côté serveur (recherche) — plus
+  // besoin de le refiltrer ici.
+
+  // Compte d'actifs : fetch séparé, non paginé mais réduit à une seule
+  // colonne — indépendant de la recherche/pagination affichée.
+  const [activeStatuses, setActiveStatuses] = useState<boolean[]>([]);
   useEffect(() => {
     if (!tenantId) return;
     return watch(
       'suppliers',
-      () => supabase.from('suppliers').select('*').eq('tenant_id', tenantId).order('name', { ascending: true }),
-      rows => { setSuppliers(rows.map(mapSupplier)); setIsLoading(false); },
+      () => supabase.from('suppliers').select('is_active').eq('tenant_id', tenantId),
+      rows => setActiveStatuses(rows.map(r => r.is_active)),
       undefined,
       `tenant_id=eq.${tenantId}`
     );
   }, [tenantId]);
-
-  // useMemo : évite de refiltrer `suppliers` à chaque rendu, et l'ancien
-  // compte d'actifs (voir plus bas) était recalculé 3 fois pour une seule
-  // valeur affichée. Trouvé lors de l'audit de performance du 2026-09-29.
-  const filtered = useMemo(() => suppliers.filter(s =>
-    !search ||
-    s.name.toLowerCase().includes(search.toLowerCase()) ||
-    (s.contactPerson || '').toLowerCase().includes(search.toLowerCase()) ||
-    (s.phone || '').includes(search)
-  ), [suppliers, search]);
-  const activeCount = useMemo(() => suppliers.filter(s => s.isActive).length, [suppliers]);
+  const activeCount = useMemo(() => activeStatuses.filter(Boolean).length, [activeStatuses]);
+  const totalCount = activeStatuses.length;
 
   const openAdd = () => { setEditing(null); setForm(EMPTY); setFormError(null); setShowDialog(true); };
   const openEdit = (s: Supplier) => {
@@ -165,11 +236,11 @@ export default function SuppliersPage() {
         <Card><CardContent className="p-0">
           {isLoading ? (
             <div className="flex items-center justify-center py-16 text-gray-400"><RefreshCw className="h-5 w-5 animate-spin mr-2" />Chargement...</div>
-          ) : filtered.length === 0 ? (
+          ) : suppliers.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <Truck className="h-12 w-12 mb-4 opacity-30" />
-              <p className="font-medium">Aucun fournisseur</p>
-              {suppliers.length === 0 && canManage && <Button onClick={openAdd} variant="outline" className="mt-4"><Plus className="h-4 w-4 mr-2" />Ajouter votre premier fournisseur</Button>}
+              <p className="font-medium">{isSearching ? 'Recherche en cours…' : 'Aucun fournisseur'}</p>
+              {!isSearching && totalCount === 0 && canManage && <Button onClick={openAdd} variant="outline" className="mt-4"><Plus className="h-4 w-4 mr-2" />Ajouter votre premier fournisseur</Button>}
             </div>
           ) : (
             <Table>
@@ -184,7 +255,7 @@ export default function SuppliersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map(s => (
+                {suppliers.map(s => (
                   <TableRow key={s.id} className="hover:bg-gray-50">
                     <TableCell>
                       <div className="flex items-center gap-3">
@@ -238,6 +309,16 @@ export default function SuppliersPage() {
                 ))}
               </TableBody>
             </Table>
+          )}
+          {hasMore && !search && (
+            <div className="flex justify-center py-4 border-t">
+              <button
+                onClick={loadMore}
+                className="px-4 py-2 text-sm font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100"
+              >
+                Afficher plus de fournisseurs
+              </button>
+            </div>
           )}
         </CardContent></Card>
       </div>

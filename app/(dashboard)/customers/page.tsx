@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Plus, Search, Edit, Trash2, User, Building2, Eye,
   Phone, Mail, CreditCard, RefreshCw, X, ChevronDown, ShieldCheck
@@ -52,9 +52,12 @@ const EMPTY: CustomerForm = {
   creditLimit: '0', notes: '', isActive: true,
 };
 
-function genCode(customers: Customer[]) {
-  const max = customers.reduce((m, c) => {
-    const n = parseInt(c.code.replace(/\D/g, '')) || 0;
+// Prend les CODES (pas les clients complets) : avec la liste paginée, l'objet
+// `customers` ne contient plus que la page affichée — il faut le code max
+// sur TOUT le tenant, fourni par le fetch stats séparé (voir plus bas).
+function genCode(codes: string[]) {
+  const max = codes.reduce((m, code) => {
+    const n = parseInt((code || '').replace(/\D/g, '')) || 0;
     return n > m ? n : m;
   }, 0);
   return `CLI-${String(max + 1).padStart(3, '0')}`;
@@ -107,34 +110,126 @@ export default function CustomersPage() {
     }
   };
 
+  // Avant : un seul fetch sans .range() chargeait TOUTE la table customers
+  // du tenant, retéléchargée en entier à chaque événement temps réel. La
+  // liste affichée est désormais paginée et filtrée côté serveur (recherche
+  // + type + statut) ; les statistiques du bandeau (et la génération du
+  // prochain code client, qui a besoin du MAX sur tout le tenant) sont
+  // alimentées par un fetch séparé, volontairement léger (colonnes
+  // réduites). Trouvé lors de l'audit de performance du 2026-09-29, traité
+  // comme l'écran Crédits — voir ce fichier pour le même motif complet.
+  const PAGE_SIZE = 30;
+  const [hasMore, setHasMore] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const offsetRef = useRef(0);
+  const searchSeq = useRef(0);
+
+  function applyCustomerFilters<Q extends { eq: (c: string, v: string | boolean) => Q }>(
+    q: Q, type: string, status: string
+  ): Q {
+    let r = q;
+    if (type !== 'all') r = r.eq('customer_type', type);
+    if (status !== 'all') r = r.eq('is_active', status === 'active');
+    return r;
+  }
+
+  // Navigation : première page, en écoute temps réel — hors recherche (la
+  // recherche a son propre effet ci-dessous, sans watch(), même pattern que
+  // hooks/use-pos-data.ts).
+  useEffect(() => {
+    if (!tenantId || search.trim()) return;
+    setIsLoading(true);
+    return watch(
+      'customers',
+      () => applyCustomerFilters(supabase.from('customers').select('*').eq('tenant_id', tenantId), filterType, filterStatus)
+        .order('created_at', { ascending: false }).range(0, PAGE_SIZE - 1),
+      rows => {
+        const mapped = rows.map(mapCustomer);
+        setCustomers(mapped);
+        offsetRef.current = mapped.length;
+        setHasMore(mapped.length === PAGE_SIZE);
+        setIsLoading(false);
+      },
+      () => setIsLoading(false),
+      `tenant_id=eq.${tenantId}`
+    );
+  }, [tenantId, filterType, filterStatus, search]);
+
+  const loadMore = useCallback(async () => {
+    if (!tenantId || search.trim()) return;
+    const from = offsetRef.current;
+    const { data } = await applyCustomerFilters(supabase.from('customers').select('*').eq('tenant_id', tenantId), filterType, filterStatus)
+      .order('created_at', { ascending: false }).range(from, from + PAGE_SIZE - 1);
+    const mapped = (data ?? []).map(mapCustomer);
+    setCustomers(prev => [...prev, ...mapped]);
+    offsetRef.current = from + mapped.length;
+    setHasMore(mapped.length === PAGE_SIZE);
+  }, [tenantId, filterType, filterStatus, search]);
+
+  // Recherche : exécutée côté serveur, débouncée — trois requêtes ciblées
+  // (nom, téléphone, code) fusionnées plutôt qu'un .or() dont l'échappement
+  // des virgules/parenthèses dans un terme utilisateur n'est pas fiable côté
+  // PostgREST (même choix que credits/page.tsx et use-pos-data.ts).
+  useEffect(() => {
+    const term = search.trim();
+    if (!tenantId || !term) return;
+    const seq = ++searchSeq.current;
+    setIsSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const [byName, byPhone, byCode] = await Promise.all([
+          applyCustomerFilters(supabase.from('customers').select('*').eq('tenant_id', tenantId), filterType, filterStatus)
+            .ilike('search_name', `%${term.toLowerCase()}%`).order('search_name').limit(PAGE_SIZE),
+          applyCustomerFilters(supabase.from('customers').select('*').eq('tenant_id', tenantId), filterType, filterStatus)
+            .ilike('phone', `%${term}%`).limit(PAGE_SIZE),
+          applyCustomerFilters(supabase.from('customers').select('*').eq('tenant_id', tenantId), filterType, filterStatus)
+            .ilike('code', `%${term}%`).limit(PAGE_SIZE),
+        ]);
+        if (seq !== searchSeq.current) return;
+        const merged = new Map<string, Customer>();
+        (byName.data ?? []).forEach(r => merged.set(r.id, mapCustomer(r)));
+        (byPhone.data ?? []).forEach(r => merged.set(r.id, mapCustomer(r)));
+        (byCode.data ?? []).forEach(r => merged.set(r.id, mapCustomer(r)));
+        setCustomers([...merged.values()]);
+        setHasMore(false);
+        setIsLoading(false);
+      } finally {
+        if (seq === searchSeq.current) setIsSearching(false);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [tenantId, filterType, filterStatus, search]);
+
+  // `customers` est désormais déjà filtré côté serveur (recherche + type +
+  // statut) — plus besoin de le refiltrer ici.
+
+  // Statistiques + génération de code : fetch séparé, non paginé mais
+  // volontairement réduit aux colonnes nécessaires (pas select('*')) —
+  // indépendant de la recherche/pagination/filtre affiché, pour que le
+  // bandeau et le prochain code client restent globaux et justes quel que
+  // soit ce qui est affiché dans le tableau.
+  const [statsRows, setStatsRows] = useState<{ code: string; customer_type: string; credit_used: number; is_active: boolean }[]>([]);
   useEffect(() => {
     if (!tenantId) return;
     return watch(
       'customers',
-      () => supabase.from('customers').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }),
-      rows => { setCustomers(rows.map(mapCustomer)); setIsLoading(false); },
+      () => supabase.from('customers').select('code, customer_type, credit_used, is_active').eq('tenant_id', tenantId),
+      rows => setStatsRows(rows as typeof statsRows),
       undefined,
       `tenant_id=eq.${tenantId}`
     );
   }, [tenantId]);
 
-  // useMemo : sans lui, ces deux passages sur `customers` (potentiellement
-  // des milliers de lignes) étaient recalculés à chaque rendu, y compris à
-  // chaque frappe dans un champ sans rapport. Trouvé lors de l'audit de
-  // performance du 2026-09-29.
-  const filtered = useMemo(() => customers.filter((c) => {
-    const name = `${c.firstName || ''} ${c.lastName || ''} ${c.companyName || ''}`.toLowerCase();
-    const matchSearch = !search || name.includes(search.toLowerCase()) || (c.phone || '').includes(search) || (c.code || '').toLowerCase().includes(search.toLowerCase());
-    const matchType = filterType === 'all' || c.customerType === filterType;
-    const matchStatus = filterStatus === 'all' || (filterStatus === 'active' && c.isActive) || (filterStatus === 'inactive' && !c.isActive);
-    return matchSearch && matchType && matchStatus;
-  }), [customers, search, filterType, filterStatus]);
-
-  const totalCreditUsed = useMemo(() => customers.reduce((s, c) => s + (c.creditUsed || 0), 0), [customers]);
+  const totalCreditUsed = useMemo(() => statsRows.reduce((s, c) => s + (c.credit_used || 0), 0), [statsRows]);
+  const totalCount = statsRows.length;
+  const activeCount = useMemo(() => statsRows.filter(c => c.is_active).length, [statsRows]);
+  const individualCount = useMemo(() => statsRows.filter(c => c.customer_type === 'INDIVIDUAL').length, [statsRows]);
+  const businessCount = useMemo(() => statsRows.filter(c => c.customer_type === 'BUSINESS').length, [statsRows]);
+  const allCodes = useMemo(() => statsRows.map(c => c.code), [statsRows]);
 
   const openAdd = () => {
     setEditing(null);
-    setForm({ ...EMPTY, code: genCode(customers) });
+    setForm({ ...EMPTY, code: genCode(allCodes) });
     setFormError(null); setShowDialog(true);
   };
   const openEdit = (c: Customer) => {
@@ -175,7 +270,7 @@ export default function CustomersPage() {
     // l'update (violation de privilège colonne), pas seulement ce champ —
     // voir handleSaveCreditLimit pour la limite d'un client existant.
     const payload = {
-      tenant_id: tenantId, code: form.code.trim() || genCode(customers),
+      tenant_id: tenantId, code: form.code.trim() || genCode(allCodes),
       first_name: form.customerType === 'INDIVIDUAL' ? form.firstName.trim() : null,
       last_name: form.customerType === 'INDIVIDUAL' ? form.lastName.trim() || null : null,
       company_name: form.customerType === 'BUSINESS' ? form.companyName.trim() : null,
@@ -239,7 +334,7 @@ export default function CustomersPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Clients</h1>
             <p className="text-sm text-gray-500 mt-1">
-              {customers.filter(c => c.isActive).length} client{customers.filter(c => c.isActive).length !== 1 ? 's' : ''} actifs
+              {activeCount} client{activeCount !== 1 ? 's' : ''} actifs
               {totalCreditUsed > 0 && <span className="ml-2">· {formatCurrency(totalCreditUsed)} en crédit en cours</span>}
             </p>
           </div>
@@ -253,9 +348,9 @@ export default function CustomersPage() {
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: 'Total clients', value: customers.length, icon: User, color: 'text-blue-600' },
-            { label: 'Particuliers', value: customers.filter(c => c.customerType === 'INDIVIDUAL').length, icon: User, color: 'text-green-600' },
-            { label: 'Entreprises', value: customers.filter(c => c.customerType === 'BUSINESS').length, icon: Building2, color: 'text-purple-600' },
+            { label: 'Total clients', value: totalCount, icon: User, color: 'text-blue-600' },
+            { label: 'Particuliers', value: individualCount, icon: User, color: 'text-green-600' },
+            { label: 'Entreprises', value: businessCount, icon: Building2, color: 'text-purple-600' },
             { label: 'Crédit total', value: formatCurrency(totalCreditUsed), icon: CreditCard, color: 'text-amber-600' },
           ].map((s, i) => (
             <Card key={i}><CardContent className="p-4">
@@ -298,11 +393,11 @@ export default function CustomersPage() {
         <Card><CardContent className="p-0">
           {isLoading ? (
             <div className="flex items-center justify-center py-16 text-gray-400"><RefreshCw className="h-5 w-5 animate-spin mr-2" />Chargement...</div>
-          ) : filtered.length === 0 ? (
+          ) : customers.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <User className="h-12 w-12 mb-4 opacity-30" />
-              <p className="font-medium">Aucun client trouvé</p>
-              {customers.length === 0 && isManagerPlus(user?.role) && <Button onClick={openAdd} variant="outline" className="mt-4"><Plus className="h-4 w-4 mr-2" />Ajouter votre premier client</Button>}
+              <p className="font-medium">{isSearching ? 'Recherche en cours…' : 'Aucun client trouvé'}</p>
+              {!isSearching && totalCount === 0 && isManagerPlus(user?.role) && <Button onClick={openAdd} variant="outline" className="mt-4"><Plus className="h-4 w-4 mr-2" />Ajouter votre premier client</Button>}
             </div>
           ) : (
             <Table>
@@ -323,7 +418,7 @@ export default function CustomersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((c) => {
+                {customers.map((c) => {
                   const creditPct = c.creditLimit > 0 ? (c.creditUsed / c.creditLimit) * 100 : 0;
                   return (
                     <TableRow key={c.id} className="hover:bg-gray-50">
@@ -401,6 +496,16 @@ export default function CustomersPage() {
                 })}
               </TableBody>
             </Table>
+          )}
+          {hasMore && !search && (
+            <div className="flex justify-center py-4 border-t">
+              <button
+                onClick={loadMore}
+                className="px-4 py-2 text-sm font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100"
+              >
+                Afficher plus de clients
+              </button>
+            </div>
           )}
         </CardContent></Card>
       </div>
