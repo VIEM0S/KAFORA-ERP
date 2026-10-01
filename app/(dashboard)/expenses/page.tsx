@@ -69,12 +69,41 @@ export default function ExpensesPage() {
   const [decidingId, setDecidingId] = useState<string | null>(null);
   const [decideError, setDecideError] = useState<string | null>(null);
 
+  // Avant : un seul fetch sans borne chargeait TOUT l'historique de dépenses
+  // du tenant (potentiellement plusieurs années), alors que l'écran n'en
+  // affiche jamais qu'un mois à la fois (le sélecteur `month` existait déjà,
+  // mais ne filtrait que côté client après coup). Le filtre mensuel est
+  // désormais appliqué côté serveur — borne naturelle, pas besoin d'un
+  // "charger plus" supplémentaire : le volume de dépenses d'UN mois reste
+  // raisonnable à filtrer/rechercher côté client une fois récupéré. Les
+  // dépenses PENDING (bandeau d'alerte) restent un fetch séparé, tenant-wide
+  // SANS filtre de mois — une dépense en attente d'un mois précédent doit
+  // rester visible tant qu'elle n'est pas tranchée. Trouvé lors de l'audit
+  // de performance du 2026-09-29/30, traité comme credits/page.tsx.
+  useEffect(() => {
+    if (!tenantId || !month) return;
+    setIsLoading(true);
+    const start = `${month}-01`;
+    const [y, m] = month.split('-').map(Number);
+    const end = new Date(y, m, 1).toISOString().slice(0, 10); // 1er du mois suivant, borne exclusive
+    return watch(
+      'expenses',
+      () => supabase.from('expenses').select('*').eq('tenant_id', tenantId)
+        .gte('expense_date', start).lt('expense_date', end)
+        .order('expense_date', { ascending: false }).order('created_at', { ascending: false }),
+      rows => { setExpenses(rows.map(mapExpense)); setIsLoading(false); },
+      () => setIsLoading(false),
+      `tenant_id=eq.${tenantId}`
+    );
+  }, [tenantId, month]);
+
+  const [pendingAll, setPendingAll] = useState<Expense[]>([]);
   useEffect(() => {
     if (!tenantId) return;
     return watch(
       'expenses',
-      () => supabase.from('expenses').select('*').eq('tenant_id', tenantId).order('expense_date', { ascending: false }).order('created_at', { ascending: false }),
-      rows => { setExpenses(rows.map(mapExpense)); setIsLoading(false); },
+      () => supabase.from('expenses').select('*').eq('tenant_id', tenantId).eq('status', 'PENDING').order('expense_date', { ascending: false }),
+      rows => setPendingAll(rows.map(mapExpense)),
       undefined,
       `tenant_id=eq.${tenantId}`
     );
@@ -83,14 +112,14 @@ export default function ExpensesPage() {
   const storeName = (id: string | null) => stores.find(s => s.id === id)?.name ?? '—';
   const threshold = tenant?.expenseApprovalThreshold ?? 0;
 
-  const inMonth = useMemo(() => expenses.filter(e => !month || e.expenseDate.startsWith(month)), [expenses, month]);
-  const filtered = inMonth.filter(e =>
+  // `expenses` est déjà borné au mois sélectionné côté serveur — statut et
+  // recherche libre restent filtrés ici, sur un volume d'un seul mois.
+  const filtered = useMemo(() => expenses.filter(e =>
     (statusFilter === 'ALL' || e.status === statusFilter) &&
     (!search || e.description.toLowerCase().includes(search.toLowerCase()) || categoryLabel(e.category).toLowerCase().includes(search.toLowerCase()))
-  );
-  const approvedTotal = inMonth.filter(e => e.status === 'APPROVED').reduce((s, e) => s + e.amount, 0);
-  const pendingAll = expenses.filter(e => e.status === 'PENDING');
-  const pendingTotal = pendingAll.reduce((s, e) => s + e.amount, 0);
+  ), [expenses, statusFilter, search]);
+  const approvedTotal = useMemo(() => expenses.filter(e => e.status === 'APPROVED').reduce((s, e) => s + e.amount, 0), [expenses]);
+  const pendingTotal = useMemo(() => pendingAll.reduce((s, e) => s + e.amount, 0), [pendingAll]);
 
   const openCreate = () => {
     setForm({ storeId: currentStore?.id ?? stores[0]?.id ?? '', category: 'OTHER', amount: '', description: '', date: today() });
@@ -205,7 +234,10 @@ export default function ExpensesPage() {
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <Wallet className="h-12 w-12 mb-4 opacity-30" />
               <p className="font-medium">Aucune dépense</p>
-              {expenses.length === 0 && canCreate && <Button onClick={openCreate} variant="outline" className="mt-4"><Plus className="h-4 w-4 mr-2" />Enregistrer votre première dépense</Button>}
+              {/* "dépense" sans "première" : expenses est borné au mois
+                  sélectionné, en avoir zéro ce mois-ci ne veut pas dire
+                  qu'aucune dépense n'existe sur un autre mois. */}
+              {canCreate && <Button onClick={openCreate} variant="outline" className="mt-4"><Plus className="h-4 w-4 mr-2" />Enregistrer une dépense</Button>}
             </div>
           ) : (
             <Table>

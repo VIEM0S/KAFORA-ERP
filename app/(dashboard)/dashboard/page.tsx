@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   TrendingUp, DollarSign, Package, CreditCard,
   AlertTriangle, ShoppingCart, ArrowUpRight, ArrowDownRight,
@@ -17,18 +17,34 @@ import { supabase } from '@/lib/supabase/client';
 // watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
 // (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
 import { watch } from '@/lib/supabase/watch';
-import { mapSale, mapProduct, mapInventory, mapCredit, mapCategory, PRODUCT_WITH_COST } from '@/lib/supabase/mappers';
+import { mapSale, mapCredit } from '@/lib/supabase/mappers';
 import { isManagerPlus as isManagerPlusRole } from '@/lib/auth/roles';
-import type { Sale, Product, Inventory, Credit, Category } from '@/lib/types';
+import type { Sale, Credit } from '@/lib/types';
 
 // ─── Hook données dashboard ───────────────────────────────────────────────────
 
+// Lignes brutes volontairement réduites (pas select('*')) : le tableau de
+// bord n'a besoin d'aucun des champs lourds de products (description,
+// image_data — potentiellement un gros blob base64 par ligne — barcode,
+// sku, tax_rate...), uniquement de ce qui alimente les stats agrégées
+// (rupture/stock bas/valeur de stock). Contrairement à credits/customers/
+// suppliers, impossible de borner le NOMBRE de lignes ici (chaque produit
+// actif peut contribuer à l'alerte ou à la valeur de stock) sans RPC
+// d'agrégation côté serveur — hors périmètre de cette passe, voir le
+// commentaire de synthèse de l'audit. Trouvé lors de l'audit de performance
+// du 2026-09-29/30.
+interface DashboardProductRow {
+  id: string; name: string; unit: string | null;
+  track_inventory: boolean; alert_threshold: number | null;
+  purchase_price: number | null;
+}
+interface DashboardInventoryRow { product_id: string; quantity: number }
+
 function useDashboardData(tenantId: string | undefined, storeId: string | undefined, isManagerPlus: boolean) {
   const [sales, setSales] = useState<Sale[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [inventory, setInventory] = useState<Inventory[]>([]);
+  const [products, setProducts] = useState<DashboardProductRow[]>([]);
+  const [inventory, setInventory] = useState<DashboardInventoryRow[]>([]);
   const [credits, setCredits] = useState<Credit[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
   // undefined = pas encore résolu (encore en train de charger) ; 'error' =
   // l'écoute a échoué ; number = valeur résolue (0 inclus, un vrai résultat
   // vide). Les trois états étaient auparavant confondus sous `null`, ce qui
@@ -51,15 +67,27 @@ function useDashboardData(tenantId: string | undefined, storeId: string | undefi
     );
     const unsubP = watch(
       'products',
-      () => supabase.from('products').select(PRODUCT_WITH_COST).eq('tenant_id', tenantId).eq('is_active', true),
-      rows => { setProducts(rows.map(mapProduct)); checkDone(); },
+      () => supabase.from('products')
+        .select('id, name, unit, track_inventory, alert_threshold, product_costs(purchase_price)')
+        .eq('tenant_id', tenantId).eq('is_active', true),
+      rows => {
+        setProducts(rows.map(r => {
+          const costRow = Array.isArray(r.product_costs) ? r.product_costs[0] : r.product_costs;
+          return {
+            id: r.id, name: r.name, unit: r.unit,
+            track_inventory: r.track_inventory, alert_threshold: r.alert_threshold,
+            purchase_price: costRow?.purchase_price ?? null,
+          };
+        }));
+        checkDone();
+      },
       undefined,
       `tenant_id=eq.${tenantId}`
     );
     const unsubI = watch(
       'inventory',
-      () => supabase.from('inventory').select('*').eq('tenant_id', tenantId).eq('store_id', storeId as string),
-      rows => { setInventory(rows.map(mapInventory)); checkDone(); },
+      () => supabase.from('inventory').select('product_id, quantity').eq('tenant_id', tenantId).eq('store_id', storeId as string),
+      rows => { setInventory(rows); checkDone(); },
       undefined,
       `tenant_id=eq.${tenantId}`
     );
@@ -70,15 +98,8 @@ function useDashboardData(tenantId: string | undefined, storeId: string | undefi
       undefined,
       `tenant_id=eq.${tenantId}`
     );
-    const unsubCat = watch(
-      'categories',
-      () => supabase.from('categories').select('*').eq('tenant_id', tenantId),
-      rows => setCategories(rows.map(mapCategory)),
-      undefined,
-      `tenant_id=eq.${tenantId}`
-    );
 
-    return () => { unsubS(); unsubP(); unsubI(); unsubC(); unsubCat(); };
+    return () => { unsubS(); unsubP(); unsubI(); unsubC(); };
     // storeId est indispensable ici : les requêtes sales et inventory le
     // filtrent directement (lignes ci-dessus). Sans lui dans les deps,
     // changer de magasin gardait l'écoute sur l'ancien storeId indéfiniment
@@ -115,7 +136,7 @@ function useDashboardData(tenantId: string | undefined, storeId: string | undefi
     );
   }, [tenantId, storeId, isManagerPlus]);
 
-  return { sales, products, inventory, credits, categories, monthlyCostTotal, isLoading };
+  return { sales, products, inventory, credits, monthlyCostTotal, isLoading };
 }
 
 // ─── Calculs ──────────────────────────────────────────────────────────────────
@@ -143,7 +164,7 @@ export default function DashboardPage() {
     if (user && !isManagerPlus) router.replace('/pos');
   }, [user, isManagerPlus, router]);
 
-  const { sales, products, inventory, credits, categories, monthlyCostTotal, isLoading } = useDashboardData(tenantId, storeId, isManagerPlus);
+  const { sales, products, inventory, credits, monthlyCostTotal, isLoading } = useDashboardData(tenantId, storeId, isManagerPlus);
 
   // ─── Calculs stats ──────────────────────────────────────────────────────────
 
@@ -155,19 +176,26 @@ export default function DashboardPage() {
   // besoin de gérer les Timestamps Firestore sérialisés.
   const toTimestamp = (v: Date): string => v.toISOString();
 
-  const completedSales = sales.filter(s => s.status === 'COMPLETED');
-  const todaySales = completedSales.filter(s => toTimestamp(s.createdAt) >= today);
-  const yesterdaySales = completedSales.filter(s => {
-    const ts = toTimestamp(s.createdAt);
-    return ts >= yesterday && ts < today;
-  });
-  const monthSales = completedSales.filter(s => toTimestamp(s.createdAt) >= startOfMonth);
-
-  const sum = (arr: Sale[]) => arr.reduce((a, s) => a + (s.total || 0), 0);
-  const todayRevenue = sum(todaySales);
-  const yesterdayRevenue = sum(yesterdaySales);
-  const monthlyRevenue = sum(monthSales);
-  const todayChange = yesterdayRevenue > 0 ? ((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100 : 0;
+  // Non mémoïsé avant (recalculé à chaque rendu, y compris pendant le
+  // chargement où `sales` ne change pourtant pas encore) — trouvé lors de
+  // l'audit de performance du 2026-09-29/30.
+  const { todaySales, monthSales, todayRevenue, monthlyRevenue, todayChange } = useMemo(() => {
+    const completedSales = sales.filter(s => s.status === 'COMPLETED');
+    const today_ = completedSales.filter(s => toTimestamp(s.createdAt) >= today);
+    const yesterday_ = completedSales.filter(s => {
+      const ts = toTimestamp(s.createdAt);
+      return ts >= yesterday && ts < today;
+    });
+    const month_ = completedSales.filter(s => toTimestamp(s.createdAt) >= startOfMonth);
+    const sum = (arr: Sale[]) => arr.reduce((a, s) => a + (s.total || 0), 0);
+    const todayRev = sum(today_);
+    const yesterdayRev = sum(yesterday_);
+    return {
+      todaySales: today_, monthSales: month_,
+      todayRevenue: todayRev, monthlyRevenue: sum(month_),
+      todayChange: yesterdayRev > 0 ? ((todayRev - yesterdayRev) / yesterdayRev) * 100 : 0,
+    };
+  }, [sales, today, yesterday, startOfMonth]);
 
   // Marge mensuelle — calculée côté serveur (cost_summary), réservée aux Managers+
   const monthlyProfit =
@@ -176,24 +204,46 @@ export default function DashboardPage() {
       : null;
   const monthlyProfitFailed = isManagerPlus && monthlyCostTotal === 'error';
 
-  // Stock
-  const getStock = (pId: string) => inventory.find(i => i.productId === pId && i.storeId === storeId)?.quantity ?? 0;
-  const lowStockProducts = products.filter(p => p.trackInventory && getStock(p.id) <= p.alertThreshold);
-  const ruptureProducts = products.filter(p => p.trackInventory && getStock(p.id) === 0);
+  // Stock — Map plutôt qu'un .find() par produit (O(1) au lieu de O(n) à
+  // chaque appel de getStock, répété pour chaque produit dans les filtres/
+  // reduce ci-dessous). `inventory` est déjà filtré par magasin côté
+  // serveur, pas besoin de revérifier store_id ici. Les trois dérivés sont
+  // désormais mémoïsés : aucun ne l'était avant, recalculés à chaque rendu
+  // — trouvé lors de l'audit de performance du 2026-09-29/30.
+  const inventoryByProduct = useMemo(() => {
+    const map = new Map<string, number>();
+    inventory.forEach(i => map.set(i.product_id, i.quantity));
+    return map;
+  }, [inventory]);
+  const getStock = useCallback((pId: string) => inventoryByProduct.get(pId) ?? 0, [inventoryByProduct]);
+
+  const lowStockProducts = useMemo(
+    () => products.filter(p => p.track_inventory && getStock(p.id) <= (p.alert_threshold ?? 0)),
+    [products, getStock]
+  );
+  const ruptureProducts = useMemo(
+    () => products.filter(p => p.track_inventory && getStock(p.id) === 0),
+    [products, getStock]
+  );
   // Valeur du stock au prix d'achat — donnée sensible, réservée aux Managers+
-  const valeurStock = isManagerPlus
+  const valeurStock = useMemo(() => isManagerPlus
     // Les produits sans prix d'achat sont EXCLUS : les compter à 0
     // sous-évaluerait le stock sans le dire.
-    ? products.reduce((s, p) => s + (p.purchasePrice == null ? 0 : getStock(p.id) * p.purchasePrice), 0)
-    : null;
+    ? products.reduce((s, p) => s + (p.purchase_price == null ? 0 : getStock(p.id) * p.purchase_price), 0)
+    : null, [products, getStock, isManagerPlus]);
 
   // Crédits
-  const activeCredits = credits.filter(c => ['PENDING', 'PARTIALLY_PAID', 'OVERDUE'].includes(c.status));
-  const overdueCredits = credits.filter(c => c.status === 'OVERDUE');
-  const totalCreditEnCours = activeCredits.reduce((s, c) => s + c.remainingAmount, 0);
+  const { activeCredits, overdueCredits, totalCreditEnCours } = useMemo(() => {
+    const active = credits.filter(c => ['PENDING', 'PARTIALLY_PAID', 'OVERDUE'].includes(c.status));
+    return {
+      activeCredits: active,
+      overdueCredits: credits.filter(c => c.status === 'OVERDUE'),
+      totalCreditEnCours: active.reduce((s, c) => s + c.remainingAmount, 0),
+    };
+  }, [credits]);
 
   // Ventes récentes
-  const recentSales = sales.slice(0, 8);
+  const recentSales = useMemo(() => sales.slice(0, 8), [sales]);
 
   // ─── Render ─────────────────────────────────────────────────────────────────
 
