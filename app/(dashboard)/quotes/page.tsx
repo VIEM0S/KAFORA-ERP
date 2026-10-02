@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Plus, Search, X, RefreshCw, FileText, ChevronRight,
   CheckCircle2, XCircle, ShoppingCart, Clock, AlertCircle, Minus
@@ -26,11 +26,19 @@ import { watch } from '@/lib/supabase/watch';
 import { mapQuote, mapQuoteItem, mapProduct, mapCustomer } from '@/lib/supabase/mappers';
 import { QUOTE_STATUS_LABELS } from '@/lib/constants/status-badges';
 import { useRouter } from 'next/navigation';
-import type { Product, Customer, Quote, QuoteStatus } from '@/lib/types';
+import type { Quote, QuoteStatus, CustomerType } from '@/lib/types';
+
+/** Produit/client allégés pour cet écran — pas de mapProduct()/mapCustomer()
+ * (`select('*')` complet) : seuls ces champs sont réellement utilisés ici
+ * (recherche locale dans le formulaire "nouveau devis"). `handleConvert`
+ * refait un fetch complet par id au moment de la conversion, lui, et
+ * continue d'utiliser mapProduct/mapCustomer normalement. */
+interface QuoteProductRow { id: string; name: string; sku: string; sellingPrice: number }
+interface QuoteCustomerRow { id: string; customerType: CustomerType; firstName: string | null; lastName: string | null; companyName: string | null; phone: string | null; email: string | null }
 
 /** Ligne en cours de saisie dans le formulaire "nouveau devis" — distinct de
  * QuoteItem (lib/types), qui est la ligne telle qu'enregistrée. */
-interface DraftLine { product: Product; quantity: number; unitPrice: number; }
+interface DraftLine { product: QuoteProductRow; quantity: number; unitPrice: number; }
 
 // Libellé/couleur : voir lib/constants/status-badges.ts (source unique,
 // partagée avec invoices/page.tsx et customers/[id]/page.tsx). Seule
@@ -56,15 +64,15 @@ export default function QuotesPage() {
   const router = useRouter();
 
   const [quotes, setQuotes] = useState<Quote[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [products, setProducts] = useState<QuoteProductRow[]>([]);
+  const [customers, setCustomers] = useState<QuoteCustomerRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('all');
   const [selected, setSelected] = useState<Quote | null>(null);
   const [showNewQuote, setShowNewQuote] = useState(false);
 
   // Formulaire nouveau devis
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<QuoteCustomerRow | null>(null);
   const [customerSearch, setCustomerSearch] = useState('');
   const [productSearch, setProductSearch] = useState('');
   const [lignes, setLignes] = useState<DraftLine[]>([]);
@@ -75,41 +83,90 @@ export default function QuotesPage() {
 
   const [convertTarget, setConvertTarget] = useState<Quote | null>(null);
 
+  // Avant : un seul fetch sans .range() chargeait TOUS les devis (avec leurs
+  // lignes jointes) du tenant, plus TOUT le catalogue products ET toute la
+  // table customers — TROIS fetches non bornés sur un seul écran, un des
+  // pires cas trouvés lors de l'audit de performance du 2026-09-29 (à égalité
+  // avec purchase-orders). La liste affichée est désormais paginée côté
+  // serveur (filtre statut) ; products/customers restent chargés en entier
+  // (nécessaires tels quels pour la recherche locale du formulaire "nouveau
+  // devis"), mais en colonnes réduites — voir QuoteProductRow/QuoteCustomerRow
+  // plus haut.
+  const PAGE_SIZE = 30;
+  const [hasMore, setHasMore] = useState(false);
+  const offsetRef = useRef(0);
+
   useEffect(() => {
     if (!tenantId) return;
+    setIsLoading(true);
+    // quote_items embarqué via la relation FK — évite un aller-retour par
+    // devis (contrairement à Firestore, une jointure Postgres est native).
     const unsubQ = watch(
       'quotes',
-      // quote_items embarqué via la relation FK — évite un aller-retour par
-      // devis (contrairement à Firestore, une jointure Postgres est native).
-      () => supabase.from('quotes').select('*, quote_items(*)').eq('tenant_id', tenantId).order('created_at', { ascending: false }),
+      () => {
+        let q = supabase.from('quotes').select('*, quote_items(*)').eq('tenant_id', tenantId as string);
+        if (filterStatus !== 'all') q = q.eq('status', filterStatus as QuoteStatus);
+        return q.order('created_at', { ascending: false }).range(0, PAGE_SIZE - 1);
+      },
       rows => {
-        setQuotes(rows.map(r => mapQuote(r, (r.quote_items ?? []).map(mapQuoteItem))));
+        const mapped = rows.map(r => mapQuote(r, (r.quote_items ?? []).map(mapQuoteItem)));
+        setQuotes(mapped);
+        offsetRef.current = mapped.length;
+        setHasMore(mapped.length === PAGE_SIZE);
         setIsLoading(false);
       },
-      undefined,
+      () => setIsLoading(false),
       `tenant_id=eq.${tenantId}`
     );
     const unsubP = watch(
       'products',
-      () => supabase.from('products').select('*').eq('tenant_id', tenantId).eq('is_active', true).order('name'),
-      rows => setProducts(rows.map(mapProduct)),
+      () => supabase.from('products').select('id, name, sku, selling_price').eq('tenant_id', tenantId).eq('is_active', true).order('name'),
+      rows => setProducts(rows.map(r => ({ id: r.id, name: r.name, sku: r.sku ?? '', sellingPrice: r.selling_price }))),
       undefined,
       `tenant_id=eq.${tenantId}`
     );
     const unsubC = watch(
       'customers',
-      () => supabase.from('customers').select('*').eq('tenant_id', tenantId).eq('is_active', true).order('created_at', { ascending: false }),
-      rows => setCustomers(rows.map(mapCustomer)),
+      () => supabase.from('customers').select('id, customer_type, first_name, last_name, company_name, phone, email').eq('tenant_id', tenantId).eq('is_active', true).order('created_at', { ascending: false }),
+      rows => setCustomers(rows.map(r => ({
+        id: r.id, customerType: r.customer_type, firstName: r.first_name, lastName: r.last_name,
+        companyName: r.company_name, phone: r.phone, email: r.email,
+      }))),
       undefined,
       `tenant_id=eq.${tenantId}`
     );
     return () => { unsubQ(); unsubP(); unsubC(); };
+  }, [tenantId, filterStatus]);
+
+  const loadMore = useCallback(async () => {
+    if (!tenantId) return;
+    const from = offsetRef.current;
+    let q = supabase.from('quotes').select('*, quote_items(*)').eq('tenant_id', tenantId);
+    if (filterStatus !== 'all') q = q.eq('status', filterStatus as QuoteStatus);
+    const { data } = await q.order('created_at', { ascending: false }).range(from, from + PAGE_SIZE - 1);
+    const mapped = (data ?? []).map(r => mapQuote(r, (r.quote_items ?? []).map(mapQuoteItem)));
+    setQuotes(prev => [...prev, ...mapped]);
+    offsetRef.current = from + mapped.length;
+    setHasMore(mapped.length === PAGE_SIZE);
+  }, [tenantId, filterStatus]);
+
+  // Nombre total de devis (bandeau d'en-tête) : fetch séparé, non paginé mais
+  // réduit à une seule colonne, indépendant du filtre affiché — même motif
+  // que customers/suppliers/purchase-orders.
+  const [statsRows, setStatsRows] = useState<{ id: string }[]>([]);
+  useEffect(() => {
+    if (!tenantId) return;
+    return watch(
+      'quotes',
+      () => supabase.from('quotes').select('id').eq('tenant_id', tenantId),
+      rows => setStatsRows(rows as typeof statsRows),
+      undefined,
+      `tenant_id=eq.${tenantId}`
+    );
   }, [tenantId]);
+  const totalCount = statsRows.length;
 
-  const filtered = quotes.filter(q =>
-    filterStatus === 'all' || q.status === filterStatus
-  );
-
+  // `quotes` est désormais déjà filtré côté serveur (statut).
   const filteredCustomers = customers.filter(c => {
     const name = `${c.firstName || ''} ${c.lastName || ''} ${c.companyName || ''}`.toLowerCase();
     return !customerSearch || name.includes(customerSearch.toLowerCase()) || (c.phone || '').includes(customerSearch);
@@ -121,7 +178,7 @@ export default function QuotesPage() {
 
   const total = lignes.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
 
-  const addLine = (p: Product) => {
+  const addLine = (p: QuoteProductRow) => {
     if (lignes.find(l => l.product.id === p.id)) return;
     setLignes(prev => [...prev, { product: p, quantity: 1, unitPrice: p.sellingPrice }]);
     setProductSearch('');
@@ -250,7 +307,7 @@ export default function QuotesPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Devis</h1>
-            <p className="text-sm text-gray-500 mt-1">{quotes.length} devis au total</p>
+            <p className="text-sm text-gray-500 mt-1">{totalCount} devis au total</p>
           </div>
           {canManage && (
             <Button onClick={() => setShowNewQuote(true)} className="bg-primary-600 hover:bg-primary-700 self-start sm:self-auto">
@@ -275,7 +332,7 @@ export default function QuotesPage() {
           <Card><CardContent className="p-0">
             {isLoading ? (
               <div className="flex items-center justify-center py-16 text-gray-400"><RefreshCw className="h-5 w-5 animate-spin mr-2" />Chargement...</div>
-            ) : filtered.length === 0 ? (
+            ) : quotes.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-gray-400">
                 <FileText className="h-12 w-12 mb-4 opacity-30" />
                 <p className="font-medium">Aucun devis</p>
@@ -292,7 +349,7 @@ export default function QuotesPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map(q => (
+                  {quotes.map(q => (
                     <TableRow key={q.id} className={`hover:bg-gray-50 cursor-pointer ${selected?.id === q.id ? 'bg-primary-50' : ''}`}
                       onClick={() => setSelected(q)}>
                       <TableCell className="text-sm text-gray-500">{formatDate(q.createdAt)}</TableCell>
@@ -305,6 +362,13 @@ export default function QuotesPage() {
                   ))}
                 </TableBody>
               </Table>
+            )}
+            {hasMore && (
+              <div className="flex justify-center py-4 border-t">
+                <button onClick={loadMore} className="px-4 py-2 text-sm font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100">
+                  Afficher plus de devis
+                </button>
+              </div>
             )}
           </CardContent></Card>
 

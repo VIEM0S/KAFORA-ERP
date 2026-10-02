@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
-  Plus, Search, PackageCheck, Truck, RefreshCw, X, ChevronDown,
+  Plus, Search, PackageCheck, Truck, RefreshCw, X, ChevronDown, Download,
   Trash2, PackagePlus, Clock, CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout';
@@ -19,11 +19,20 @@ import { supabase } from '@/lib/supabase/client';
 // watch vient d'ici : l'enveloppe remonte les échecs au bandeau global
 // (voir lib/supabase/watch.ts), au lieu de laisser l'écran vide sans explication.
 import { watch } from '@/lib/supabase/watch';
-import { mapPurchaseOrder, mapPurchaseOrderItem, mapSupplier, mapProduct, PRODUCT_WITH_COST } from '@/lib/supabase/mappers';
+import { mapPurchaseOrder, mapPurchaseOrderItem } from '@/lib/supabase/mappers';
 import { formatCurrency } from '@/lib/utils/helpers';
 import { exportToCsv, formatDateForCsv } from '@/lib/utils/export';
 import { PO_REORDER_SUGGESTION_KEY, type ReorderSuggestionLine } from '@/lib/purchase-orders/reorder-suggestion';
-import type { PurchaseOrder, PurchaseOrderStatus, Supplier, Product } from '@/lib/types';
+import type { PurchaseOrder, PurchaseOrderStatus } from '@/lib/types';
+
+/** Fournisseur allégé pour cet écran — pas de mapSupplier() (`select('*')`
+ * complet) : seuls ces champs sont réellement utilisés ici (dropdown de
+ * création + libellé). Voir products/suppliers ci-dessous pour le même motif. */
+interface SupplierLite { id: string; name: string; isActive: boolean; paymentTerms: number | null }
+/** Produit allégé — idem, et purchasePrice vient de la relation product_costs
+ * (voir costOf() dans lib/supabase/mappers.ts, non exportée, reproduite ici
+ * pour n'extraire que cette colonne au lieu du `select('*', ...)` complet). */
+interface ProductLite { id: string; name: string; sku: string; trackExpiry: boolean; trackSerial: boolean; purchasePrice: number | null }
 
 const STATUS_LABELS: Record<PurchaseOrderStatus, { label: string; color: string; icon: typeof Clock }> = {
   DRAFT: { label: 'Brouillon', color: 'bg-gray-100 text-gray-600', icon: Clock },
@@ -45,11 +54,12 @@ export default function PurchaseOrdersPage() {
   const storeId = currentStore?.id;
 
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierLite[]>([]);
+  const [products, setProducts] = useState<ProductLite[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [isExporting, setIsExporting] = useState(false);
 
   const [showCreate, setShowCreate] = useState(false);
   const [supplierId, setSupplierId] = useState('');
@@ -69,40 +79,151 @@ export default function PurchaseOrdersPage() {
   const [receiveError, setReceiveError] = useState<string | null>(null);
   const [isReceiving, setIsReceiving] = useState(false);
 
+  // Avant : un seul fetch sans .range() chargeait TOUS les bons de commande
+  // (avec leurs lignes jointes) du magasin, plus la table suppliers ET tout
+  // le catalogue products (avec coût d'achat) en entier — TROIS fetches non
+  // bornés sur un seul écran, le pire cas trouvé lors de l'audit de
+  // performance du 2026-09-29. La liste affichée est désormais paginée et
+  // filtrée côté serveur (recherche sur la référence + statut, même motif
+  // que credits/customers/suppliers) ; suppliers et products restent
+  // chargés en entier (nécessaires tels quels pour les menus déroulants du
+  // formulaire de création et de réception), mais en colonnes réduites —
+  // voir SupplierLite/ProductLite plus haut.
+  const PAGE_SIZE = 30;
+  const [hasMore, setHasMore] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const offsetRef = useRef(0);
+  const searchSeq = useRef(0);
+
+  function baseOrdersQuery() {
+    let q = supabase.from('purchase_orders').select('*, purchase_order_items(*)').eq('tenant_id', tenantId as string).eq('store_id', storeId as string);
+    if (filterStatus !== 'all') q = q.eq('status', filterStatus as PurchaseOrderStatus);
+    return q;
+  }
+
+  // Navigation : première page, en écoute temps réel — hors recherche (la
+  // recherche a son propre effet ci-dessous, sans watch()).
   useEffect(() => {
-    if (!tenantId || !storeId) return;
-    const unsub1 = watch(
+    if (!tenantId || !storeId || search.trim()) return;
+    setIsLoading(true);
+    // purchase_order_items embarqué via la relation FK. Filtré par store_id
+    // (comme la création, storeId: currentStore.id plus bas) : sans ce
+    // filtre, un Manager+ multi-magasins voyait les bons de commande de TOUS
+    // les magasins en changeant simplement de magasin via le sélecteur —
+    // même bug que cash-register/dashboard (store_id absent alors que la
+    // table le porte).
+    return watch(
       'purchase_orders',
-      // purchase_order_items embarqué via la relation FK. Filtré par
-      // store_id (comme la création, storeId: currentStore.id plus bas) :
-      // sans ce filtre, un Manager+ multi-magasins voyait les bons de
-      // commande de TOUS les magasins en changeant simplement de magasin
-      // via le sélecteur — même bug que cash-register/dashboard (store_id
-      // absent alors que la table le porte).
-      () => supabase.from('purchase_orders').select('*, purchase_order_items(*)').eq('tenant_id', tenantId).eq('store_id', storeId).order('created_at', { ascending: false }),
+      () => baseOrdersQuery().order('created_at', { ascending: false }).range(0, PAGE_SIZE - 1),
       rows => {
-        setOrders(rows.map(r => mapPurchaseOrder(r, (r.purchase_order_items ?? []).map(mapPurchaseOrderItem))));
+        const mapped = rows.map(r => mapPurchaseOrder(r, (r.purchase_order_items ?? []).map(mapPurchaseOrderItem)));
+        setOrders(mapped);
+        offsetRef.current = mapped.length;
+        setHasMore(mapped.length === PAGE_SIZE);
         setIsLoading(false);
       },
-      undefined,
+      () => setIsLoading(false),
       `tenant_id=eq.${tenantId}`
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, storeId, filterStatus, search]);
+
+  const loadMore = useCallback(async () => {
+    if (!tenantId || !storeId || search.trim()) return;
+    const from = offsetRef.current;
+    const { data } = await baseOrdersQuery().order('created_at', { ascending: false }).range(from, from + PAGE_SIZE - 1);
+    const mapped = (data ?? []).map(r => mapPurchaseOrder(r, (r.purchase_order_items ?? []).map(mapPurchaseOrderItem)));
+    setOrders(prev => [...prev, ...mapped]);
+    offsetRef.current = from + mapped.length;
+    setHasMore(mapped.length === PAGE_SIZE);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, storeId, filterStatus, search]);
+
+  // Recherche : exécutée côté serveur, débouncée — un seul champ (référence),
+  // pas besoin de fusionner plusieurs requêtes comme sur customers/suppliers.
+  useEffect(() => {
+    const term = search.trim();
+    if (!tenantId || !storeId || !term) return;
+    const seq = ++searchSeq.current;
+    setIsSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const { data } = await baseOrdersQuery().ilike('reference', `%${term}%`).order('created_at', { ascending: false }).limit(PAGE_SIZE);
+        if (seq !== searchSeq.current) return;
+        setOrders((data ?? []).map(r => mapPurchaseOrder(r, (r.purchase_order_items ?? []).map(mapPurchaseOrderItem))));
+        setHasMore(false);
+        setIsLoading(false);
+      } finally {
+        if (seq === searchSeq.current) setIsSearching(false);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, storeId, filterStatus, search]);
+
+  useEffect(() => {
+    if (!tenantId) return;
     const unsub2 = watch(
       'suppliers',
-      () => supabase.from('suppliers').select('*').eq('tenant_id', tenantId).order('name', { ascending: true }),
-      rows => setSuppliers(rows.map(mapSupplier)),
+      () => supabase.from('suppliers').select('id, name, is_active, payment_terms').eq('tenant_id', tenantId).order('name', { ascending: true }),
+      rows => setSuppliers(rows.map(r => ({ id: r.id, name: r.name, isActive: r.is_active, paymentTerms: r.payment_terms }))),
       undefined,
       `tenant_id=eq.${tenantId}`
     );
     const unsub3 = watch(
       'products',
-      () => supabase.from('products').select(PRODUCT_WITH_COST).eq('tenant_id', tenantId).order('name', { ascending: true }),
-      rows => setProducts(rows.map(mapProduct)),
+      () => supabase.from('products').select('id, name, sku, track_expiry, track_serial, product_costs(purchase_price)').eq('tenant_id', tenantId).order('name', { ascending: true }),
+      rows => setProducts(rows.map(r => {
+        const costRel = r.product_costs;
+        const one = Array.isArray(costRel) ? costRel[0] : costRel;
+        return { id: r.id, name: r.name, sku: r.sku ?? '', trackExpiry: r.track_expiry, trackSerial: r.track_serial, purchasePrice: one?.purchase_price ?? null };
+      })),
       undefined,
       `tenant_id=eq.${tenantId}`
     );
-    return () => { unsub1(); unsub2(); unsub3(); };
+    return () => { unsub2(); unsub3(); };
+  }, [tenantId]);
+
+  // Statistiques (nombre total de bons de commande) : fetch séparé, non
+  // paginé mais réduit à une seule colonne, indépendant de la recherche/du
+  // filtre affiché — même motif que customers/suppliers.
+  const [statsRows, setStatsRows] = useState<{ id: string }[]>([]);
+  useEffect(() => {
+    if (!tenantId || !storeId) return;
+    return watch(
+      'purchase_orders',
+      () => supabase.from('purchase_orders').select('id').eq('tenant_id', tenantId).eq('store_id', storeId),
+      rows => setStatsRows(rows as typeof statsRows),
+      undefined,
+      `tenant_id=eq.${tenantId}`
+    );
   }, [tenantId, storeId]);
+  const totalCount = statsRows.length;
+
+  // Export CSV : l'utilisateur attend TOUT ce qui correspond au filtre actif,
+  // pas seulement la page actuellement chargée — requête dédiée non bornée
+  // au clic (même motif que credits/page.tsx), plutôt que d'exporter `orders`
+  // (la liste paginée).
+  const handleExportCsv = async () => {
+    if (!tenantId || !storeId) return;
+    setIsExporting(true);
+    try {
+      const term = search.trim();
+      let q = baseOrdersQuery();
+      if (term) q = q.ilike('reference', `%${term}%`);
+      const { data } = await q.order('created_at', { ascending: false });
+      const rows = (data ?? []).map(r => mapPurchaseOrder(r, (r.purchase_order_items ?? []).map(mapPurchaseOrderItem)));
+      exportToCsv(`achats-${new Date().toISOString().slice(0, 10)}`, rows, [
+        { key: 'reference', label: 'Référence' },
+        { key: 'supplierId', label: 'Fournisseur', format: (v) => supplierName(v as string) },
+        { key: 'status', label: 'Statut', format: (v) => STATUS_LABELS[v as PurchaseOrder['status']]?.label || String(v) },
+        { key: 'subtotal', label: 'Montant' },
+        { key: 'createdAt', label: 'Date', format: (v) => formatDateForCsv(v) },
+      ]);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   // Reprend une suggestion de réappro déposée par la page Alertes stock (voir
   // lib/purchase-orders/reorder-suggestion.ts). On attend que `products` soit
@@ -141,12 +262,8 @@ export default function PurchaseOrdersPage() {
     }
   }, [products]);
 
-  const filtered = orders.filter(o =>
-    (filterStatus === 'all' || o.status === filterStatus) &&
-    (!search || o.reference.toLowerCase().includes(search.toLowerCase()))
-  );
-
-  const activeSuppliers = suppliers.filter(s => s.isActive);
+  // `orders` est désormais déjà filtré côté serveur (recherche + statut).
+  const activeSuppliers = useMemo(() => suppliers.filter(s => s.isActive), [suppliers]);
 
   // ── Formulaire de création ────────────────────────────────────────────────
   const resetCreateForm = () => {
@@ -269,19 +386,11 @@ export default function PurchaseOrdersPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Bons de commande</h1>
-            <p className="text-sm text-gray-500 mt-1">{orders.length} bon{orders.length !== 1 ? 's' : ''} de commande</p>
+            <p className="text-sm text-gray-500 mt-1">{totalCount} bon{totalCount !== 1 ? 's' : ''} de commande</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline" size="sm" disabled={filtered.length === 0}
-              onClick={() => exportToCsv(`achats-${new Date().toISOString().slice(0, 10)}`, filtered, [
-                { key: 'reference', label: 'Référence' },
-                { key: 'supplierId', label: 'Fournisseur', format: (v) => supplierName(v as string) },
-                { key: 'status', label: 'Statut', format: (v) => STATUS_LABELS[v as PurchaseOrder['status']]?.label || String(v) },
-                { key: 'subtotal', label: 'Montant' },
-                { key: 'createdAt', label: 'Date', format: (v) => formatDateForCsv(v) },
-              ])}
-            >
+            <Button variant="outline" size="sm" disabled={isExporting || totalCount === 0} onClick={handleExportCsv}>
+              {isExporting ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
               Exporter CSV
             </Button>
             {canManage && (
@@ -314,11 +423,11 @@ export default function PurchaseOrdersPage() {
         <Card><CardContent className="p-0">
           {isLoading ? (
             <div className="flex items-center justify-center py-16 text-gray-400"><RefreshCw className="h-5 w-5 animate-spin mr-2" />Chargement...</div>
-          ) : filtered.length === 0 ? (
+          ) : orders.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <PackagePlus className="h-12 w-12 mb-4 opacity-30" />
-              <p className="font-medium">Aucun bon de commande</p>
-              {orders.length === 0 && canManage && <Button onClick={openCreate} variant="outline" className="mt-4"><Plus className="h-4 w-4 mr-2" />Créer le premier bon de commande</Button>}
+              <p className="font-medium">{isSearching ? 'Recherche en cours…' : 'Aucun bon de commande'}</p>
+              {!isSearching && totalCount === 0 && canManage && <Button onClick={openCreate} variant="outline" className="mt-4"><Plus className="h-4 w-4 mr-2" />Créer le premier bon de commande</Button>}
             </div>
           ) : (
             <Table>
@@ -332,7 +441,7 @@ export default function PurchaseOrdersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map(o => {
+                {orders.map(o => {
                   const st = STATUS_LABELS[o.status];
                   const canReceive = ['SENT', 'PARTIALLY_RECEIVED', 'DRAFT'].includes(o.status);
                   return (
@@ -357,6 +466,13 @@ export default function PurchaseOrdersPage() {
                 })}
               </TableBody>
             </Table>
+          )}
+          {hasMore && !search && (
+            <div className="flex justify-center py-4 border-t">
+              <button onClick={loadMore} className="px-4 py-2 text-sm font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100">
+                Afficher plus de bons de commande
+              </button>
+            </div>
           )}
         </CardContent></Card>
       </div>
